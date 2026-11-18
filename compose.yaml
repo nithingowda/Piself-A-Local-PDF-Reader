@@ -1,15 +1,47 @@
 services:
+  pishelf-init:
+    build: .
+    image: pishelf:local
+    user: "0:0"
+    restart: "no"
+    environment:
+      PISHELF_UID: "${PISHELF_UID:-1000}"
+      PISHELF_GID: "${PISHELF_GID:-1000}"
+    volumes:
+      - "piself:/data"
+    read_only: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - FOWNER
+      - DAC_OVERRIDE
+    security_opt:
+      - no-new-privileges:true
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        owner="$PISHELF_UID:$PISHELF_GID"
+        chown "$owner" /data
+        chmod u+rwx /data
+        find /data -maxdepth 1 -type f -name 'progress.sqlite3*' -exec chown "$owner" {} +
+        find /data -maxdepth 1 -type f -name 'progress.sqlite3*' -exec chmod u+rw {} +
+        echo "PiShelf data permissions prepared."
+
   pishelf:
     build: .
     image: pishelf:local
+    depends_on:
+      pishelf-init:
+        condition: service_completed_successfully
     restart: unless-stopped
     init: true
     user: "${PISHELF_UID:-1000}:${PISHELF_GID:-1000}"
     ports:
-      - "${PISHELF_PORT:-8085}:8085"
+      - "${PISHELF_PORT:-8098}:8080"
     volumes:
       - "${MAGAZINE_DIR:-./magazines}:/magazines"
-      - "${DATA_DIR:-./data}:/data"
+      - "piself:/data"
     read_only: true
     tmpfs:
       - /tmp:size=32m
@@ -22,3 +54,7 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+volumes:
+  piself:
+    name: piself
