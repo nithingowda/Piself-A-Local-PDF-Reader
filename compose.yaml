@@ -6,10 +6,10 @@ services:
     init: true
     user: "${PISHELF_UID:-1000}:${PISHELF_GID:-1000}"
     ports:
-      - "${PISHELF_PORT:-8085}:8085"
+      - "${PISHELF_PORT:-8098}:8080"
     volumes:
       - "${MAGAZINE_DIR:-./magazines}:/magazines"
-      - "${DATA_DIR:-./data}:/data"
+      - "piself:/data"
     read_only: true
     tmpfs:
       - /tmp:size=32m
@@ -22,3 +22,8 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+volumes:
+  piself:
+    external: true
+    name: piself

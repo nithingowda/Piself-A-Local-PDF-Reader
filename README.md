@@ -58,7 +58,7 @@ Extract the download, then open a terminal in the `pi-magazine-reader` folder co
 Create the storage folders before starting the container:
 
 ```sh
-mkdir -p magazines data
+mkdir -p magazines
 cp .env.example .env
 ```
 
@@ -76,20 +76,18 @@ Edit `.env` and set `PISHELF_UID` and `PISHELF_GID` to those values:
 ```dotenv
 PISHELF_UID=1000
 PISHELF_GID=1000
-PISHELF_PORT=8080
+PISHELF_PORT=8098
 MAGAZINE_DIR=./magazines
-DATA_DIR=./data
 ```
 
 | Variable | Purpose | Default |
 | --- | --- | --- |
 | `PISHELF_UID` | User ID used by the container | `1000` |
 | `PISHELF_GID` | Group ID used by the container | `1000` |
-| `PISHELF_PORT` | Port used to access PiShelf on your Pi | `8080` |
+| `PISHELF_PORT` | Host port mapped to container port 8080 | `8098` |
 | `MAGAZINE_DIR` | Host folder containing your PDFs | `./magazines` |
-| `DATA_DIR` | Host folder containing reading state and Trash records | `./data` |
 
-The configured user must be able to read and write both folders. PDF write access is needed to move files into Trash and restore them. Use appropriate ownership and permissions rather than making folders writable by everyone.
+The configured user must be able to read and write the magazine folder and the `piself` Docker volume. PDF write access is needed to move files into Trash and restore them. Use appropriate ownership and permissions rather than making folders writable by everyone.
 
 **Already have a PDF collection?** Point `MAGAZINE_DIR` at its absolute path:
 
@@ -97,16 +95,24 @@ The configured user must be able to read and write both folders. PDF write acces
 MAGAZINE_DIR=/media/pi/SSD/Magazines
 ```
 
-Mount external storage before starting PiShelf. Keep `DATA_DIR` on reliable writable storage.
+Mount external storage before starting PiShelf. Docker stores reading state in the external named volume `piself`, mounted at `/data`. `DATA_DIR` is no longer used by Compose.
 
-### 3. Start PiShelf
+### 3. Create the data volume and start PiShelf
+
+Build the image, create the external volume, and set its ownership. Replace `1000:1000` below with the `PISHELF_UID:PISHELF_GID` values from your `.env` if different:
 
 ```sh
+docker compose build
+docker volume create piself
+docker run --rm --user 0 --entrypoint sh -v piself:/data pishelf:local \
+  -c 'chown 1000:1000 /data && chmod 700 /data'
 docker compose up -d --build
 docker compose ps
 ```
 
 The first build needs internet access to download the base image. PiShelf serves its reader assets locally after that.
+
+If upgrading from a bind-mounted data folder, migrate existing reading state before starting; see [Docker volume setup](DOCKER.md). In Dockhand, run the volume setup commands on the Docker host before redeploying the stack. Set `PISHELF_PORT=8098` in any existing `.env` or Dockhand environment; an existing value overrides the default.
 
 ### 4. Open your library
 
@@ -116,9 +122,9 @@ Find your Pi's local IP address:
 hostname -I
 ```
 
-In a browser on the same network, enter `http://YOUR_PI_IP:8080`, replacing `YOUR_PI_IP` with that address. If you changed `PISHELF_PORT`, use the new port.
+In a browser on the same network, enter `http://YOUR_PI_IP:8098`, replacing `YOUR_PI_IP` with that address. If you changed `PISHELF_PORT`, use the new port.
 
-If the Pi's hostname is `raspberrypi` and your network supports `.local` names, you can also use [raspberrypi.local:8080](http://raspberrypi.local:8080).
+If the Pi's hostname is `raspberrypi` and your network supports `.local` names, you can also use [raspberrypi.local:8098](http://raspberrypi.local:8098).
 
 ## Add your magazines
 
@@ -229,10 +235,10 @@ PiShelf keeps content outside the container so it survives rebuilds and containe
 | --- | --- |
 | `MAGAZINE_DIR` | Your PDF collection and category folders |
 | `MAGAZINE_DIR/.pishelf-trash/` | Recoverable deleted PDFs |
-| `DATA_DIR/progress.sqlite3` | Reading progress, favourites, bookmarks, and Trash records |
+| `piself` volume: `/data/progress.sqlite3` | Reading progress, favourites, bookmarks, and Trash records |
 | `.env` | Your Docker folder, port, and user configuration |
 
-Back up **both storage folders**, including hidden files, and keep a copy of `.env`.
+Back up **the magazine folder and the `piself` volume**, including hidden files, and keep a copy of `.env`. See [Docker volume setup](DOCKER.md) for a volume backup command.
 
 For a consistent file-level backup, stop PiShelf before copying its files:
 
@@ -240,7 +246,7 @@ For a consistent file-level backup, stop PiShelf before copying its files:
 docker compose stop
 ```
 
-Copy your configured magazine and data folders to your backup destination, then restart:
+Copy your magazine folder and back up the `piself` volume to your backup destination, then restart:
 
 ```sh
 docker compose start
@@ -261,13 +267,13 @@ Run these commands from the app folder:
 | Stop without removing the container | `docker compose stop` |
 | Stop and remove the container | `docker compose down` |
 
-`docker compose down` does not remove your bind-mounted magazine or data folders.
+`docker compose down` does not remove your bind-mounted magazine folder or the external `piself` volume.
 
 To update:
 
 1. Back up your collection and data.
 2. Replace application files with the new version.
-3. Preserve your `.env`, magazine folder, and data folder.
+3. Preserve your `.env`, magazine folder, and `piself` volume.
 4. Run `docker compose up -d --build`.
 
 The supplied configuration uses a non-root process, a read-only application filesystem, persistent writable storage mounts, automatic restart, bounded logs, and an HTTP health check. A separate database server is not required.
@@ -277,12 +283,12 @@ The supplied configuration uses a non-root process, a read-only application file
 | Problem | What to check |
 | --- | --- |
 | The website will not open | Run `docker compose ps`, inspect logs, and confirm the Pi's IP and configured port. The viewing device must be able to reach the Pi. |
-| Port 8080 is already in use | Set a different `PISHELF_PORT` in `.env`, then run `docker compose up -d`. |
+| Port 8098 is already in use | Set a different `PISHELF_PORT` in `.env`, then run `docker compose up -d`. |
 | The library is empty | Check `MAGAZINE_DIR`, confirm the drive is mounted, and make sure files end in `.pdf`. Hidden directories are excluded. |
 | New files are missing | Return to the library and press refresh. Check the refresh setting and wait for file copying to finish. |
-| Progress will not save | Check write permissions on `DATA_DIR` and available disk space. Look for a failed-save message in the reader. |
+| Progress will not save | Check ownership of the `piself` volume and available disk space; see [Docker volume setup](DOCKER.md). Look for a failed-save message in the reader. |
 | Delete or restore fails | Check write access to the magazine folder. A restore also fails if another file occupies the original path. |
-| The container reports permission errors | Match `PISHELF_UID` / `PISHELF_GID` to the account that can access both host folders. Check ownership and permissions. |
+| The container reports permission errors | Match `PISHELF_UID` / `PISHELF_GID` to the account that can access the magazine folder. Ensure the `piself` volume has the same UID/GID. |
 | Scrolling is slow | Select Economy quality, reduce zoom, or use single-page mode. Large image-heavy PDFs need more browser resources. |
 | A PDF looks wrong or will not render | Try **Open PDF**. The file may be damaged or use fonts or image formats that need native viewer support. |
 | Another device changes my reading position | PiShelf currently uses one shared household reading profile. Separate user accounts are not implemented. |
