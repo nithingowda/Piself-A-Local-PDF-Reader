@@ -1,0 +1,18 @@
+[Unit]
+Description=PiShelf magazine reader
+After=network.target
+
+[Service]
+Type=simple
+User=YOUR_USER
+WorkingDirectory=/home/YOUR_USER/pi-magazine-reader
+ExecStart=/usr/bin/python3 /home/YOUR_USER/pi-magazine-reader/server.py
+Restart=on-failure
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/YOUR_USER/pi-magazine-reader/data /home/YOUR_USER/pi-magazine-reader/magazines
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
