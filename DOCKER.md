@@ -1,6 +1,6 @@
 # Docker volume setup
 
-PiShelf stores its SQLite database in the external Docker volume `piself`, mounted at `/data`. PDFs remain in the host directory configured by `MAGAZINE_DIR`. The default URL is `http://YOUR_PI_IP:8098`; the app still listens on port 8080 inside the container.
+PiShelf stores its SQLite database in the Docker volume `piself`, mounted at `/data`. PDFs remain in the host directory configured by `MAGAZINE_DIR`. The default URL is `http://YOUR_PI_IP:8098`; the app still listens on port 8080 inside the container.
 
 ## First installation or Dockhand redeployment
 
@@ -8,16 +8,13 @@ Run on the Docker host from the repository folder:
 
 ```sh
 docker compose build
-docker volume create piself
-docker run --rm --user 0 --entrypoint sh -v piself:/data pishelf:local \
-  -c 'chown 1000:1000 /data && chmod 700 /data'
 docker compose up -d
 docker compose logs --tail=30 pishelf
 ```
 
-Replace `1000:1000` with your configured `PISHELF_UID:PISHELF_GID` if different. Set `PISHELF_PORT=8098` in an existing `.env` or Dockhand environment, since an existing setting overrides Compose's default. In Dockhand, update the stack from GitHub and redeploy after preparing the volume on the same Docker host.
+The `pishelf-init` service prepares volume ownership using your configured `PISHELF_UID` and `PISHELF_GID`, then exits successfully. Compose waits for it before starting the non-root app. Set `PISHELF_PORT=8098` in an existing `.env` or Dockhand environment, since an existing setting overrides Compose's default. In Dockhand, update the stack from GitHub and redeploy to run the permission setup step and start the app.
 
-The volume is external: create it before deploying. It survives stack removal. Each independent PiShelf installation should use its own volume.
+Compose creates the named volume automatically and can reuse an existing `piself` volume. It survives ordinary `docker compose down`; `docker compose down -v` deletes it. Each independent PiShelf installation should use its own volume.
 
 ## Migrate an existing data folder
 
@@ -25,7 +22,7 @@ A new volume starts with empty reading history. To retain progress, favourites, 
 
 1. Stop the existing PiShelf container in Dockhand, or run `docker compose stop pishelf` from its current project.
 2. Back up the old data folder and magazine folder, including hidden files.
-3. Build the updated image and create the volume using the commands above, but do not start the app yet.
+3. Run `docker compose build` and `docker volume create piself`, but do not start the app yet.
 4. Replace `/absolute/path/to/old/data` below with the old host folder mounted at `/data`. Copy into an empty volume:
 
 ```sh
@@ -54,14 +51,14 @@ Use a new backup filename each time to preserve earlier backups. Also back up th
 
 ## Database permission errors
 
-For `sqlite3.OperationalError: unable to open database file`, stop PiShelf and repair ownership on this dedicated volume:
+For `sqlite3.OperationalError: unable to open database file`, update to this Compose configuration and recreate the services so the initializer runs again:
 
 ```sh
-docker compose stop pishelf
-docker run --rm --user 0 --entrypoint sh -v piself:/data pishelf:local \
-  -c 'chown -R 1000:1000 /data && chmod u+rwx /data && find /data -maxdepth 1 -type f -name "progress.sqlite3*" -exec chmod u+rw {} +'
-docker compose up -d
-docker compose logs --tail=30 pishelf
+docker compose down
+docker compose up -d --build
+docker compose logs --tail=50 pishelf-init pishelf
 ```
 
-Match the ownership to the configured UID/GID. Check available disk space if the error persists.
+Do not add `-v` to `down`: that removes the data volume. Successful exit of `pishelf-init` is expected. It adjusts the data directory and SQLite files without deleting reading state. It does not change permissions on your PDF collection.
+
+If the initializer fails, inspect its logs and available disk space. Confirm the deployed stack mounts `piself:/data` and that `PISHELF_UID` and `PISHELF_GID` are valid numeric IDs. The initializer requires ownership-changing capabilities on the Docker host.

@@ -95,24 +95,20 @@ The configured user must be able to read and write the magazine folder and the `
 MAGAZINE_DIR=/media/pi/SSD/Magazines
 ```
 
-Mount external storage before starting PiShelf. Docker stores reading state in the external named volume `piself`, mounted at `/data`. `DATA_DIR` is no longer used by Compose.
+Mount external storage before starting PiShelf. Docker stores reading state in the named volume `piself`, mounted at `/data`. `DATA_DIR` is no longer used by Compose.
 
 ### 3. Create the data volume and start PiShelf
 
-Build the image, create the external volume, and set its ownership. Replace `1000:1000` below with the `PISHELF_UID:PISHELF_GID` values from your `.env` if different:
+Compose creates the `piself` volume and runs `pishelf-init` to prepare its ownership using `PISHELF_UID` and `PISHELF_GID`. The app starts only after this step succeeds:
 
 ```sh
-docker compose build
-docker volume create piself
-docker run --rm --user 0 --entrypoint sh -v piself:/data pishelf:local \
-  -c 'chown 1000:1000 /data && chmod 700 /data'
 docker compose up -d --build
 docker compose ps
 ```
 
 The first build needs internet access to download the base image. PiShelf serves its reader assets locally after that.
 
-If upgrading from a bind-mounted data folder, migrate existing reading state before starting; see [Docker volume setup](DOCKER.md). In Dockhand, run the volume setup commands on the Docker host before redeploying the stack. Set `PISHELF_PORT=8098` in any existing `.env` or Dockhand environment; an existing value overrides the default.
+If upgrading from a bind-mounted data folder, migrate existing reading state before starting; see [Docker volume setup](DOCKER.md). In Dockhand, refresh the stack from GitHub and redeploy; the permission setup step runs before the app. Set `PISHELF_PORT=8098` in any existing `.env` or Dockhand environment; an existing value overrides the default.
 
 ### 4. Open your library
 
@@ -267,7 +263,7 @@ Run these commands from the app folder:
 | Stop without removing the container | `docker compose stop` |
 | Stop and remove the container | `docker compose down` |
 
-`docker compose down` does not remove your bind-mounted magazine folder or the external `piself` volume.
+`docker compose down` does not remove your bind-mounted magazine folder or the `piself` volume (unless you use `down -v`).
 
 To update:
 
