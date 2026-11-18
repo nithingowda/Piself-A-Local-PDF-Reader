@@ -1,0 +1,2 @@
+# PiShelf requires Python 3.9 or later.
+# No third-party Python packages are required; server.py uses the standard library.
