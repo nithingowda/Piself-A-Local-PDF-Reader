@@ -40,7 +40,7 @@ services:
     ports:
       - "${PISHELF_PORT:-8098}:8080"
     volumes:
-      - "${MAGAZINE_DIR:-./magazines}:/magazines"
+      - "/mnt/Nithin-Nas/nextcloud/data/nithingowda/files/Magazines/:/magazines"
       - "piself:/data"
     read_only: true
     tmpfs:
