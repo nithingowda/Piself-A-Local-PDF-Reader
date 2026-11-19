@@ -124,9 +124,12 @@ async function renderPages(){
    const pdfPage=await documentPDF.getPage(n);
    if(g!==generation||epoch!==layoutEpoch||!slot.isConnected)continue;
    sizeSlot(slot,n);
-   const cssWidth=parseFloat(slot.style.width);
+   // Render at a fixed high resolution once, independent of the current zoom.
+   // This makes repeated pinch-in / pinch-out instant without another PDF render.
+   // Cap canvas area to avoid iOS Safari memory crashes on long magazines.
    const viewport=pdfPage.getViewport({scale:1,rotation});
-   const scale=Math.min(cssWidth*Math.min(devicePixelRatio||1,2)/viewport.width,Math.sqrt(6000000/(viewport.width*viewport.height)));
+   const targetWidth=Math.max(2400,Math.min(3200,Math.ceil(pageWidth()*3)));
+   const scale=Math.min(targetWidth/viewport.width,Math.sqrt(8000000/(viewport.width*viewport.height)));
    const view=pdfPage.getViewport({scale,rotation});
    const canvas=document.createElement('canvas');
    canvas.width=Math.max(1,Math.ceil(view.width));canvas.height=Math.max(1,Math.ceil(view.height));
@@ -279,7 +282,7 @@ async function finishPinch(cancelled=false){
  area.scrollLeft+=after.left+state.fx*after.width-state.x;
  area.scrollTop+=after.top+state.fy*after.height-state.y;
  updateTouchMode();updatePageUI();remember();
- scheduleZoomSharpen();
+ // The original canvas already contains high-resolution pixels; no second render.
 }
 $('page-area').addEventListener('touchstart',e=>{
  if(e.touches.length!==2||!prefs.gestures||!documentPDF||!layoutReady)return;
