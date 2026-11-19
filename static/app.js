@@ -184,7 +184,7 @@ async function renderPages(){
      });
      if(g!==generation||epoch!==layoutEpoch||!slot.isConnected)continue;
      slot.replaceChildren(img);slot.dataset.ready='yes';slot.dataset.queued='no';
-     renderedSlots.add(slot);trimCanvases();$('reader-status').textContent='';
+     renderedSlots.add(slot);trimCanvases();if(n===page)preloadMagazineNeighbors();$('reader-status').textContent='';
      continue;
     }catch(error){img.src='';}
    }
@@ -214,13 +214,37 @@ async function renderPages(){
  }finally{renderBusy=false;if(renderQueue.length)renderPages();}
 }
 /** trim Canvases: Manage PDF page rendering and canvas lifecycle. */
-function trimCanvases(){if(pinch||Math.abs(zoom-cssZoomBase)>.01)return;const area=$('page-area').getBoundingClientRect();for(const slot of renderedSlots){const rect=slot.getBoundingClientRect();if(Math.abs(+slot.dataset.page-page)>2&&(rect.bottom<area.top||rect.top>area.bottom)){for(const c of slot.querySelectorAll('canvas')){c.width=0;c.height=0;}slot.replaceChildren(el('span','page-placeholder','Page '+slot.dataset.page));slot.dataset.ready='no';renderedSlots.delete(slot);}}}
+// Keep only nearby magazine images decoded in Safari; page navigation preloads
+// the next two pages and the previous page without allocating large canvases.
+let imagePrefetches=new Map();
+function preloadMagazineNeighbors(){
+ if(!documentPDF||!current?.id)return;
+ const width=zoom>1.6?2800:zoom>0.85?1600:960;
+ const wanted=new Set([page-1,page+1,page+2].filter(n=>n>=1&&n<=documentPDF.numPages));
+ for(const [n,img] of imagePrefetches){
+  if(!wanted.has(n)){img.onload=null;img.onerror=null;img.src='';imagePrefetches.delete(n);}
+ }
+ for(const n of wanted){
+  if(imagePrefetches.has(n))continue;
+  const img=new Image();
+  img.decoding='async';
+  img.onload=()=>{if(imagePrefetches.get(n)===img){img.onload=null;img.onerror=null;}};
+  img.onerror=()=>{if(imagePrefetches.get(n)===img)imagePrefetches.delete(n);};
+  imagePrefetches.set(n,img);
+  img.src='/api/page-image/'+encodeURIComponent(current.id)+'/'+n+'?width='+width;
+ }
+}
+function clearMagazinePrefetches(){
+ for(const img of imagePrefetches.values()){img.onload=null;img.onerror=null;img.src='';}
+ imagePrefetches.clear();
+}
+function trimCanvases(){if(pinch||Math.abs(zoom-cssZoomBase)>.01)return;const area=$('page-area').getBoundingClientRect();for(const slot of renderedSlots){const rect=slot.getBoundingClientRect();if(Math.abs(+slot.dataset.page-page)>2&&(rect.bottom<area.top||rect.top>area.bottom)){for(const c of slot.querySelectorAll('canvas')){c.width=0;c.height=0;}for(const img of slot.querySelectorAll('img')){img.src='';}slot.replaceChildren(el('span','page-placeholder','Page '+slot.dataset.page));slot.dataset.ready='no';renderedSlots.delete(slot);}}}
 /** track Scroll: Keep the visible PDF page and navigation state in sync. */
 function trackScroll(){
  if(pinch||performance.now()<pinchScrollLockUntil||!layoutReady||!documentPDF||$('view-mode').value!=='scroll'||!slots.length)return;
  const area=$('page-area'),target=area.scrollTop+Math.min(area.clientHeight*.35,240);let low=0,high=slots.length-1;
  while(low<high){const mid=Math.ceil((low+high)/2);if(slots[mid].offsetTop<=target)low=mid;else high=mid-1;}
- const n=+slots[low].dataset.page;if(n!==page){page=n;updatePageUI();}
+ const n=+slots[low].dataset.page;if(n!==page){page=n;updatePageUI();preloadMagazineNeighbors();}
  for(let i=Math.max(0,low-2);i<slots.length&&slots[i].offsetTop<area.scrollTop+area.clientHeight+300;i++)enqueue(slots[i]);trimCanvases();
  clearTimeout(scrollTimer);scrollTimer=setTimeout(remember,750);
 }
@@ -242,7 +266,7 @@ async function pdfEngine(){
 }
 /** open Magazine: Support the PiShelf reader or library interface. */
 async function openMagazine(item,start){
- current=item;const g=++generation;const reading=saved[item.id]||{};
+ clearMagazinePrefetches();current=item;const g=++generation;const reading=saved[item.id]||{};
  zoom=1;rotation=reading.rotation||0;dimensions.clear();
  $('reader').hidden=false;document.body.classList.add('reader-open');setReaderFocus(true);
  $('library').hidden=true;$('reader-title').textContent=item.title;
@@ -268,9 +292,9 @@ async function openMagazine(item,start){
  }catch(e){if(g===generation)$('reader-status').textContent='Could not open PDF: '+e.message;}
 }
 /** move: Support the PiShelf reader or library interface. */
-function move(n){if(!documentPDF)return;remember();page=Math.max(1,Math.min(documentPDF.numPages,n));updatePageUI();if($('view-mode').value==='single')rebuild();else{const slot=slots[page-1];enqueue(slot);$('page-area').scrollTo({top:slot.offsetTop-20,behavior:prefs.motion&&!matchMedia('(prefers-reduced-motion: reduce)').matches?'smooth':'auto'});clearTimeout(scrollTimer);scrollTimer=setTimeout(remember,500);}}
+function move(n){if(!documentPDF)return;remember();page=Math.max(1,Math.min(documentPDF.numPages,n));updatePageUI();preloadMagazineNeighbors();if($('view-mode').value==='single')rebuild();else{const slot=slots[page-1];enqueue(slot);$('page-area').scrollTo({top:slot.offsetTop-20,behavior:prefs.motion&&!matchMedia('(prefers-reduced-motion: reduce)').matches?'smooth':'auto'});clearTimeout(scrollTimer);scrollTimer=setTimeout(remember,500);}}
 /** close Reader: Support the PiShelf reader or library interface. */
-async function closeReader(){resetPinch();clearTimeout(scrollTimer);remember();++generation;++layoutEpoch;layoutReady=false;pageObserver?.disconnect();renderQueue=[];const oldDoc=documentPDF;documentPDF=null;if(oldDoc?.destroy)oldDoc.destroy().catch(()=>{});$('reader').hidden=true;document.body.classList.remove('reader-open');$('library').hidden=false;$('pages').replaceChildren();slots=[];renderedSlots.clear();if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});drawLibrary();refresh(true);}
+async function closeReader(){clearMagazinePrefetches();resetPinch();clearTimeout(scrollTimer);remember();++generation;++layoutEpoch;layoutReady=false;pageObserver?.disconnect();renderQueue=[];const oldDoc=documentPDF;documentPDF=null;if(oldDoc?.destroy)oldDoc.destroy().catch(()=>{});$('reader').hidden=true;document.body.classList.remove('reader-open');$('library').hidden=false;$('pages').replaceChildren();slots=[];renderedSlots.clear();if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});drawLibrary();refresh(true);}
 $('back').onclick=closeReader;$('prev').onclick=()=>move(page-1);$('next').onclick=()=>move(page+1);$('page-number').onchange=e=>move(parseInt(e.target.value)||1);
 $('minus').onclick=()=>{if(!documentPDF)return;zoom=Math.max(fitEntirePageZoom(page),zoom-.25);rebuild();};$('plus').onclick=()=>{if(!documentPDF)return;zoom=Math.min(Math.max(3,zoom),zoom+.25);rebuild();};$('fit').onclick=()=>{if(!documentPDF)return;zoom=fitEntirePageZoom(page);rebuild();};$('fit-page').onclick=()=>{if(!documentPDF)return;zoom=fitEntirePageZoom(page);rebuild();};$('rotate').onclick=()=>{rotation=(rotation+90)%360;rebuild();};$('view-mode').onchange=()=>{prefs.mode=$('view-mode').value;storePrefs();rebuild();};
 $('bookmark').onclick=()=>{if(!documentPDF)return;const marks=saved[current.id]?.bookmarks||[];persist(current.id,{bookmarks:marks.includes(page)?marks.filter(n=>n!==page):[...marks,page].sort((a,b)=>a-b)});updatePageUI();updateBookmarks();};$('bookmarks').onchange=e=>{if(e.target.value)move(+e.target.value);e.target.value='';};
