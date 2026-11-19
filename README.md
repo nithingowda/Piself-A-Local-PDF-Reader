@@ -8,7 +8,7 @@ Built for self-hosting on your home network, with local storage and a lightweigh
 
 ## Library and reading upgrade
 
-See [the library and reader guide](FEATURES.md) for persistent cover caching, publication/month grouping, tags, category creation, PDF renaming, focused reading, AMOLED/night themes, Settings backup/restore, and separate magazine/newspaper paths.
+See [the library and reader guide](FEATURES.md) for persistent covers, reading collections, gestures, PDF uploads, permanent deletion, publication/month grouping, tags, category creation, renaming, focused reading, AMOLED/night themes, backups, and separate source paths.
 
 ## Features
 
@@ -171,7 +171,7 @@ The reader toolbar provides:
 - Zoom in, zoom out, and fit width.
 - Clockwise page rotation and fullscreen.
 - Page bookmarks and a bookmark jump menu.
-- **Open PDF** for your browser's native PDF viewer.
+- Swipe page navigation and double-tap zoom; reading settings remembered per issue.
 
 Reading position is saved at the **page level**, not the exact scroll position within a page. Nearby pages render on demand, and distant page images are released to reduce memory use.
 
@@ -189,7 +189,7 @@ Use the **•••** button beside an issue's title to:
 - Download the original PDF.
 - Mark the issue as finished.
 - Clear its reading progress.
-- Delete it from the library by moving it to Trash.
+- Move it to recoverable Trash, or permanently delete the PDF from storage after confirmation.
 
 Opening from the beginning does not clear an existing “finished” flag. Use **Clear reading progress** when you want to reset an issue to Unread.
 
@@ -201,7 +201,7 @@ This resets page positions and finished status. It **keeps your PDFs, favourites
 
 ### Delete and restore
 
-**Delete magazine** moves a PDF into the hidden `.pishelf-trash` directory inside your magazine folder. It does not permanently erase the file.
+**Move to Trash** moves a PDF into the hidden `.pishelf-trash` directory inside its source folder. **Delete permanently from storage** removes the actual PDF after confirmation and cannot be undone.
 
 To restore it:
 
@@ -211,7 +211,7 @@ To restore it:
 
 The file returns to its original folder with its reading record retained. PiShelf refuses to overwrite a file already at that location; move or rename the conflicting file first.
 
-Trashed files still use disk space. There is no permanent-delete button in the app. Keep the data folder: it contains the original filenames and paths needed for restoration.
+Trashed files still use disk space. Use **Delete permanently** in Settings → Trash to remove a trashed PDF from storage. Keep the data folder: it contains the original filenames and paths needed for restoration.
 
 ## Settings
 
@@ -291,7 +291,7 @@ The supplied configuration uses a non-root process, a read-only application file
 | Delete or restore fails | Check write access to the magazine folder. A restore also fails if another file occupies the original path. |
 | The container reports permission errors | Match `PISHELF_UID` / `PISHELF_GID` to the account that can access the magazine folder. Ensure the `piself` volume has the same UID/GID. |
 | Scrolling is slow | Select Economy quality, reduce zoom, or use single-page mode. Large image-heavy PDFs need more browser resources. |
-| A PDF looks wrong or will not render | Try **Open PDF**. The file may be damaged or use fonts or image formats that need native viewer support. |
+| A PDF looks wrong or will not render | Download the PDF from its issue menu and try a native PDF reader. The file may be damaged or use fonts or image formats that need native viewer support. |
 | Another device changes my reading position | PiShelf currently uses one shared household reading profile. Separate user accounts are not implemented. |
 
 ## Run without Docker
@@ -332,7 +332,7 @@ Other current limits:
 - **PDF only:** EPUB, CBZ, and CBR are not supported.
 - **One shared profile:** no separate accounts or reading histories.
 - **Folder-based organisation:** no automatic subject or language detection.
-- **Canvas reader:** use **Open PDF** for text selection, in-document search, printing, or native accessibility support.
+- **Canvas reader:** download the PDF from its issue menu and use a native reader for text selection, in-document search, printing, or native accessibility support.
 - **Browser-dependent performance:** complex or scanned PDFs may load slowly on older devices.
 - **Password-protected PDFs:** passwords are handled by the browser and are not stored by PiShelf.
 

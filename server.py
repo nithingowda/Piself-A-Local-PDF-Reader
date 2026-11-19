@@ -15,7 +15,7 @@ import uuid
 import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import unquote, urlsplit, quote
+from urllib.parse import unquote, urlsplit, quote, parse_qs
 
 BASE = Path(__file__).resolve().parent
 
@@ -39,11 +39,13 @@ class Handler(BaseHTTPRequestHandler):
             if time.monotonic() - self.server.scan_time < 10:
                 return self.server.scan_items
             items = []
+            categories = []
             with sqlite3.connect(self.server.state_db) as db:
                 metadata = {key: json.loads(raw) for key, raw in db.execute('SELECT id,value FROM metadata')}
             for source, root in self.server.roots.items():
                 for folder, dirs, files in os.walk(root, followlinks=False):
                     dirs[:] = [d for d in dirs if not d.startswith('.') and not (Path(folder)/d).is_symlink()]
+                    categories.append(dict(source=source,path=Path(folder).relative_to(root).as_posix()))
                     for name in files:
                         path = Path(folder)/name
                         if name.startswith('.') or path.suffix.lower() != '.pdf' or path.is_symlink(): continue
@@ -60,16 +62,55 @@ class Handler(BaseHTTPRequestHandler):
                             category=path.parent.relative_to(root).as_posix(), size=info.st_size,
                             modified=info.st_mtime, coverKey=cover_key, **inferred))
             self.server.scan_items = sorted(items, key=lambda i:(i['source'],i['path']))
+            self.server.scan_categories = categories
             self.server.scan_time = time.monotonic()
             return self.server.scan_items
 
     def categories(self):
-        result = []
-        for source, root in self.server.roots.items():
-            for folder, dirs, _ in os.walk(root, followlinks=False):
-                dirs[:] = [d for d in dirs if not d.startswith('.') and not (Path(folder)/d).is_symlink()]
-                result.append(dict(source=source, path=Path(folder).relative_to(root).as_posix()))
-        return result
+        self.library_items()
+        return self.server.scan_categories
+
+    def upload_pdf(self):
+        params=parse_qs(urlsplit(self.path).query)
+        source=params.get('source',['magazines'])[0]
+        category=params.get('category',['.'])[0]
+        filename=params.get('filename',[''])[0]
+        root=self.server.roots.get(source)
+        if root is None: raise APIError(400,'Unknown library source.')
+        if not filename.lower().endswith('.pdf') or '/' in filename or '\\' in filename:
+            raise APIError(400,'Choose a PDF filename without slashes.')
+        safe_relative(filename)
+        if category != '.': safe_relative(category)
+        destination=checked_path(root,(Path(category)/filename).as_posix())
+        length=int(self.headers.get('Content-Length','0'))
+        if not 0 < length <= 512*1024*1024: raise APIError(413,'Upload one PDF up to 512 MiB.')
+        if self.headers.get_content_type() != 'application/pdf': raise APIError(400,'Expected a PDF upload.')
+        # A dedicated upload lock serializes large writes without blocking reading-state saves.
+        with self.server.upload_lock:
+            if destination.exists(): raise APIError(409,'A PDF with this filename already exists. Rename it before uploading.')
+            destination.parent.mkdir(parents=True,exist_ok=True)
+            temporary=destination.parent/('.pishelf-upload-'+uuid.uuid4().hex)
+            old_timeout=self.connection.gettimeout()
+            self.connection.settimeout(60)
+            try:
+                with temporary.open('xb') as output:
+                    remaining=length
+                    first=True
+                    while remaining:
+                        chunk=self.rfile.read(min(256*1024,remaining))
+                        if not chunk: raise APIError(400,'Upload interrupted. No PDF was added.')
+                        if first and b'%PDF-' not in chunk[:1024]: raise APIError(400,'This file does not have a PDF header.')
+                        first=False
+                        output.write(chunk);remaining-=len(chunk)
+                with self.server.mutation_lock:
+                    # Exclusive move refuses to replace a file created during the upload.
+                    try: move_exclusive(temporary,destination)
+                    except FileExistsError: raise APIError(409,'A PDF with this filename already exists.')
+                    self.server.scan_time=float('-inf')
+            finally:
+                self.connection.settimeout(old_timeout)
+                temporary.unlink(missing_ok=True)
+        self.json_response({'ok':True,'id':item_id(source,destination.relative_to(root).as_posix())},201)
 
     def accept_origin(self):
         origin = self.headers.get('Origin')
@@ -107,6 +148,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         try:
             self.accept_origin()
+            if urlsplit(self.path).path == "/api/upload":
+                self.upload_pdf(); return
             if urlsplit(self.path).path.startswith('/api/covers/'):
                 self.cache_cover(); return
             length = int(self.headers.get('Content-Length', '0'))
@@ -118,14 +161,63 @@ class Handler(BaseHTTPRequestHandler):
             with self.server.mutation_lock:
                 with sqlite3.connect(self.server.state_db) as db:
                     result = self.mutate(data, db)
-            self.server.scan_time = float('-inf')
+            if urlsplit(self.path).path not in ('/api/progress','/api/progress/clear','/api/collections'):
+                self.server.scan_time = float('-inf')
             self.json_response(result)
         except APIError as e: self.json_response({'error':e.message}, e.status)
         except (ValueError, KeyError, TypeError): self.json_response({'error':'Invalid request.'}, 400)
+        except (BrokenPipeError, ConnectionResetError): pass
         except (OSError, sqlite3.Error): self.json_response({'error':'Could not write changes. Check folder permissions and free space.'}, 500)
 
     def mutate(self, data, db):
         route = urlsplit(self.path).path
+        if route == '/api/collections':
+            action=data.get('action','create')
+            if action not in ('create','rename','delete'): raise ValueError()
+            key=data.get('id')
+            if action != 'create':
+                if not isinstance(key,str) or not re.fullmatch('[a-f0-9]{32}',key): raise ValueError()
+                if not db.execute('SELECT 1 FROM collections WHERE id=?',(key,)).fetchone(): raise APIError(404,'Collection not found.')
+            if action == 'delete':
+                db.execute('DELETE FROM collection_items WHERE collection_id=?',(key,))
+                db.execute('DELETE FROM collections WHERE id=?',(key,))
+                return {'ok':True}
+            name=collection_name(data.get('name'))
+            existing=db.execute('SELECT id FROM collections WHERE name=? COLLATE NOCASE',(name,)).fetchone()
+            if existing and existing[0] != key: raise APIError(409,'A collection with this name already exists.')
+            if action == 'create':
+                if db.execute('SELECT COUNT(*) FROM collections').fetchone()[0]>=200: raise APIError(400,'Limit of 200 collections reached.')
+                key=uuid.uuid4().hex
+                db.execute('INSERT INTO collections VALUES (?,?)',(key,name))
+            else: db.execute('UPDATE collections SET name=? WHERE id=?',(name,key))
+            return {'ok':True,'id':key}
+        if route == '/api/delete':
+            item=next((i for i in self.library_items() if i['id']==data.get('id')),None)
+            if not item: raise APIError(404,'Issue no longer exists.')
+            if data.get('confirm') is not True: raise APIError(400,'Permanent deletion requires confirmation.')
+            file=checked_path(self.server.roots[item['source']],item['path'])
+            file.unlink()
+            remove_reading_state(db,item['id'])
+            with self.server.cover_lock:
+                cover=self.server.cover_dir/(item['coverKey']+'.jpg')
+                try:
+                    if cover.exists():
+                        size=cover.stat().st_size;cover.unlink();self.server.cover_bytes=max(0,self.server.cover_bytes-size)
+                except OSError: pass  # An expendable thumbnail must not roll back reading-state cleanup.
+            return {'ok':True}
+        if route == '/api/trash/delete':
+            token=data.get('token')
+            if not isinstance(token,str) or not re.fullmatch('[a-f0-9]{32}',token) or data.get('confirm') is not True: raise ValueError()
+            row=db.execute('SELECT path,source FROM trash WHERE token=?',(token,)).fetchone()
+            if not row: raise APIError(404,'Trash item not found.')
+            root=self.server.roots.get(row[1])
+            if root is None: raise APIError(409,'Library source is not configured.')
+            file=root/'.pishelf-trash'/(token+'.pdf')
+            if file.parent.is_symlink() or file.is_symlink() or not file.resolve().is_relative_to(root): raise APIError(403,'Invalid trash path.')
+            file.unlink(missing_ok=True)
+            db.execute('DELETE FROM trash WHERE token=?',(token,))
+            if not checked_path(root,row[0]).exists(): remove_reading_state(db,item_id(row[1],row[0]))
+            return {'ok':True}
         if route == '/api/categories':
             source = data.get('source','magazines')
             root = self.server.roots.get(source)
@@ -138,6 +230,11 @@ class Handler(BaseHTTPRequestHandler):
             item = next((i for i in self.library_items() if i['id']==data.get('id')), None)
             if not item: raise APIError(404, 'Issue not found. Refresh your library.')
             metadata = validate_metadata({**{k:item[k] for k in ('series','issueDate','tags')}, **{k:data[k] for k in ('series','issueDate','tags') if k in data}})
+            collection_ids=data.get('collectionIds')
+            if collection_ids is not None:
+                if not isinstance(collection_ids,list) or len(collection_ids)>200 or any(not isinstance(k,str) or not re.fullmatch('[a-f0-9]{32}',k) for k in collection_ids): raise ValueError()
+                allowed={r[0] for r in db.execute('SELECT id FROM collections')}
+                if set(collection_ids)-allowed: raise APIError(400,'A selected collection no longer exists.')
             filename = data.get('filename',Path(item['path']).name)
             if not isinstance(filename,str) or '/' in filename or '\\' in filename or not filename.lower().endswith('.pdf'):
                 raise APIError(400,'Use a PDF filename without slashes.')
@@ -162,7 +259,12 @@ class Handler(BaseHTTPRequestHandler):
                     if old: db.execute('INSERT INTO progress VALUES (?,?)',(new_id,old[0]))
                     db.execute('DELETE FROM progress WHERE id=?',(item['id'],))
                     db.execute('DELETE FROM metadata WHERE id=?',(item['id'],))
+                    db.execute('DELETE FROM collection_items WHERE item_id=?',(new_id,))
+                    db.execute('UPDATE collection_items SET item_id=? WHERE item_id=?',(new_id,item['id']))
                 db.execute('INSERT OR REPLACE INTO metadata VALUES (?,?)',(new_id,json.dumps(metadata)))
+                if collection_ids is not None:
+                    db.execute('DELETE FROM collection_items WHERE item_id=?',(new_id,))
+                    db.executemany('INSERT INTO collection_items VALUES (?,?)',[(k,new_id) for k in set(collection_ids)])
                 db.commit()
             except Exception:
                 if moved: destination.rename(source)
@@ -182,6 +284,13 @@ class Handler(BaseHTTPRequestHandler):
             for key,value in metadata.items():
                 if not re.fullmatch('[a-f0-9]{20}',key): raise ValueError()
                 validate_metadata(value)
+            collections=data.get('collections',[])
+            validate_collections(collections)
+            collections=[{**c,'name':collection_name(c['name'])} for c in collections]
+            # Prevent an imported name from silently replacing an unrelated collection.
+            for collection in collections:
+                row=db.execute('SELECT id FROM collections WHERE name=? COLLATE NOCASE',(collection['name'],)).fetchone()
+                if row and row[0] != collection['id']: raise APIError(409,'A collection name conflicts with this backup. Rename it before restoring.')
             folders=[]
             for category in categories:
                 if not isinstance(category,dict): raise ValueError()
@@ -192,6 +301,10 @@ class Handler(BaseHTTPRequestHandler):
             for folder in folders: folder.mkdir(parents=True,exist_ok=True)
             for key,value in progress.items(): db.execute('INSERT OR REPLACE INTO progress VALUES (?,?)',(key,json.dumps(value)))
             for key,value in metadata.items(): db.execute('INSERT OR REPLACE INTO metadata VALUES (?,?)',(key,json.dumps(value)))
+            for collection in collections:
+                db.execute('INSERT INTO collections VALUES (?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name',(collection['id'],collection['name']))
+                db.execute('DELETE FROM collection_items WHERE collection_id=?',(collection['id'],))
+                db.executemany('INSERT INTO collection_items VALUES (?,?)',[(collection['id'],key) for key in set(collection['items'])])
             return {'ok':True,'progress':len(progress),'metadata':len(metadata)}
         if route == '/api/progress/clear':
             key = data.get('id')
@@ -205,7 +318,8 @@ class Handler(BaseHTTPRequestHandler):
         if route == '/api/progress':
             key=data.pop('id')
             if not isinstance(key,str) or not re.fullmatch('[a-f0-9]{20}',key): raise ValueError()
-            if not data or set(data)-{'page','total','favorite','bookmarks','completed'}: raise ValueError()
+            if not data or set(data)-{'page','total','favorite','bookmarks','completed','zoom','rotation','mode'}: raise ValueError()
+            validate_reader_options(data)
             for field in ('page','total'):
                 if field in data and (type(data[field]) is not int or not 1 <= data[field] <= 100000): raise ValueError()
             if 'page' in data and ('total' not in data or data['page'] > data['total']): raise ValueError()
@@ -285,12 +399,15 @@ class Handler(BaseHTTPRequestHandler):
                 if 'refresh=1' in urlsplit(self.path).query: self.server.scan_time=float('-inf')
                 self.json_response(self.library_items(),head=head); return
             if path == '/api/categories': self.json_response(self.categories(),head=head); return
+            if path == '/api/collections':
+                with sqlite3.connect(self.server.state_db) as db: self.json_response(read_collections(db),head=head)
+                return
             if path == '/api/backup':
                 with sqlite3.connect(self.server.state_db) as db:
                     db.execute('BEGIN')
                     value=dict(format='pishelf-backup',version=1,created=datetime.datetime.now(datetime.timezone.utc).isoformat(),
                         progress={k:json.loads(v) for k,v in db.execute('SELECT id,value FROM progress')},
-                        metadata={k:json.loads(v) for k,v in db.execute('SELECT id,value FROM metadata')},categories=self.categories())
+                        metadata={k:json.loads(v) for k,v in db.execute('SELECT id,value FROM metadata')},categories=self.categories(),collections=read_collections(db))
                 self.json_response(value,head=head); return
 
             if path in ('/api/progress','/api/trash'):
@@ -422,8 +539,44 @@ def validate_metadata(value):
     return dict(series=value.get('series','').strip(),issueDate=date,tags=list(dict.fromkeys(t.strip() for t in tags)))
 
 
+def validate_reader_options(value):
+    if 'zoom' in value and (type(value['zoom']) not in (int,float) or not .1<=value['zoom']<=3): raise ValueError()
+    if 'rotation' in value and (type(value['rotation']) is not int or value['rotation'] not in (0,90,180,270)): raise ValueError()
+    if 'mode' in value and value['mode'] not in ('scroll','single'): raise ValueError()
+
+
+def collection_name(value):
+    if not isinstance(value,str) or not value.strip() or len(value.strip())>80 or any(ord(c)<32 for c in value): raise ValueError()
+    return value.strip()
+
+
+def read_collections(db):
+    members={}
+    for collection_id,key in db.execute('SELECT collection_id,item_id FROM collection_items ORDER BY item_id'):
+        members.setdefault(collection_id,[]).append(key)
+    return [dict(id=key,name=name,items=members.get(key,[])) for key,name in db.execute('SELECT id,name FROM collections ORDER BY name COLLATE NOCASE')]
+
+
+def validate_collections(collections):
+    if not isinstance(collections,list) or len(collections)>200: raise ValueError()
+    ids=set();names=set()
+    for collection in collections:
+        if not isinstance(collection,dict): raise ValueError()
+        key=collection.get('id');name=collection_name(collection.get('name'));items=collection.get('items')
+        if not isinstance(key,str) or not re.fullmatch('[a-f0-9]{32}',key) or key in ids or name.casefold() in names: raise ValueError()
+        if not isinstance(items,list) or len(items)>20000 or any(not isinstance(k,str) or not re.fullmatch('[a-f0-9]{20}',k) for k in items): raise ValueError()
+        ids.add(key);names.add(name.casefold())
+
+
+def remove_reading_state(db,key):
+    db.execute('DELETE FROM progress WHERE id=?',(key,))
+    db.execute('DELETE FROM metadata WHERE id=?',(key,))
+    db.execute('DELETE FROM collection_items WHERE item_id=?',(key,))
+
+
 def validate_progress(value):
-    if not isinstance(value,dict) or set(value)-{'page','total','favorite','bookmarks','completed','lastRead'}: raise ValueError()
+    if not isinstance(value,dict) or set(value)-{'page','total','favorite','bookmarks','completed','lastRead','zoom','rotation','mode'}: raise ValueError()
+    validate_reader_options(value)
     for field in ('page','total'):
         if field in value and (type(value[field]) is not int or not 1<=value[field]<=100000): raise ValueError()
     if 'page' in value and ('total' not in value or value['page']>value['total']): raise ValueError()
@@ -450,8 +603,11 @@ def make_server(host,port,library,data,newspapers=None):
     if server.cover_dir.is_symlink(): raise ValueError('Cover cache cannot be a symlink.')
     server.cover_dir.mkdir(exist_ok=True)
     server.cover_bytes=sum(p.stat().st_size for p in server.cover_dir.glob('*.jpg'))
-    server.scan_lock=threading.Lock();server.cover_lock=threading.Lock();server.scan_time=float('-inf');server.scan_items=[]
+    server.scan_lock=threading.Lock();server.cover_lock=threading.Lock();server.scan_time=float('-inf');server.scan_items=[];server.scan_categories=[];server.upload_lock=threading.Lock()
     with sqlite3.connect(server.state_db) as db:
+        db.execute('CREATE TABLE IF NOT EXISTS collections (id TEXT PRIMARY KEY,name TEXT NOT NULL COLLATE NOCASE UNIQUE)')
+        db.execute('CREATE TABLE IF NOT EXISTS collection_items (collection_id TEXT NOT NULL,item_id TEXT NOT NULL,PRIMARY KEY(collection_id,item_id))')
+        db.execute('CREATE INDEX IF NOT EXISTS collection_item_lookup ON collection_items(item_id)')
         db.execute('CREATE TABLE IF NOT EXISTS metadata (id TEXT PRIMARY KEY,value TEXT NOT NULL)')
         db.execute('CREATE TABLE IF NOT EXISTS progress (id TEXT PRIMARY KEY,value TEXT NOT NULL)')
         db.execute('CREATE TABLE IF NOT EXISTS trash (token TEXT PRIMARY KEY,path TEXT NOT NULL,title TEXT NOT NULL,deleted REAL NOT NULL)')

@@ -31,7 +31,8 @@ class LibraryTests(unittest.TestCase):
         headers=headers or {}
         body=raw if raw is not None else json.dumps(data) if data is not None else None
         if data is not None:headers['Content-Type']='application/json'
-        conn.request('POST' if body is not None else 'GET',path,body,headers)
+        try: conn.request('POST' if body is not None else 'GET',path,body,headers)
+        except BrokenPipeError: pass  # Server may reject an upload before its body finishes.
         response=conn.getresponse();status=response.status;content=response.read();head=dict(response.getheaders());conn.close()
         try:value=json.loads(content)
         except (ValueError,UnicodeDecodeError):value=content

@@ -72,3 +72,42 @@ python3 server.py --library /path/to/Magazines --newspapers /path/to/NewsPapers 
 ```
 
 Before upgrading, back up your source folders and data volume. Never use `docker compose down -v` for this upgrade; it removes the reading-state volume.
+
+## Gestures and remembered reader settings
+
+With **Settings → Swipe pages and double-tap to zoom** enabled:
+
+- Swipe left for the next page and right for the previous page when at fit width or smaller. A vertical scroll remains ordinary scrolling.
+- Double-tap to switch between fit width and 2× zoom. A mouse double-click does the same on desktop.
+- At larger zoom levels, horizontal dragging pans the page instead of changing pages. Two-finger gestures are left to the browser.
+
+Page, zoom, rotation and continuous/single-page mode are saved for each issue. Opening it again restores those settings. Browser-native pinch zoom support varies by device. The reader has no Open PDF link and no saving-success banner; failed saves still show a brief error so reading changes are not silently lost.
+
+## Reading collections
+
+Use **New collection** in the sidebar to create a shelf such as Read later or Weekend. Open an issue's **••• → Edit filename, category & tags** and check its Reading collections. An issue can belong to several collections without moving its file. Click a collection to filter the library.
+
+Rename or remove a collection in **Settings → Collections**. Removing a collection does not delete PDFs or reading progress. Membership follows a PDF renamed through PiShelf. Collections and memberships are included in reading backups; backups from earlier versions without collections remain supported. Restoring a collection replaces the memberships for that matching collection ID, and conflicting names must be resolved before import.
+
+## Upload in Settings
+
+Choose a source and category under **Settings → Upload PDFs**, select files and click **Upload selected PDFs**. Files are uploaded sequentially, with a progress indicator and Cancel button, directly into the mounted storage folder. Each PDF can be up to **512 MiB**. The server streams to a hidden temporary file in 256 KiB chunks; the complete PDF is never buffered in Python memory. Incomplete or cancelled uploads remove their temporary files. A destination filename is never overwritten.
+
+Uploads require write permission on the target storage folder. Reverse proxies can impose their own smaller upload size or timeout limits. The upload validates the filename, size and PDF header; a PDF may still be corrupt internally. As with other external filesystem changes to a Nextcloud-managed folder, Nextcloud may require a file rescan.
+
+## Permanent deletion
+
+**••• → Delete permanently from storage…** deletes the actual PDF from its magazine or newspaper folder after explicit confirmation. It also removes its reading record, metadata, collection memberships and generated server cover where possible. It cannot be undone by restoring a reading backup, since that backup contains no PDFs.
+
+**Move to Trash…** is a separate recoverable action. In **Settings → Trash**, either restore the PDF or choose **Delete permanently** to remove the stored trash file and free its space. Shared files, filesystem snapshots, NAS recycle bins and backups may retain their own copies outside PiShelf.
+
+## Lower overhead
+
+- Cached shelves do not load PDF.js or start a PDF worker until a PDF needs rendering.
+- Cover generation reuses one worker per batch and releases it when finished.
+- Unchanged reading state is not saved repeatedly; saving no longer invalidates the library scan cache.
+- Categories share the library scan, and scroll tracking uses a binary search over page positions.
+- Only nearby canvases and pages currently visible on screen are retained, with a maximum of three million pixels each. Actual PDF worker and browser memory still depends on the document.
+- The stylesheet has been consolidated rather than layering duplicate theme rules.
+
+This reduces unnecessary work, but is not a hardware-specific CPU or memory benchmark.
