@@ -318,7 +318,7 @@ function finishPinch(cancelled=false){
  lastTap=null;gestureStart=null;gesturePointers.clear();
  if(cancelled||!documentPDF||state.g!==generation)return;
  const minimum=fitEntirePageZoom(state.page);
- const next=Math.max(minimum,Math.round(state.nextZoom*100)/100);
+ const next=Math.max(minimum,Math.min(Math.max(3,state.startZoom),Math.round(state.nextZoom*100)/100));
  const slot=slots.find(s=>+s.dataset.page===state.page),area=$('page-area');
  if(!slot)return;
  // Capture the PDF point under the fingers before modifying layout.
