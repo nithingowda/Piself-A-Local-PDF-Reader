@@ -1,3 +1,6 @@
+# test_features.py: Regression tests for PiShelf functionality.
+# Comments explain responsibilities and non-obvious behavior; keep runtime logic unchanged.
+
 import http.client
 import socket
 import unittest
@@ -8,6 +11,7 @@ class AddedFeatureTests(unittest.TestCase):
     tearDown=test_server.LibraryTests.tearDown
     request=test_server.LibraryTests.request
     items=test_server.LibraryTests.items
+    # Verify collections rename backup and remove.
     def test_collections_rename_backup_and_remove(self):
         key=self.items()[0]['id']
         status,created,_=self.request('/api/collections',{'name':'Read later'});self.assertEqual(status,200)
@@ -23,6 +27,7 @@ class AddedFeatureTests(unittest.TestCase):
         self.assertTrue((self.mag/'Renamed.pdf').exists())
         self.assertEqual(self.request('/api/backup/restore',backup)[0],200)
         self.assertEqual(self.request('/api/collections')[1][0]['items'],[new])
+    # Verify permanent delete and trash delete.
     def test_permanent_delete_and_trash_delete(self):
         key=self.items()[0]['id']
         self.request('/api/progress',{'id':key,'favorite':True})
@@ -34,6 +39,7 @@ class AddedFeatureTests(unittest.TestCase):
         trashed=self.news/'.pishelf-trash'/(token+'.pdf');self.assertTrue(trashed.exists())
         self.assertEqual(self.request('/api/trash/delete',{'token':token,'confirm':True})[0],200)
         self.assertFalse(trashed.exists());self.assertEqual(self.request('/api/trash')[1],[])
+    # Verify upload validation conflict and destination.
     def test_upload_validation_conflict_and_destination(self):
         body=b'%PDF-1.7\n'+b'example '*100000
         path='/api/upload?filename=Uploaded.pdf&source=newspapers&category=Daily'
@@ -45,12 +51,14 @@ class AddedFeatureTests(unittest.TestCase):
         self.assertEqual(self.request('/api/upload?filename=../Escape.pdf',raw=body,headers={'Content-Type':'application/pdf'})[0],400)
         self.assertEqual(self.request('/api/upload?filename=Huge.pdf',raw=b'',headers={'Content-Type':'application/pdf','Content-Length':str(513*1024*1024)})[0],413)
         self.assertFalse(list(self.mag.glob('.pishelf-upload-*')))
+    # Verify interrupted upload is not published.
     def test_interrupted_upload_is_not_published(self):
         conn=http.client.HTTPConnection('127.0.0.1',self.server.server_port)
         conn.request('POST','/api/upload?filename=Partial.pdf',b'%PDF-1.7',{'Content-Type':'application/pdf','Content-Length':'9999'})
         conn.sock.shutdown(socket.SHUT_WR)
         response=conn.getresponse();self.assertEqual(response.status,400);response.read();conn.close()
         self.assertFalse((self.mag/'Partial.pdf').exists());self.assertFalse(list(self.mag.glob('.pishelf-upload-*')))
+    # Verify reader options and scan cache.
     def test_reader_options_and_scan_cache(self):
         key=self.items()[0]['id'];scan=self.server.scan_time
         self.assertEqual(self.request('/api/progress',{'id':key,'page':2,'total':5,'zoom':2,'mode':'single','rotation':90})[0],200)
