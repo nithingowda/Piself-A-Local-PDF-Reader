@@ -170,6 +170,24 @@ async function renderPages(){
   if(g!==generation||epoch!==layoutEpoch||!slot.isConnected||!documentPDF)continue;
   const n=+slot.dataset.page;
   try{
+   // Prefer cached magazine images; retain PDF.js rendering as a fallback.
+   if(current?.id){
+    const img=document.createElement('img');
+    img.alt='Magazine page '+n;
+    img.decoding='async';
+    img.style.cssText='display:block;width:100%;height:100%;object-fit:contain';
+    const width=zoom>1.6?2800:zoom>0.85?1600:960;
+    const url='/api/page-image/'+encodeURIComponent(current.id)+'/'+n+'?width='+width;
+    try{
+     await new Promise((resolve,reject)=>{
+      img.onload=resolve;img.onerror=reject;img.src=url;
+     });
+     if(g!==generation||epoch!==layoutEpoch||!slot.isConnected)continue;
+     slot.replaceChildren(img);slot.dataset.ready='yes';slot.dataset.queued='no';
+     renderedSlots.add(slot);trimCanvases();$('reader-status').textContent='';
+     continue;
+    }catch(error){img.src='';}
+   }
    const pdfPage=await documentPDF.getPage(n);
    if(g!==generation||epoch!==layoutEpoch||!slot.isConnected)continue;
    const natural=pdfPage.getViewport({scale:1});
@@ -338,6 +356,13 @@ function finishPinch(cancelled=false){
  if(rect.width>=view.width){
   if(rect.left>view.left)area.scrollLeft+=rect.left-view.left;
   else if(rect.right<view.right)area.scrollLeft-=view.right-rect.right;
+ }
+ // Upgrade the current image when magnified, without changing the page box.
+ const image=slot.querySelector('img');
+ if(image&&current?.id){
+  const width=zoom>1.6?2800:zoom>0.85?1600:960;
+  const url='/api/page-image/'+encodeURIComponent(current.id)+'/'+state.page+'?width='+width;
+  if(!image.src.endsWith(url))image.src=url;
  }
  updatePageUI();remember();
 }
