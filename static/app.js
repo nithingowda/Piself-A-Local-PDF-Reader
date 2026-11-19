@@ -228,11 +228,20 @@ async function finishPinch(cancelled=false){
  if(!pinch)return;const state=pinch;resetPinch();suppressTapUntil=performance.now()+500;lastTap=null;gestureStart=null;gesturePointers.clear();
  if(cancelled||!documentPDF||state.g!==generation)return;
  const next=Math.round(state.nextZoom*100)/100;if(Math.abs(next-zoom)<.01)return;
- // Keep the existing high-resolution canvases. CSS zoom updates layout without
- // invalidating PDF.js render tasks or blanking pages during a pinch.
- zoom=next;page=state.page;$('pages').style.zoom=String(zoom/cssZoomBase);
- const slot=slots.find(s=>+s.dataset.page===state.page),area=$('page-area');if(!slot)return;
- const rect=area.getBoundingClientRect();area.scrollTo({left:slot.offsetLeft+state.fx*slot.offsetWidth-(state.x-rect.left),top:slot.offsetTop+state.fy*slot.offsetHeight-(state.y-rect.top),behavior:'instant'});
+ const slot=slots.find(s=>+s.dataset.page===state.page),area=$('page-area');
+ if(!slot)return;
+ // Preserve the exact PDF point under the fingers. Use the *current* slot
+ // geometry before changing CSS zoom, rather than its offsetLeft/offsetTop
+ // (which do not account for CSS zoom and centering).
+ const before=slot.getBoundingClientRect(),areaRect=area.getBoundingClientRect();
+ const fx=Math.max(0,Math.min(1,(state.x-before.left)/Math.max(1,before.width)));
+ const fy=Math.max(0,Math.min(1,(state.y-before.top)/Math.max(1,before.height)));
+ zoom=next;page=state.page;
+ $('pages').style.zoom=String(zoom/cssZoomBase);
+ // Layout must settle before measuring the newly zoomed page.
+ const after=slot.getBoundingClientRect();
+ area.scrollLeft+=after.left+fx*after.width-state.x;
+ area.scrollTop+=after.top+fy*after.height-state.y;
  updateTouchMode();updatePageUI();remember();
 }
 $('page-area').addEventListener('touchstart',e=>{
@@ -242,7 +251,7 @@ $('page-area').addEventListener('touchstart',e=>{
  const slot=slots.find(s=>{const r=s.getBoundingClientRect();return point.y>=r.top&&point.y<=r.bottom;})||slots.find(s=>+s.dataset.page===page);
  if(!slot||point.distance<10)return;const r=slot.getBoundingClientRect();
  pinch={g:generation,distance:point.distance,startZoom:zoom,nextZoom:zoom,page:+slot.dataset.page,fx:Math.max(0,Math.min(1,(point.x-r.left)/r.width)),fy:Math.max(0,Math.min(1,(point.y-r.top)/r.height)),x:point.x,y:point.y};
- $('pages').style.transformOrigin=`${point.x-rect.left+area.scrollLeft}px ${point.y-rect.top+area.scrollTop}px`;$('pages').style.willChange='transform';
+ $('pages').style.transformOrigin=`${point.x-$('pages').getBoundingClientRect().left}px ${point.y-$('pages').getBoundingClientRect().top}px`;$('pages').style.willChange='transform';
 },{passive:false});
 $('page-area').addEventListener('touchmove',e=>{
  if(!pinch)return;e.preventDefault();if(e.touches.length!==2)return;
