@@ -449,12 +449,22 @@ class Handler(BaseHTTPRequestHandler):
                         finally: temporary.unlink(missing_ok=True)
                     except APIError: raise
                     except Exception as exc: raise APIError(500,'Image conversion failed: '+str(exc))
-                # Keep the on-disk page cache bounded on Raspberry Pi storage.
-                if len(list(cache.glob('*.webp')))>500:
-                    entries=sorted(cache.glob('*.webp'),key=lambda p:p.stat().st_mtime)
-                    for old in entries[:-400]:
-                        if old!=target: old.unlink(missing_ok=True)
+                # Byte-limited, least-recently-used cache; keep the requested page.
+                # Touching on read records recent use without changing PDF identity.
                 data=target.read_bytes()
+                try:
+                    os.utime(target,None)
+                    max_bytes=512*1024*1024
+                    entries=sorted(cache.glob('*.webp'),key=lambda p:p.stat().st_mtime_ns)
+                    total=sum(p.stat().st_size for p in entries)
+                    for old in entries:
+                        if total<=max_bytes: break
+                        if old==target: continue
+                        size=old.stat().st_size
+                        old.unlink(missing_ok=True)
+                        total-=size
+                except OSError:
+                    pass  # A cache maintenance error must not interrupt reading.
                 self.send_response(200)
                 self.send_header('Content-Type','image/webp')
                 self.send_header('Content-Length',str(len(data)))
