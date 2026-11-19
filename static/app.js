@@ -186,7 +186,7 @@ async function openMagazine(item,start){
  }catch(e){if(g===generation)$('reader-status').textContent='Could not open PDF: '+e.message;}
 }
 function move(n){if(!documentPDF)return;remember();page=Math.max(1,Math.min(documentPDF.numPages,n));updatePageUI();if($('view-mode').value==='single')rebuild();else{const slot=slots[page-1];enqueue(slot);$('page-area').scrollTo({top:slot.offsetTop-20,behavior:prefs.motion&&!matchMedia('(prefers-reduced-motion: reduce)').matches?'smooth':'auto'});clearTimeout(scrollTimer);scrollTimer=setTimeout(remember,500);}}
-async function closeReader(){resetPinch();clearTimeout(scrollTimer);remember();++generation;++layoutEpoch;layoutReady=false;pageObserver?.disconnect();renderQueue=[];const oldDoc=documentPDF;documentPDF=null;if(oldDoc?.destroy)oldDoc.destroy().catch(()=>{});$('reader').hidden=true;document.body.classList.remove('reader-open');$('library').hidden=false;$('pages').replaceChildren();slots=[];renderedSlots.clear();if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});drawLibrary();refresh(true);}
+async function closeReader(){clearTimeout(zoomSharpenTimer);++zoomSharpenSerial;resetPinch();clearTimeout(scrollTimer);remember();++generation;++layoutEpoch;layoutReady=false;pageObserver?.disconnect();renderQueue=[];const oldDoc=documentPDF;documentPDF=null;if(oldDoc?.destroy)oldDoc.destroy().catch(()=>{});$('reader').hidden=true;document.body.classList.remove('reader-open');$('library').hidden=false;$('pages').replaceChildren();slots=[];renderedSlots.clear();if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});drawLibrary();refresh(true);}
 $('back').onclick=closeReader;$('prev').onclick=()=>move(page-1);$('next').onclick=()=>move(page+1);$('page-number').onchange=e=>move(parseInt(e.target.value)||1);
 $('minus').onclick=()=>{zoom=Math.max(.5,zoom-.25);rebuild();};$('plus').onclick=()=>{zoom=Math.min(3,zoom+.25);rebuild();};$('fit').onclick=()=>{zoom=1;rebuild();};$('fit-page').onclick=()=>{if(!documentPDF)return;const d=dimensions.get(page)||dimensions.get(1);if(!d)return;const ratio=rotation%180?d.width/d.height:d.height/d.width;zoom=Math.max(.1,Math.min(1,($('page-area').clientHeight-20)/(Math.min(Math.max(200,$('page-area').clientWidth-40),1100)*ratio)));rebuild();};$('rotate').onclick=()=>{rotation=(rotation+90)%360;rebuild();};$('view-mode').onchange=()=>{prefs.mode=$('view-mode').value;storePrefs();rebuild();};
 $('bookmark').onclick=()=>{if(!documentPDF)return;const marks=saved[current.id]?.bookmarks||[];persist(current.id,{bookmarks:marks.includes(page)?marks.filter(n=>n!==page):[...marks,page].sort((a,b)=>a-b)});updatePageUI();updateBookmarks();};$('bookmarks').onchange=e=>{if(e.target.value)move(+e.target.value);e.target.value='';};
@@ -229,11 +229,42 @@ function updateTouchMode(){$('page-area').classList.toggle('gesture-navigation',
 function toggleReaderControls(){setReaderFocus(!$('reader').classList.contains('focused'));}
 function touchPair(touches){const a=touches[0],b=touches[1];return {distance:Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY),x:(a.clientX+b.clientX)/2,y:(a.clientY+b.clientY)/2};}
 function resetPinch(){cancelAnimationFrame(pinchFrame);pinchFrame=0;$('pages').style.transform='';$('pages').style.transformOrigin='';$('pages').style.willChange='';pinch=null;}
+let zoomSharpenTimer=0,zoomSharpenSerial=0;
+async function sharpenVisiblePage(slot,serial){
+ if(!documentPDF||!slot.isConnected||serial!==zoomSharpenSerial||pinch)return;
+ const doc=documentPDF,g=generation,n=+slot.dataset.page;
+ const old=slot.querySelector('canvas');if(!old)return;
+ try{
+  const pdfPage=await doc.getPage(n);
+  if(serial!==zoomSharpenSerial||g!==generation||!slot.isConnected||pinch)return;
+  const viewport=pdfPage.getViewport({scale:1,rotation});
+  const targetWidth=Math.min(3000,Math.max(1,slot.getBoundingClientRect().width)*Math.min(devicePixelRatio||1,2));
+  const scale=Math.min(targetWidth/viewport.width,Math.sqrt(7000000/(viewport.width*viewport.height)));
+  const view=pdfPage.getViewport({scale,rotation});
+  // Avoid an expensive render when the existing canvas is already sharp enough.
+  if(old.width>=view.width*.92&&old.height>=view.height*.92)return;
+  const canvas=document.createElement('canvas');
+  canvas.width=Math.ceil(view.width);canvas.height=Math.ceil(view.height);
+  canvas.style.cssText='display:block;width:100%;height:100%';
+  await pdfPage.render({canvasContext:canvas.getContext('2d',{alpha:false}),viewport:view}).promise;
+  if(serial!==zoomSharpenSerial||g!==generation||!slot.isConnected||pinch){canvas.width=0;canvas.height=0;return;}
+  // Keep the old image visible until the replacement is completely ready.
+  slot.replaceChildren(canvas);
+ }catch(e){console.warn('Background PDF sharpening failed',e);}
+}
+function scheduleZoomSharpen(){
+ clearTimeout(zoomSharpenTimer);const serial=++zoomSharpenSerial;
+ zoomSharpenTimer=setTimeout(()=>{
+  if(pinch||!documentPDF)return;
+  const area=$('page-area').getBoundingClientRect();
+  const visible=slots.filter(slot=>{const r=slot.getBoundingClientRect();return r.bottom>=area.top&&r.top<=area.bottom;});
+  // Limit expensive iPhone canvas work to the visible page.
+  if(visible.length)sharpenVisiblePage(visible[0],serial);
+ },450);
+}
 async function finishPinch(cancelled=false){
  if(!pinch)return;
  const state=pinch;
- // The anchor was captured before any temporary CSS transform. Never
- // recalculate it from the transformed page or after removing the transform.
  resetPinch();
  suppressTapUntil=performance.now()+500;lastTap=null;gestureStart=null;gesturePointers.clear();
  if(cancelled||!documentPDF||state.g!==generation)return;
@@ -242,24 +273,17 @@ async function finishPinch(cancelled=false){
  const slot=slots.find(s=>+s.dataset.page===state.page),area=$('page-area');
  if(!slot)return;
  zoom=next;page=state.page;
+ // Retain the current canvas, scaling it immediately. Never rebuild on pinch end.
  $('pages').style.zoom=String(zoom/cssZoomBase);
- // Use the saved fractional point on the original PDF page, then scroll
- // exactly enough to put that point under the gesture's final midpoint.
  const after=slot.getBoundingClientRect();
  area.scrollLeft+=after.left+state.fx*after.width-state.x;
  area.scrollTop+=after.top+state.fy*after.height-state.y;
  updateTouchMode();updatePageUI();remember();
- // Re-render after the gesture settles, preserving the touched PDF point.
- const savedAnchor={page:state.page,fx:state.fx,fy:state.fy,x:state.x,y:state.y,g:generation};
- await rebuild();
- if(savedAnchor.g===generation){
-  const target=slots.find(s=>+s.dataset.page===savedAnchor.page);
-  if(target){const r=target.getBoundingClientRect();area.scrollLeft+=r.left+savedAnchor.fx*r.width-savedAnchor.x;area.scrollTop+=r.top+savedAnchor.fy*r.height-savedAnchor.y;}
- }
+ scheduleZoomSharpen();
 }
 $('page-area').addEventListener('touchstart',e=>{
  if(e.touches.length!==2||!prefs.gestures||!documentPDF||!layoutReady)return;
- e.preventDefault();lastTap=null;gestureStart=null;clearTimeout(scrollTimer);
+ e.preventDefault();lastTap=null;gestureStart=null;clearTimeout(scrollTimer);clearTimeout(zoomSharpenTimer);++zoomSharpenSerial;
  const point=touchPair(e.touches),area=$('page-area'),rect=area.getBoundingClientRect();
  const slot=slots.find(s=>{const r=s.getBoundingClientRect();return point.y>=r.top&&point.y<=r.bottom;})||slots.find(s=>+s.dataset.page===page);
  if(!slot||point.distance<10)return;const r=slot.getBoundingClientRect();
