@@ -1,21 +1,5 @@
 services:
-  pdfjs-renderer:
-    build: ./renderer
-    restart: unless-stopped
-    init: true
-    volumes:
-      - "${MAGAZINE_DIR:-/mnt/Nithin-Nas/nextcloud/data/nithingowda/files/Magazines}:/magazines:ro"
-      - "${NEWSPAPER_DIR:-/mnt/Nithin-Nas/nextcloud/data/nithingowda/files/NewsPapers}:/newspapers:ro"
-    read_only: true
-    tmpfs:
-      - /tmp:size=64m
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
   pishelf:
-    depends_on:
-      - pdfjs-renderer
     build: .
     image: pishelf:local
     command: ["python", "server.py", "--library", "/magazines", "--newspapers", "/newspapers", "--data", "/data"]

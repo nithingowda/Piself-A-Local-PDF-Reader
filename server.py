@@ -3,8 +3,6 @@
 import argparse
 import hashlib
 import json
-import urllib.request
-import urllib.error
 import mimetypes
 import os
 import re
@@ -396,44 +394,6 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self, head=False):
         path=unquote(urlsplit(self.path).path)
         try:
-            if path in ('/api/pdf-info','/api/render-page'):
-                params=parse_qs(urlsplit(self.path).query)
-                source=params.get('source',[''])[0]
-                if not (source.startswith('/magazines/') or source.startswith('/newspapers/')):
-                    raise APIError(400,'Invalid PDF source')
-                group='magazines' if source.startswith('/magazines/') else 'newspapers'
-                root=self.server.library if group=='magazines' else self.server.roots.get('newspapers')
-                relative=unquote(source[len('/'+group+'/'):])
-                if root is None or Path(relative).suffix.lower()!='.pdf' or any(p.startswith('.') for p in Path(relative).parts):
-                    raise APIError(404,'PDF not found')
-                target=(root/relative).resolve()
-                if not target.is_relative_to(root.resolve()) or not target.is_file(): raise APIError(404,'PDF not found')
-                request_data={'file':str(target),'info':path=='/api/pdf-info'}
-                if path=='/api/render-page':
-                    try:
-                        request_data.update(page=int(params.get('page',['1'])[0]),
-                                            width=max(100,min(2600,int(params.get('width',['1200'])[0]))),
-                                            rotation=int(params.get('rotation',['0'])[0]),
-                                            format=params.get('format',['jpeg'])[0])
-                    except ValueError: raise APIError(400,'Invalid render parameters')
-                try:
-                    upstream=urllib.request.Request(os.environ.get('PISHELF_RENDERER_URL','http://pdfjs-renderer:3001/render'),
-                        data=json.dumps(request_data).encode(),headers={'Content-Type':'application/json'},method='POST')
-                    with urllib.request.urlopen(upstream,timeout=90) as response:
-                        body=response.read(18000000)
-                        mime=response.headers.get('Content-Type','application/octet-stream')
-                except urllib.error.HTTPError as error:
-                    raise APIError(422,'PDF.js renderer failed: '+error.read(512).decode('utf-8','replace'))
-                except (urllib.error.URLError,TimeoutError) as error:
-                    raise APIError(503,'PDF.js renderer unavailable: '+str(error))
-                self.send_response(200)
-                self.send_header('Content-Type',mime)
-                self.send_header('Content-Length',str(len(body)))
-                self.send_header('Cache-Control','private, max-age=300' if path=='/api/render-page' else 'no-store')
-                self.send_header('X-Content-Type-Options','nosniff')
-                self.end_headers()
-                if not head:self.wfile.write(body)
-                return
             if path == '/api/health': self.json_response({'status':'ok'},head=head); return
             if path == '/api/library':
                 if 'refresh=1' in urlsplit(self.path).query: self.server.scan_time=float('-inf')
