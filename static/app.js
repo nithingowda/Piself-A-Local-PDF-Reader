@@ -254,7 +254,7 @@ function move(n){if(!documentPDF)return;remember();page=Math.max(1,Math.min(docu
 /** close Reader: Support the PiShelf reader or library interface. */
 async function closeReader(){resetPinch();clearTimeout(scrollTimer);remember();++generation;++layoutEpoch;layoutReady=false;pageObserver?.disconnect();renderQueue=[];const oldDoc=documentPDF;documentPDF=null;if(oldDoc?.destroy)oldDoc.destroy().catch(()=>{});$('reader').hidden=true;document.body.classList.remove('reader-open');$('library').hidden=false;$('pages').replaceChildren();slots=[];renderedSlots.clear();if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});drawLibrary();refresh(true);}
 $('back').onclick=closeReader;$('prev').onclick=()=>move(page-1);$('next').onclick=()=>move(page+1);$('page-number').onchange=e=>move(parseInt(e.target.value)||1);
-$('minus').onclick=()=>{zoom=Math.max(.5,zoom-.25);rebuild();};$('plus').onclick=()=>{zoom=Math.min(3,zoom+.25);rebuild();};$('fit').onclick=()=>{zoom=1;rebuild();};$('fit-page').onclick=()=>{if(!documentPDF)return;const d=dimensions.get(page)||dimensions.get(1);if(!d)return;const ratio=rotation%180?d.width/d.height:d.height/d.width;zoom=Math.max(.1,Math.min(1,($('page-area').clientHeight-20)/(Math.min(Math.max(200,$('page-area').clientWidth-40),1100)*ratio)));rebuild();};$('rotate').onclick=()=>{rotation=(rotation+90)%360;rebuild();};$('view-mode').onchange=()=>{prefs.mode=$('view-mode').value;storePrefs();rebuild();};
+$('minus').onclick=()=>{if(!documentPDF)return;zoom=Math.max(fitEntirePageZoom(page),zoom-.25);rebuild();};$('plus').onclick=()=>{if(!documentPDF)return;zoom=Math.min(Math.max(3,zoom),zoom+.25);rebuild();};$('fit').onclick=()=>{if(!documentPDF)return;zoom=fitEntirePageZoom(page);rebuild();};$('fit-page').onclick=()=>{if(!documentPDF)return;zoom=fitEntirePageZoom(page);rebuild();};$('rotate').onclick=()=>{rotation=(rotation+90)%360;rebuild();};$('view-mode').onchange=()=>{prefs.mode=$('view-mode').value;storePrefs();rebuild();};
 $('bookmark').onclick=()=>{if(!documentPDF)return;const marks=saved[current.id]?.bookmarks||[];persist(current.id,{bookmarks:marks.includes(page)?marks.filter(n=>n!==page):[...marks,page].sort((a,b)=>a-b)});updatePageUI();updateBookmarks();};$('bookmarks').onchange=e=>{if(e.target.value)move(+e.target.value);e.target.value='';};
 $('fullscreen').onclick=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await $('reader').requestFullscreen();}catch{toast('Fullscreen is unavailable in this browser.');}};
 let searchTimer;$('search').oninput=()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>{visibleLimit=60;drawLibrary();},150);};$('sort').onchange=e=>{prefs.sort=e.target.value;storePrefs();drawLibrary();};$('refresh').onclick=()=>refresh();document.querySelectorAll('[data-filter]').forEach(b=>b.onclick=()=>{filter=b.dataset.filter;category=collectionFilter='';visibleLimit=60;document.querySelectorAll('.tab,.category').forEach(t=>t.classList.toggle('active',t===b));drawLibrary();});
@@ -353,7 +353,20 @@ $('page-area').addEventListener('touchstart',e=>{
 $('page-area').addEventListener('touchmove',e=>{
  if(!pinch)return;e.preventDefault();if(e.touches.length!==2)return;
  const point=touchPair(e.touches);pinch.nextZoom=Math.max(fitEntirePageZoom(pinch.page),Math.min(Math.max(3,pinch.startZoom),pinch.startZoom*point.distance/pinch.distance));pinch.x=point.x;pinch.y=point.y;
- if(!pinchFrame)pinchFrame=requestAnimationFrame(()=>{pinchFrame=0;if(pinch)pinch.slot.style.transform=`translate(${pinch.x-pinch.startX}px, ${pinch.y-pinch.startY}px) scale(${pinch.nextZoom/pinch.startZoom})`;});
+ if(!pinchFrame)pinchFrame=requestAnimationFrame(()=>{
+  pinchFrame=0;if(!pinch)return;
+  const slot=pinch.slot,area=$('page-area');
+  const scale=pinch.nextZoom/pinch.startZoom;
+  let dx=pinch.x-pinch.startX,dy=pinch.y-pinch.startY;
+  slot.style.transform=`translate(${dx}px, ${dy}px) scale(${scale})`;
+  // Constrain the temporary pinch preview to the viewport, not the page list.
+  const view=area.getBoundingClientRect(),rect=slot.getBoundingClientRect();
+  if(rect.width>=view.width){
+   if(rect.left>view.left)dx-=rect.left-view.left;
+   else if(rect.right<view.right)dx+=view.right-rect.right;
+  }else dx+=(view.left+view.width/2)-(rect.left+rect.width/2);
+  slot.style.transform=`translate(${dx}px, ${dy}px) scale(${scale})`;
+ });
 },{passive:false});
 $('page-area').addEventListener('touchend',e=>{if(pinch&&e.touches.length<2){e.preventDefault();finishPinch();}},{passive:false});
 $('page-area').addEventListener('touchcancel',()=>finishPinch(true),{passive:true});
