@@ -188,7 +188,7 @@ async function renderPages(){
 function trimCanvases(){if(pinch||Math.abs(zoom-cssZoomBase)>.01)return;const area=$('page-area').getBoundingClientRect();for(const slot of renderedSlots){const rect=slot.getBoundingClientRect();if(Math.abs(+slot.dataset.page-page)>2&&(rect.bottom<area.top||rect.top>area.bottom)){for(const c of slot.querySelectorAll('canvas')){c.width=0;c.height=0;}slot.replaceChildren(el('span','page-placeholder','Page '+slot.dataset.page));slot.dataset.ready='no';renderedSlots.delete(slot);}}}
 /** track Scroll: Keep the visible PDF page and navigation state in sync. */
 function trackScroll(){
- if(pinch||!layoutReady||!documentPDF||$('view-mode').value!=='scroll'||!slots.length)return;
+ if(pinch||performance.now()<pinchScrollLockUntil||!layoutReady||!documentPDF||$('view-mode').value!=='scroll'||!slots.length)return;
  const area=$('page-area'),target=area.scrollTop+Math.min(area.clientHeight*.35,240);let low=0,high=slots.length-1;
  while(low<high){const mid=Math.ceil((low+high)/2);if(slots[mid].offsetTop<=target)low=mid;else high=mid-1;}
  const n=+slots[low].dataset.page;if(n!==page){page=n;updatePageUI();}
@@ -293,39 +293,34 @@ function touchPair(touches){const a=touches[0],b=touches[1];return {distance:Mat
 /** reset Pinch: Handle touch zoom while maintaining the reader position. */
 function resetPinch(){cancelAnimationFrame(pinchFrame);pinchFrame=0;$('pages').style.transform='';$('pages').style.transformOrigin='';$('pages').style.willChange='';pinch=null;}
 /** finish Pinch: Handle touch zoom while maintaining the reader position. */
-async function finishPinch(cancelled=false){
+// Ignore scroll-based page detection while a pinch settles on mobile Safari.
+let pinchScrollLockUntil=0;
+/** Finish pinch without destroying canvases or changing the selected PDF page. */
+function finishPinch(cancelled=false){
  if(!pinch)return;
  const state=pinch;
- // The anchor was captured before any temporary CSS transform. Never
- // recalculate it from the transformed page or after removing the transform.
  resetPinch();
- suppressTapUntil=performance.now()+500;lastTap=null;gestureStart=null;gesturePointers.clear();
+ pinchScrollLockUntil=performance.now()+700;
+ suppressTapUntil=performance.now()+500;
+ lastTap=null;gestureStart=null;gesturePointers.clear();
  if(cancelled||!documentPDF||state.g!==generation)return;
  const next=Math.round(state.nextZoom*100)/100;
  if(Math.abs(next-zoom)<.01)return;
  const slot=slots.find(s=>+s.dataset.page===state.page),area=$('page-area');
  if(!slot)return;
  zoom=next;page=state.page;
+ // CSS zoom reuses the existing high-resolution canvas instead of rebuilding.
  $('pages').style.zoom=String(zoom/cssZoomBase);
- // Use the saved fractional point on the original PDF page, then scroll
- // exactly enough to put that point under the gesture's final midpoint.
  const after=slot.getBoundingClientRect();
  area.scrollLeft+=after.left+state.fx*after.width-state.x;
  area.scrollTop+=after.top+state.fy*after.height-state.y;
  updateTouchMode();updatePageUI();remember();
- // Re-render after the gesture settles, preserving the touched PDF point.
- const savedAnchor={page:state.page,fx:state.fx,fy:state.fy,x:state.x,y:state.y,g:generation};
- await rebuild();
- if(savedAnchor.g===generation){
-  const target=slots.find(s=>+s.dataset.page===savedAnchor.page);
-  if(target){const r=target.getBoundingClientRect();area.scrollLeft+=r.left+savedAnchor.fx*r.width-savedAnchor.x;area.scrollTop+=r.top+savedAnchor.fy*r.height-savedAnchor.y;}
- }
 }
 $('page-area').addEventListener('touchstart',e=>{
  if(e.touches.length!==2||!prefs.gestures||!documentPDF||!layoutReady)return;
  e.preventDefault();lastTap=null;gestureStart=null;clearTimeout(scrollTimer);
  const point=touchPair(e.touches),area=$('page-area'),rect=area.getBoundingClientRect();
- const slot=slots.find(s=>{const r=s.getBoundingClientRect();return point.y>=r.top&&point.y<=r.bottom;})||slots.find(s=>+s.dataset.page===page);
+ const slot=slots.find(s=>{const r=s.getBoundingClientRect();return point.x>=r.left&&point.x<=r.right&&point.y>=r.top&&point.y<=r.bottom;})||slots.find(s=>+s.dataset.page===page);
  if(!slot||point.distance<10)return;const r=slot.getBoundingClientRect();
  pinch={g:generation,distance:point.distance,startZoom:zoom,nextZoom:zoom,page:+slot.dataset.page,fx:Math.max(0,Math.min(1,(point.x-r.left)/r.width)),fy:Math.max(0,Math.min(1,(point.y-r.top)/r.height)),x:point.x,y:point.y,startX:point.x,startY:point.y};
  $('pages').style.transformOrigin=`${point.x-$('pages').getBoundingClientRect().left}px ${point.y-$('pages').getBoundingClientRect().top}px`;$('pages').style.willChange='transform';
