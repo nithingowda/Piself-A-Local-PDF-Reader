@@ -126,7 +126,7 @@ function storePrefs(){try{localStorage.setItem('pishelf-settings',JSON.stringify
 /** open Settings: Support the PiShelf reader or library interface. */
 function openSettings(){for(const k of ['siteTheme','theme','mode','quality','density'])$('pref-'+k).value=prefs[k];$('pref-motion').checked=prefs.motion;$('pref-gestures').checked=prefs.gestures;if(!uploading)populateUploadSources();drawCollectionManager();$('settings').showModal();loadTrash();loadWebPCacheStats();}
 $('settings-open').onclick=openSettings;$('reader-settings').onclick=openSettings;$('settings-close').onclick=()=>$('settings').close();
-for(const k of ['siteTheme','theme','mode','quality','density','interval'])$('pref-'+k).onchange=e=>{prefs[k]=e.target.value;storePrefs();if(documentPDF&&(k==='mode'||k==='quality')){$('view-mode').value=prefs.mode;rebuild();}};
+for(const k of ['siteTheme','theme','mode','quality','density'])$('pref-'+k).onchange=e=>{prefs[k]=e.target.value;storePrefs();if(documentPDF&&(k==='mode'||k==='quality')){$('view-mode').value=prefs.mode;rebuild();}};
 $('pref-gestures').onchange=e=>{prefs.gestures=e.target.checked;storePrefs();updateTouchMode();};
 $('pref-motion').onchange=e=>{prefs.motion=e.target.checked;storePrefs();};$('clear-all').onclick=()=>{if(documentPDF){toast('Return to the library before clearing all progress.');return;}clearProgress();};$('rescan').onclick=()=>{if(documentPDF){toast('Return to the library to rescan.');return;}refresh();toast('Library scan requested.');};
 // Continuous reader: lightweight page placeholders, serialized rendering, bounded canvas memory.
