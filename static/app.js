@@ -106,7 +106,7 @@ for(const k of ['siteTheme','theme','mode','quality','density','interval'])$('pr
 $('pref-gestures').onchange=e=>{prefs.gestures=e.target.checked;storePrefs();updateTouchMode();};
 $('pref-motion').onchange=e=>{prefs.motion=e.target.checked;storePrefs();};$('clear-all').onclick=()=>{if(documentPDF){toast('Return to the library before clearing all progress.');return;}clearProgress();};$('rescan').onclick=()=>{if(documentPDF){toast('Return to the library to rescan.');return;}refresh();toast('Library scan requested.');};
 // Continuous reader: lightweight page placeholders, serialized rendering, bounded canvas memory.
-let slots=[],renderQueue=[],renderBusy=false,activeRender=null,loadTask=null,pageObserver=null;
+let slots=[],renderQueue=[],renderBusy=false,pageObserver=null;
 const dimensions=new Map(),renderedSlots=new Set();
 function updatePageUI(){if(!documentPDF)return;$('page-number').value=page;$('page-total').textContent='/ '+documentPDF.numPages;$('prev').disabled=page<=1;$('next').disabled=page>=documentPDF.numPages;const marks=saved[current.id]?.bookmarks||[];$('bookmark').textContent=marks.includes(page)?'★':'☆';$('bookmark').setAttribute('aria-pressed',marks.includes(page));}
 function updateBookmarks(){const select=$('bookmarks');select.replaceChildren(new Option('Bookmarks',''));for(const n of saved[current.id]?.bookmarks||[])if(n<=documentPDF.numPages)select.add(new Option('Page '+n,n));}
