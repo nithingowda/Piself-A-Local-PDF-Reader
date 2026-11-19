@@ -30,3 +30,5 @@ dialog{border:1px solid var(--line);border-radius:16px;background:var(--card);co
 .thumbnail-grid button{display:flex;flex-direction:column;gap:5px;align-items:center;padding:6px;min-width:0}
 .thumbnail-grid img{display:block;width:100%;aspect-ratio:3/4;object-fit:contain;background:var(--panel)}
 .thumbnail-grid button[aria-current="page"]{outline:2px solid var(--accent)}
+
+.thumbnail-navigation{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;background:var(--card);padding:6px;z-index:1}
