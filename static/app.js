@@ -113,28 +113,43 @@ function updateBookmarks(){const select=$('bookmarks');select.replaceChildren(ne
 function remember(){if(!documentPDF||!layoutReady||pinch)return;const patch={page,total:documentPDF.numPages,zoom,rotation,mode:$('view-mode').value},previous=saved[current.id]||{};if(Object.entries(patch).every(([k,v])=>previous[k]===v))return;persist(current.id,patch);}
 function pageWidth(){const available=Math.max(200,$('page-area').clientWidth-40);return Math.min(available,1100)*zoom;}
 function sizeSlot(slot,n){const d=dimensions.get(n)||dimensions.get(1)||{width:420,height:580};const swapped=rotation%180!==0;const w=swapped?d.height:d.width,h=swapped?d.width:d.height;slot.style.width=pageWidth()+'px';slot.style.height=pageWidth()*h/w+'px';}
-function enqueue(slot){if(slot.dataset.ready==='yes'||slot.dataset.queued==='yes')return;slot.dataset.queued='yes';renderQueue.push({slot,g:generation,epoch:layoutEpoch});renderPages();}
+function enqueue(slot){
+ if(!slot||!slot.isConnected||slot.dataset.ready==='yes'||slot.dataset.queued==='yes')return;
+ slot.dataset.queued='yes';
+ renderQueue.push({slot,g:generation,epoch:layoutEpoch});
+ // Keep the page being read ahead of offscreen prefetch jobs.
+ renderQueue.sort((a,b)=>Math.abs(Number(a.slot.dataset.page)-page)-Math.abs(Number(b.slot.dataset.page)-page));
+ renderPages();
+}
 async function renderPages(){
  if(renderBusy)return;renderBusy=true;
  try{while(renderQueue.length){
-  const {slot,g,epoch}=renderQueue.shift();slot.dataset.queued='no';
+  const {slot,g,epoch}=renderQueue.shift();
   if(g!==generation||epoch!==layoutEpoch||!slot.isConnected||!documentPDF)continue;
   const n=+slot.dataset.page;
   try{
    const pdfPage=await documentPDF.getPage(n);
    if(g!==generation||epoch!==layoutEpoch||!slot.isConnected)continue;
+   const natural=pdfPage.getViewport({scale:1});
+   const area=$('page-area');
+   const before=slot.getBoundingClientRect();
+   const above=before.bottom<=area.getBoundingClientRect().top;
+   dimensions.set(n,{width:natural.width,height:natural.height});
    sizeSlot(slot,n);
+   if(above&&!pinch)area.scrollTop+=slot.getBoundingClientRect().height-before.height;
    const cssWidth=parseFloat(slot.style.width);
    const viewport=pdfPage.getViewport({scale:1,rotation});
-   const scale=Math.min(cssWidth*Math.min(devicePixelRatio||1,2)/viewport.width,Math.sqrt(6000000/(viewport.width*viewport.height)));
+   // Limit memory on phones while preserving extra detail for tablet screens.
+   const maxPixels=matchMedia('(max-width: 700px)').matches?4500000:7000000;
+   const scale=Math.min(cssWidth*Math.min(devicePixelRatio||1,2)/viewport.width,Math.sqrt(maxPixels/(viewport.width*viewport.height)));
    const view=pdfPage.getViewport({scale,rotation});
    const canvas=document.createElement('canvas');
    canvas.width=Math.max(1,Math.ceil(view.width));canvas.height=Math.max(1,Math.ceil(view.height));
    canvas.style.cssText='display:block;width:100%;height:100%';
    await pdfPage.render({canvasContext:canvas.getContext('2d',{alpha:false}),viewport:view}).promise;
    if(g!==generation||epoch!==layoutEpoch||!slot.isConnected){canvas.width=0;canvas.height=0;continue;}
-   slot.replaceChildren(canvas);slot.dataset.ready='yes';renderedSlots.add(slot);trimCanvases();$('reader-status').textContent='';
-  }catch(e){if(g===generation&&epoch===layoutEpoch){slot.replaceChildren(el('p','page-placeholder','Page '+n+' could not render.'));const retry=el('button','','Retry');retry.onclick=()=>enqueue(slot);slot.append(retry);$('reader-status').textContent='PDF rendering failed: '+e.message;}}
+   slot.replaceChildren(canvas);slot.dataset.ready='yes';slot.dataset.queued='no';renderedSlots.add(slot);trimCanvases();$('reader-status').textContent='';
+  }catch(e){slot.dataset.queued='no';if(g===generation&&epoch===layoutEpoch){slot.replaceChildren(el('p','page-placeholder','Page '+n+' could not render.'));const retry=el('button','','Retry');retry.onclick=()=>enqueue(slot);slot.append(retry);$('reader-status').textContent='PDF rendering failed: '+e.message;}}
  }
  }finally{renderBusy=false;if(renderQueue.length)renderPages();}
 }
