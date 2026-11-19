@@ -449,6 +449,11 @@ class Handler(BaseHTTPRequestHandler):
                         finally: temporary.unlink(missing_ok=True)
                     except APIError: raise
                     except Exception as exc: raise APIError(500,'Image conversion failed: '+str(exc))
+                # Keep the on-disk page cache bounded on Raspberry Pi storage.
+                if len(list(cache.glob('*.webp')))>500:
+                    entries=sorted(cache.glob('*.webp'),key=lambda p:p.stat().st_mtime)
+                    for old in entries[:-400]:
+                        if old!=target: old.unlink(missing_ok=True)
                 data=target.read_bytes()
                 self.send_response(200)
                 self.send_header('Content-Type','image/webp')
