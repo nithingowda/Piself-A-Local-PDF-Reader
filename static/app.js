@@ -317,7 +317,7 @@ function finishPinch(cancelled=false){
  suppressTapUntil=performance.now()+500;
  lastTap=null;gestureStart=null;gesturePointers.clear();
  if(cancelled||!documentPDF||state.g!==generation)return;
- const next=Math.round(state.nextZoom*100)/100;
+ const next=Math.max(fitEntirePageZoom(state.page),Math.round(state.nextZoom*100)/100);
  if(Math.abs(next-zoom)<.01)return;
  const slot=slots.find(s=>+s.dataset.page===state.page),area=$('page-area');
  if(!slot)return;
@@ -340,7 +340,7 @@ $('page-area').addEventListener('touchstart',e=>{
 },{passive:false});
 $('page-area').addEventListener('touchmove',e=>{
  if(!pinch)return;e.preventDefault();if(e.touches.length!==2)return;
- const point=touchPair(e.touches);pinch.nextZoom=Math.max(.5,Math.min(3,pinch.startZoom*point.distance/pinch.distance));pinch.x=point.x;pinch.y=point.y;
+ const point=touchPair(e.touches);pinch.nextZoom=Math.max(fitEntirePageZoom(pinch.page),Math.min(3,pinch.startZoom*point.distance/pinch.distance));pinch.x=point.x;pinch.y=point.y;
  if(!pinchFrame)pinchFrame=requestAnimationFrame(()=>{pinchFrame=0;if(pinch)$('pages').style.transform=`translate(${pinch.x-pinch.startX}px, ${pinch.y-pinch.startY}px) scale(${pinch.nextZoom/pinch.startZoom})`;});
 },{passive:false});
 $('page-area').addEventListener('touchend',e=>{if(pinch&&e.touches.length<2){e.preventDefault();finishPinch();}},{passive:false});
