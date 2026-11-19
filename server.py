@@ -16,6 +16,8 @@ import threading
 import time
 import uuid
 import datetime
+
+# Optional raster engine is installed in Docker; errors are reported per request.
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlsplit, quote, parse_qs
@@ -409,6 +411,54 @@ class Handler(BaseHTTPRequestHandler):
         path=unquote(urlsplit(self.path).path)
         try:
             if path == '/api/health': self.json_response({'status':'ok'},head=head); return
+            if path.startswith('/api/page-image/'):
+                parts=path.split('/')
+                if len(parts)!=5 or not re.fullmatch('[a-f0-9]{32}',parts[3]) or not parts[4].isdigit():
+                    raise APIError(404,'Page not found.')
+                item=next((i for i in self.library_items() if i['id']==parts[3]),None)
+                if not item: raise APIError(404,'Magazine not found.')
+                n=int(parts[4]);params=parse_qs(urlsplit(self.path).query)
+                width=int(params.get('width',['1600'])[0])
+                if not 1<=n<=5000 or width not in (960,1600,2800):
+                    raise APIError(400,'Invalid page or image width.')
+                source=self.server.roots[item['source']]
+                pdf=checked_path(source,item['path'])
+                stat=pdf.stat()
+                key=hashlib.sha256(f"{item['id']}:{stat.st_size}:{stat.st_mtime_ns}:{n}:{width}".encode()).hexdigest()
+                cache=self.server.state_db.parent/'page-images'
+                cache.mkdir(parents=True,exist_ok=True)
+                target=cache/(key+'.webp')
+                if not target.is_file():
+                    try:
+                        import fitz
+                        with fitz.open(pdf) as document:
+                            if n>len(document): raise APIError(404,'Page not found.')
+                            p=document[n-1]
+                            scale=width/p.rect.width
+                            pix=p.get_pixmap(matrix=fitz.Matrix(scale,scale),alpha=False)
+                            # Pillow writes WebP, with a predictable file size and quality.
+                            from PIL import Image
+                            import io
+                            image=Image.frombytes('RGB',(pix.width,pix.height),pix.samples)
+                            output=io.BytesIO()
+                            image.save(output,format='WEBP',quality=85,method=4)
+                        temporary=cache/(uuid.uuid4().hex+'.tmp')
+                        try:
+                            temporary.write_bytes(output.getvalue())
+                            temporary.replace(target)
+                        finally: temporary.unlink(missing_ok=True)
+                    except APIError: raise
+                    except Exception as exc: raise APIError(500,'Image conversion failed: '+str(exc))
+                data=target.read_bytes()
+                self.send_response(200)
+                self.send_header('Content-Type','image/webp')
+                self.send_header('Content-Length',str(len(data)))
+                self.send_header('Cache-Control','private, max-age=86400')
+                self.send_header('X-Content-Type-Options','nosniff')
+                self.end_headers()
+                if not head: self.wfile.write(data)
+                return
+
             if path == '/api/library':
                 if 'refresh=1' in urlsplit(self.path).query: self.server.scan_time=float('-inf')
                 self.json_response(self.library_items(),head=head); return
