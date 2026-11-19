@@ -394,6 +394,44 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self, head=False):
         path=unquote(urlsplit(self.path).path)
         try:
+            if path == '/api/render-page':
+                params=parse_qs(urlsplit(self.path).query)
+                source=params.get('source',[''])[0]
+                if not (source.startswith('/magazines/') or source.startswith('/newspapers/')):
+                    raise APIError(400,'Invalid PDF source')
+                group='magazines' if source.startswith('/magazines/') else 'newspapers'
+                root=self.server.library if group=='magazines' else self.server.roots.get('newspapers')
+                relative=unquote(source[len('/'+group+'/'):])
+                if root is None or Path(relative).suffix.lower()!='.pdf' or any(p.startswith('.') for p in Path(relative).parts):
+                    raise APIError(404,'PDF not found')
+                target=(root/relative).resolve()
+                if not target.is_relative_to(root.resolve()) or not target.is_file():
+                    raise APIError(404,'PDF not found')
+                try:
+                    import fitz
+                    number=int(params.get('page',['1'])[0])
+                    width=max(300,min(2600,int(params.get('width',['1200'])[0])))
+                    angle=int(params.get('rotation',['0'])[0])
+                    if angle not in (0,90,180,270): raise ValueError()
+                    with fitz.open(target) as doc:
+                        if number<1 or number>len(doc): raise APIError(404,'Page not found')
+                        p=doc[number-1]
+                        if p.needs_pass: raise APIError(422,'Password-protected PDF: use PDF.js')
+                        natural=p.rect
+                        scale=min(3.0,width/max(1,natural.width))
+                        scale=min(scale,(8000000/max(1,natural.width*natural.height))**.5)
+                        pix=p.get_pixmap(matrix=fitz.Matrix(scale,scale).prerotate(angle),alpha=False)
+                        body=pix.tobytes('png')
+                except (ValueError,TypeError): raise APIError(400,'Invalid render parameters')
+                except ImportError: raise APIError(503,'PyMuPDF is not installed')
+                self.send_response(200)
+                self.send_header('Content-Type','image/png')
+                self.send_header('Content-Length',str(len(body)))
+                self.send_header('Cache-Control','private, max-age=300')
+                self.send_header('X-Content-Type-Options','nosniff')
+                self.end_headers()
+                if not head: self.wfile.write(body)
+                return
             if path == '/api/health': self.json_response({'status':'ok'},head=head); return
             if path == '/api/library':
                 if 'refresh=1' in urlsplit(self.path).query: self.server.scan_time=float('-inf')
