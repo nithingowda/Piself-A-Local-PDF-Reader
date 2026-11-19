@@ -1,3 +1,8 @@
+# Bundle PDF.js at build time; clients never need a public CDN.
+FROM node:22-bookworm-slim AS pdfjs-assets
+WORKDIR /pdfjs
+RUN npm install --no-save --no-audit --no-fund pdfjs-dist@4.10.38
+
 FROM python:3.12-slim-bookworm
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /app
@@ -7,6 +12,8 @@ RUN groupadd --gid 1000 pishelf && useradd --uid 1000 --gid 1000 --no-create-hom
     && mkdir -p /data /magazines && chown 1000:1000 /data /magazines
 COPY --chown=1000:1000 server.py /app/server.py
 COPY --chown=1000:1000 static/ /app/static/
+COPY --from=pdfjs-assets --chown=1000:1000 /pdfjs/node_modules/pdfjs-dist/build/pdf.min.mjs /app/static/vendor/pdf.min.mjs
+COPY --from=pdfjs-assets --chown=1000:1000 /pdfjs/node_modules/pdfjs-dist/build/pdf.worker.min.mjs /app/static/vendor/pdf.worker.min.mjs
 COPY docker-entrypoint.py /app/docker-entrypoint.py
 USER 0:0
 ENTRYPOINT ["python", "/app/docker-entrypoint.py"]
