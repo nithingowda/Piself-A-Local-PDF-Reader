@@ -219,7 +219,8 @@ async function renderPages(){
 let imagePrefetches=new Map();
 function preloadMagazineNeighbors(){
  if(!documentPDF||!current?.id)return;
- const width=zoom>1.6?2800:zoom>0.85?1600:960;
+ // Never prefetch 2800px zoom images; they are expensive on iPhone Safari.
+ const width=zoom>0.85?1600:960;
  const wanted=new Set([page-1,page+1,page+2].filter(n=>n>=1&&n<=documentPDF.numPages));
  for(const [n,img] of imagePrefetches){
   if(!wanted.has(n)){img.onload=null;img.onerror=null;img.src='';imagePrefetches.delete(n);}
