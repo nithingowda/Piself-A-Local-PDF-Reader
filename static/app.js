@@ -322,9 +322,7 @@ function finishPinch(cancelled=false){
  const slot=slots.find(s=>+s.dataset.page===state.page),area=$('page-area');
  if(!slot)return;
  // Capture the PDF point under the fingers before modifying layout.
- const before=slot.getBoundingClientRect();
- const fx=Math.max(0,Math.min(1,(state.x-before.left)/before.width));
- const fy=Math.max(0,Math.min(1,(state.y-before.top)/before.height));
+ const fx=state.fx,fy=state.fy;
  zoom=next;page=state.page;
  // Resize the actual page boxes. CSS zoom on the entire pages wrapper
  // creates a large scrollable gutter in iOS Safari and breaks pinch-out.
