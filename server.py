@@ -394,6 +394,27 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self, head=False):
         path=unquote(urlsplit(self.path).path)
         try:
+            if path == '/api/pdf-info':
+                params=parse_qs(urlsplit(self.path).query)
+                source=params.get('source',[''])[0]
+                if not (source.startswith('/magazines/') or source.startswith('/newspapers/')):
+                    raise APIError(400,'Invalid PDF source')
+                group='magazines' if source.startswith('/magazines/') else 'newspapers'
+                root=self.server.library if group=='magazines' else self.server.roots.get('newspapers')
+                relative=unquote(source[len('/'+group+'/'):])
+                if root is None or Path(relative).suffix.lower()!='.pdf' or any(p.startswith('.') for p in Path(relative).parts):
+                    raise APIError(404,'PDF not found')
+                target=(root/relative).resolve()
+                if not target.is_relative_to(root.resolve()) or not target.is_file(): raise APIError(404,'PDF not found')
+                try:
+                    import fitz
+                    with fitz.open(target) as doc:
+                        if doc.needs_pass: raise APIError(422,'Password-protected PDFs are not supported')
+                        pages=len(doc)
+                        dimensions=[{'width':p.rect.width,'height':p.rect.height} for p in doc]
+                except ImportError: raise APIError(503,'PyMuPDF is not installed')
+                self.json_response({'numPages':pages,'dimensions':dimensions},head=head)
+                return
             if path == '/api/render-page':
                 params=parse_qs(urlsplit(self.path).query)
                 source=params.get('source',[''])[0]
