@@ -1,3 +1,4 @@
+# Example service configuration; adapt paths and account before installing.
 [Unit]
 Description=PiShelf magazine reader
 After=network.target
