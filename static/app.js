@@ -158,8 +158,8 @@ async function rebuild(){if(!documentPDF)return;$('pages').style.zoom='';$('page
  layoutReady=true;const target=slots.find(s=>+s.dataset.page===page);if(target){$('page-area').scrollTop=target.offsetTop-20;enqueue(target);}updatePageUI();updateBookmarks();remember();}
 let pdfjsModulePromise;
 async function pdfEngine(){
- if(!pdfjsModulePromise)pdfjsModulePromise=import('https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs').then(module=>{
-  module.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs';
+ if(!pdfjsModulePromise)pdfjsModulePromise=import('/vendor/pdf.min.mjs').then(module=>{
+  module.GlobalWorkerOptions.workerSrc='/vendor/pdf.worker.min.mjs';
   return module;
  });
  return pdfjsModulePromise;
