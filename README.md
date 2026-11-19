@@ -6,6 +6,12 @@ PiShelf turns a folder of PDFs into a personal magazine website. Browse covers, 
 
 Built for self-hosting on your home network, with local storage and a lightweight Python server.
 
+## Reader speed and memory management
+
+PiShelf uses WebP previews and sharper images on demand. The reader cancels stale high-resolution upgrades when you navigate away, change layout, or close the reader. Thumbnail requests are restricted to thumbnails near the visible scroll area to reduce Safari memory and network usage. Pinch-zoom geometry and the PDF.js fallback are unchanged.
+
+**Performance checks:** Try a large magazine on iPhone Safari, swipe through pages, open/close the thumbnail browser, zoom in and out, and return to the library. If the reader becomes slow, see [troubleshooting](USER_MANUAL.md#7-troubleshooting).
+
 ## User manual and troubleshooting
 
 **[Read the PiShelf user manual](USER_MANUAL.md)** for features, setup, Docker commands, **where to configure your existing PDF folder path**, adding magazines and newspapers, reading controls, iPhone Safari tips, backups, and troubleshooting an empty library.
