@@ -123,6 +123,8 @@ async function renderPages(){
   try{
    const pdfPage=await documentPDF.getPage(n);
    if(g!==generation||epoch!==layoutEpoch||!slot.isConnected)continue;
+   const natural=pdfPage.getViewport({scale:1});
+   dimensions.set(n,{width:natural.width,height:natural.height});
    sizeSlot(slot,n);
    // Render at a fixed high resolution once, independent of the current zoom.
    // This makes repeated pinch-in / pinch-out instant without another PDF render.
@@ -155,7 +157,12 @@ async function rebuild(){if(!documentPDF)return;$('pages').style.zoom='';$('page
  if(g!==generation||epoch!==layoutEpoch)return;
  const single=$('view-mode').value==='single',count=documentPDF.numPages;const fragment=document.createDocumentFragment();for(let n=single?page:1;n<=(single?page:count);n++){const slot=el('div','pdf-slot');slot.dataset.page=n;slot.setAttribute('aria-label','PDF page '+n);sizeSlot(slot,n);slot.append(el('span','page-placeholder','Page '+n));slots.push(slot);fragment.append(slot);}$('pages').append(fragment);
  pageObserver=new IntersectionObserver(entries=>{for(const e of entries)if(e.isIntersecting)enqueue(e.target);},{root:$('page-area'),rootMargin:'500px'});slots.forEach(s=>pageObserver.observe(s));
- layoutReady=true;const target=slots.find(s=>+s.dataset.page===page);if(target){$('page-area').scrollTop=target.offsetTop-20;enqueue(target);}updatePageUI();updateBookmarks();remember();}
+ layoutReady=true;const target=slots.find(s=>+s.dataset.page===page);if(target){
+  $('page-area').scrollTop=target.offsetTop-20;
+  // Start with the current page, then two pages ahead (or nearby previous pages).
+  const priority=[page,page+1,page+2,page-1].filter(n=>n>=1&&n<=count);
+  for(const n of priority){const nearby=slots.find(s=>+s.dataset.page===n);if(nearby)enqueue(nearby);}
+ }updatePageUI();updateBookmarks();remember();}
 let pdfjsModulePromise;
 async function pdfEngine(){
  if(!pdfjsModulePromise)pdfjsModulePromise=import('/vendor/pdf.min.mjs').then(module=>{
@@ -179,12 +186,11 @@ async function openMagazine(item,start){
   documentPDF=doc;
   page=Math.max(1,Math.min(start||reading.page||1,doc.numPages));
   $('page-number').max=doc.numPages;
-  // Load page dimensions once; page images are rendered only as needed.
-  for(let n=1;n<=doc.numPages;n++){
-   if(g!==generation)return;
-   const p=await doc.getPage(n),v=p.getViewport({scale:1});
-   dimensions.set(n,{width:v.width,height:v.height});
-  }
+  // Don't block opening on metadata for every page of a large magazine.
+  const first=await doc.getPage(page),v=first.getViewport({scale:1});
+  dimensions.set(1,{width:v.width,height:v.height});
+  dimensions.set(page,{width:v.width,height:v.height});
+  if(g!==generation)return;
   await rebuild();$('page-area').focus({preventScroll:true});
  }catch(e){if(g===generation)$('reader-status').textContent='Could not open PDF: '+e.message;}
 }
