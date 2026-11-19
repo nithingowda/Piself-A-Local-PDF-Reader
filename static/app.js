@@ -3,13 +3,13 @@
  * Keep gesture coordinates and page numbers synchronized when modifying this file.
  */
 const $=id=>document.getElementById(id);
-const defaults={sort:'issue',siteTheme:'light',theme:'dark',mode:'scroll',quality:'1.5',density:'compact',interval:'15',motion:true,gestures:true};
+const defaults={sort:'issue',siteTheme:'light',theme:'dark',mode:'scroll',quality:'1.5',density:'compact',motion:true,gestures:true};
 let prefs={...defaults};try{const stored=JSON.parse(localStorage.getItem('pishelf-settings')||'{}');for(const k in defaults)if(k in stored)prefs[k]=stored[k];}catch{}
 let collections=[],collectionFilter='',collectionSets=new Map();
 let categories=[],sourceFilter='',seriesFilter='',tagFilter='',visibleLimit=60;
 let library=[],saved={},filter='all',category='',syncing=false,current=null,documentPDF=null,page=1,zoom=1,rotation=0,generation=0,layoutEpoch=0,layoutReady=false;
 let cssZoomBase=1;
-let saveChain=Promise.resolve(),pollTimer,toastTimer,scrollTimer,resizeTimer,scrollFrame,issueItem;
+let saveChain=Promise.resolve(),toastTimer,scrollTimer,resizeTimer,scrollFrame,issueItem;
 const pendingSaves=new Map();
 /** el: Support the PiShelf reader or library interface. */
 function el(tag,cls,text){const n=document.createElement(tag);if(cls)n.className=cls;if(text)n.textContent=text;return n;}
@@ -98,7 +98,7 @@ function drawLibrary(){
 async function refresh(quiet=false){
  if(syncing||!$('reader').hidden)return;syncing=true;if(!quiet)$('status').textContent='Scanning your PDF folder…';
  try{await saveChain;if(pendingSaves.size){for(const [id,patch] of [...pendingSaves])await persist(id,patch);if(pendingSaves.size)throw Error('Reading progress is waiting to sync.');}
- const [next,state,cats,shelves]=await Promise.all([api('/api/library'+(quiet?'':'?refresh=1')),api('/api/progress'),api('/api/categories'),api('/api/collections')]);const collectionsChanged=JSON.stringify(shelves)!==JSON.stringify(collections)||JSON.stringify(cats)!==JSON.stringify(categories);categories=cats;collections=shelves;collectionSets=new Map(collections.map(c=>[c.id,new Set(c.items)]));if(collectionFilter&&!collectionSets.has(collectionFilter))collectionFilter='';const changed=collectionsChanged||JSON.stringify(next)!==JSON.stringify(library)||JSON.stringify(state)!==JSON.stringify(saved);library=next;saved=state;
+ const [next,state,cats,shelves]=await Promise.all([api('/api/library?refresh=1'),api('/api/progress'),api('/api/categories'),api('/api/collections')]);const collectionsChanged=JSON.stringify(shelves)!==JSON.stringify(collections)||JSON.stringify(cats)!==JSON.stringify(categories);categories=cats;collections=shelves;collectionSets=new Map(collections.map(c=>[c.id,new Set(c.items)]));if(collectionFilter&&!collectionSets.has(collectionFilter))collectionFilter='';const changed=collectionsChanged||JSON.stringify(next)!==JSON.stringify(library)||JSON.stringify(state)!==JSON.stringify(saved);library=next;saved=state;
  if(changed||!quiet){if(category&&!categories.some(c=>c.path===category&&(!sourceFilter||c.source===sourceFilter)))category='';updateFilterOptions();drawLibrary();}$('status').textContent='';
  }catch(e){$('status').textContent=e.message||'Could not reach your Pi. Retrying…';}finally{syncing=false;}
 }
@@ -120,11 +120,11 @@ $('issue-close').onclick=()=>$('issue-dialog').close();
 /** load Trash: Support the PiShelf reader or library interface. */
 async function loadTrash(){try{const items=await api('/api/trash');$('trash-list').replaceChildren();if(!items.length)$('trash-list').append(el('p','hint','Trash is empty.'));for(const i of items){const row=el('div','trash-row'),text=el('div');text.append(el('strong','',i.title),el('small','',i.path));const b=el('button','','Restore');b.onclick=async()=>{b.disabled=true;try{await api('/api/trash/restore',{token:i.token});await loadTrash();await refresh();toast('Magazine restored.');}catch(e){toast(e.message);b.disabled=false;}};const remove=el('button','danger','Delete permanently');remove.onclick=async()=>{if(!await confirmAction('Delete trashed PDF permanently?',`“${i.title}” will be removed from storage. This cannot be undone.`,'Delete permanently'))return;try{await api('/api/trash/delete',{token:i.token,confirm:true});await loadTrash();await refresh();toast('PDF deleted from storage.');}catch(error){toast(error.message);}};row.append(text,b,remove);$('trash-list').append(row);}}catch(e){$('trash-list').textContent=e.message;}}
 /** apply Prefs: Support the PiShelf reader or library interface. */
-function applyPrefs(){const sortOptions=[...$('sort').options].map(o=>o.value);if(!sortOptions.includes(prefs.sort))prefs.sort=defaults.sort;$('sort').value=prefs.sort;document.body.dataset.theme=prefs.siteTheme==='system'?(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'):prefs.siteTheme;$('reader').dataset.pageTheme=prefs.theme;document.body.dataset.density=prefs.density;clearInterval(pollTimer);if(+prefs.interval>0)pollTimer=setInterval(()=>{if(!document.hidden)refresh(true);},+prefs.interval*1000);document.querySelector('footer').textContent=(+prefs.interval?`Checks for PDFs every ${prefs.interval} seconds`:'Manual folder refresh')+' · Your files, on your storage';}
+function applyPrefs(){const sortOptions=[...$('sort').options].map(o=>o.value);if(!sortOptions.includes(prefs.sort))prefs.sort=defaults.sort;$('sort').value=prefs.sort;document.body.dataset.theme=prefs.siteTheme==='system'?(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'):prefs.siteTheme;$('reader').dataset.pageTheme=prefs.theme;document.body.dataset.density=prefs.density;document.querySelector('footer').textContent='PDF library updates when the page reloads · Your files, on your storage';}
 /** store Prefs: Support the PiShelf reader or library interface. */
 function storePrefs(){try{localStorage.setItem('pishelf-settings',JSON.stringify(prefs));}catch{toast('Browser settings storage is unavailable.');}applyPrefs();}
 /** open Settings: Support the PiShelf reader or library interface. */
-function openSettings(){for(const k of ['siteTheme','theme','mode','quality','density','interval'])$('pref-'+k).value=prefs[k];$('pref-motion').checked=prefs.motion;$('pref-gestures').checked=prefs.gestures;if(!uploading)populateUploadSources();drawCollectionManager();$('settings').showModal();loadTrash();}
+function openSettings(){for(const k of ['siteTheme','theme','mode','quality','density'])$('pref-'+k).value=prefs[k];$('pref-motion').checked=prefs.motion;$('pref-gestures').checked=prefs.gestures;if(!uploading)populateUploadSources();drawCollectionManager();$('settings').showModal();loadTrash();}
 $('settings-open').onclick=openSettings;$('reader-settings').onclick=openSettings;$('settings-close').onclick=()=>$('settings').close();
 for(const k of ['siteTheme','theme','mode','quality','density','interval'])$('pref-'+k).onchange=e=>{prefs[k]=e.target.value;storePrefs();if(documentPDF&&(k==='mode'||k==='quality')){$('view-mode').value=prefs.mode;rebuild();}};
 $('pref-gestures').onchange=e=>{prefs.gestures=e.target.checked;storePrefs();updateTouchMode();};
