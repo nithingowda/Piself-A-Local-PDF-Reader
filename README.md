@@ -99,10 +99,10 @@ Mount external storage before starting PiShelf. Docker stores reading state in t
 
 ### 3. Create the data volume and start PiShelf
 
-Compose creates the `piself` volume and runs `pishelf-init` to prepare its ownership using `PISHELF_UID` and `PISHELF_GID`. The app starts only after this step succeeds:
+Compose creates the `piself` volume. A single container prepares its ownership using `PISHELF_UID` and `PISHELF_GID`, then drops root privileges and starts the app.
 
 ```sh
-docker compose up -d --build
+docker compose up -d --build --remove-orphans
 docker compose ps
 ```
 
@@ -256,7 +256,7 @@ Run these commands from the app folder:
 
 | Task | Command |
 | --- | --- |
-| Start or rebuild | `docker compose up -d --build` |
+| Start or rebuild | `docker compose up -d --build --remove-orphans` |
 | Check container status | `docker compose ps` |
 | Follow recent logs | `docker compose logs --tail=100 -f` |
 | Restart | `docker compose restart` |
@@ -270,7 +270,7 @@ To update:
 1. Back up your collection and data.
 2. Replace application files with the new version.
 3. Preserve your `.env`, magazine folder, and `piself` volume.
-4. Run `docker compose up -d --build`.
+4. Run `docker compose up -d --build --remove-orphans`.
 
 The supplied configuration uses a non-root process, a read-only application filesystem, persistent writable storage mounts, automatic restart, bounded logs, and an HTTP health check. A separate database server is not required.
 

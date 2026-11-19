@@ -1,6 +1,6 @@
 # Docker volume setup
 
-PiShelf stores its SQLite database in the Docker volume `piself`, mounted at `/data`. PDFs remain in the host directory configured by `MAGAZINE_DIR`. The default URL is `http://YOUR_PI_IP:8098`; the app still listens on port 8080 inside the container.
+PiShelf stores its SQLite database in the Docker volume `piself`, mounted at `/data`. PDFs remain in the host directory mounted at `/magazines` in `compose.yaml`. The default URL is `http://YOUR_PI_IP:8098`; the app still listens on port 8080 inside the container.
 
 ## First installation or Dockhand redeployment
 
@@ -8,11 +8,11 @@ Run on the Docker host from the repository folder:
 
 ```sh
 docker compose build
-docker compose up -d
+docker compose up -d --remove-orphans
 docker compose logs --tail=30 pishelf
 ```
 
-The `pishelf-init` service prepares volume ownership using your configured `PISHELF_UID` and `PISHELF_GID`, then exits successfully. Compose waits for it before starting the non-root app. Set `PISHELF_PORT=8098` in an existing `.env` or Dockhand environment, since an existing setting overrides Compose's default. In Dockhand, update the stack from GitHub and redeploy to run the permission setup step and start the app.
+One container handles startup and serving. Its entrypoint briefly runs as root to prepare volume ownership using `PISHELF_UID` and `PISHELF_GID`, clears supplementary groups, then drops to those IDs and executes the app. No separate init service is needed. Set `PISHELF_PORT=8098` in an existing `.env` or Dockhand environment, since an existing setting overrides Compose's default. In Dockhand, update the stack from GitHub and redeploy to run the permission setup step and start the app.
 
 Compose creates the named volume automatically and can reuse an existing `piself` volume. It survives ordinary `docker compose down`; `docker compose down -v` deletes it. Each independent PiShelf installation should use its own volume.
 
@@ -51,14 +51,18 @@ Use a new backup filename each time to preserve earlier backups. Also back up th
 
 ## Database permission errors
 
-For `sqlite3.OperationalError: unable to open database file`, update to this Compose configuration and recreate the services so the initializer runs again:
+For `sqlite3.OperationalError: unable to open database file`, update to this Compose configuration and recreate the services so the entrypoint runs again:
 
 ```sh
 docker compose down
-docker compose up -d --build
-docker compose logs --tail=50 pishelf-init pishelf
+docker compose up -d --build --remove-orphans
+docker compose logs --tail=50 pishelf
 ```
 
-Do not add `-v` to `down`: that removes the data volume. Successful exit of `pishelf-init` is expected. It adjusts the data directory and SQLite files without deleting reading state. It does not change permissions on your PDF collection.
+Do not add `-v` to `down`: that removes the data volume. The entrypoint adjusts the data directory and SQLite files without deleting reading state. It does not change permissions on your PDF collection.
 
-If the initializer fails, inspect its logs and available disk space. Confirm the deployed stack mounts `piself:/data` and that `PISHELF_UID` and `PISHELF_GID` are valid numeric IDs. The initializer requires ownership-changing capabilities on the Docker host.
+If the entrypoint fails, inspect its logs and available disk space. Confirm the deployed stack mounts `piself:/data` and that `PISHELF_UID` and `PISHELF_GID` are valid numeric IDs. The entrypoint requires ownership-changing capabilities on the Docker host.
+
+## Upgrade from the two-container setup
+
+Run `docker compose up -d --build --remove-orphans` after updating from GitHub. This removes the obsolete `pishelf-init` container while retaining the `piself` volume. In Dockhand, rebuild/redeploy the updated stack and remove the old stopped init container if it remains. Do not delete the volume. The magazine mount and host port 8098 are unchanged.
