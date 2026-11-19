@@ -1,6 +1,19 @@
-/* PiShelf browser client: library UI, PDF rendering, touch gestures, and saved progress.
- * Rendering work is queued and bounded to protect mobile and tablet memory.
- * Keep gesture coordinates and page numbers synchronized when modifying this file.
+/* PiShelf browser client — navigation guide
+ *
+ * Find these named functions to work on a feature:
+ *   Library: refresh(), drawLibrary(), cardFor(), updateFilterOptions()
+ *   Settings: applyPrefs(), openSettings(), storePrefs()
+ *   Reader: openMagazine(), rebuild(), move(), closeReader()
+ *   WebP / memory: renderPages(), preloadMagazineNeighbors(),
+ *                  cancelAllSharpImages(), trimCanvases()
+ *   Navigation: trackScroll(), showThumbnailRange(), updatePageUI()
+ *   State: persist(), remember(), clearProgress()
+ *
+ * Invariants:
+ * - Keep pinch/gesture coordinate math untouched when tuning image loading.
+ * - Each async image response checks generation/layoutEpoch before displaying.
+ * - Release decoded offscreen images; never release during an active pinch.
+ * - A missing optional control must not prevent refresh() from starting.
  */
 const $=id=>document.getElementById(id);
 const defaults={sort:'issue',siteTheme:'light',theme:'dark',mode:'scroll',quality:'1.5',density:'compact',motion:true,gestures:true};
@@ -84,6 +97,8 @@ function cardFor(item,target){
  if(s.page||s.completed){const bar=el('div','progress'),fill=el('span');fill.style.width=(finished(item)?100:Math.min(100,s.page/s.total*100))+'%';bar.append(fill);card.append(bar);}target.append(card);coverObserver.observe(cover);
 }
 /** draw Library: Support the PiShelf reader or library interface. */
+// === Library grid ===========================================================
+// Only create cards for the current visibleLimit; covers are loaded lazily.
 function drawLibrary(){
  coverObserver.disconnect();coverQueue=[];$('grid').replaceChildren();$('resume-grid').replaceChildren();$('count').textContent=library.length;
  $('shelf-label').textContent=collections.find(c=>c.id===collectionFilter)?.name||category||({all:'All publications',reading:'Continue reading',favorites:'Favourites',unread:'Unread',completed:'Finished'}[filter]);
@@ -95,7 +110,10 @@ function drawLibrary(){
  if(!items.length){const empty=el('div','empty');empty.append(el('h2','',library.length?'No matching issues.':'Your reading room is ready.'),el('p','',library.length?'Try another category, search or filter.':'Copy PDFs into your magazine folder. They appear automatically, with subfolders as categories.'));$('grid').append(empty);}
 }
 /** refresh: Support the PiShelf reader or library interface. */
-async function refresh(quiet=false){
+async // === Library refresh =======================================================
+// The explicit refresh=1 query requests a filesystem rescan on page reload.
+// Keep this independent of optional Settings controls (see PR #24).
+function refresh(quiet=false){
  if(syncing||!$('reader').hidden)return;syncing=true;if(!quiet)$('status').textContent='Scanning your PDF folder…';
  try{await saveChain;if(pendingSaves.size){for(const [id,patch] of [...pendingSaves])await persist(id,patch);if(pendingSaves.size)throw Error('Reading progress is waiting to sync.');}
  const [next,state,cats,shelves]=await Promise.all([api('/api/library?refresh=1'),api('/api/progress'),api('/api/categories'),api('/api/collections')]);const collectionsChanged=JSON.stringify(shelves)!==JSON.stringify(collections)||JSON.stringify(cats)!==JSON.stringify(categories);categories=cats;collections=shelves;collectionSets=new Map(collections.map(c=>[c.id,new Set(c.items)]));if(collectionFilter&&!collectionSets.has(collectionFilter))collectionFilter='';const changed=collectionsChanged||JSON.stringify(next)!==JSON.stringify(library)||JSON.stringify(state)!==JSON.stringify(saved);library=next;saved=state;
@@ -163,6 +181,9 @@ function enqueue(slot){
  renderPages();
 }
 /** render Pages: Manage PDF page rendering and canvas lifecycle. */
+// === WebP-first reader ======================================================
+// Render queue is serialized to bound concurrent decoding. A 960px preview
+// appears first, then a sharper WebP may replace it if the slot is still valid.
 async function renderPages(){
  if(renderBusy)return;renderBusy=true;
  try{while(renderQueue.length){
@@ -250,6 +271,8 @@ function cancelSharpImage(slot){
 function cancelAllSharpImages(){
  for(const slot of pendingSharpImages.keys())cancelSharpImage(slot);
 }
+// === Neighbor prefetch ======================================================
+// Keep only nearby images. Avoid 2800px speculative requests on mobile.
 function preloadMagazineNeighbors(){
  if(!documentPDF||!current?.id)return;
  // Never prefetch 2800px zoom images; they are expensive on iPhone Safari.
@@ -376,6 +399,8 @@ async function closeReader({fromHistory=false}={}){
  }
  clearMagazinePrefetches();cancelAllSharpImages();resetPinch();clearTimeout(scrollTimer);remember();++generation;++layoutEpoch;layoutReady=false;pageObserver?.disconnect();renderQueue=[];const oldDoc=documentPDF;documentPDF=null;if(oldDoc?.destroy)oldDoc.destroy().catch(()=>{});$('reader').hidden=true;document.body.classList.remove('reader-open');$('library').hidden=false;$('pages').replaceChildren();slots=[];renderedSlots.clear();if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});drawLibrary();refresh(true);}
 // Thumbnail browser: load only the visible part of a bounded thumbnail list.
+// === Thumbnail navigator ====================================================
+// 60 pages per batch; IntersectionObserver loads only visible thumbnails.
 function showThumbnailRange(begin){
  if(!documentPDF||!current)return;
  const grid=$('thumbnail-grid');grid.replaceChildren();
