@@ -357,6 +357,13 @@ function finishPinch(cancelled=false){
   if(rect.left>view.left)area.scrollLeft+=rect.left-view.left;
   else if(rect.right<view.right)area.scrollLeft-=view.right-rect.right;
  }
+ // Upgrade the current image when magnified, without changing the page box.
+ const image=slot.querySelector('img');
+ if(image&&current?.id){
+  const width=zoom>1.6?2800:zoom>0.85?1600:960;
+  const url='/api/page-image/'+encodeURIComponent(current.id)+'/'+state.page+'?width='+width;
+  if(!image.src.endsWith(url))image.src=url;
+ }
  updatePageUI();remember();
 }
 $('page-area').addEventListener('touchstart',e=>{
