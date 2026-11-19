@@ -309,7 +309,11 @@ async function openMagazine(item,start){
   const first=await doc.getPage(page),firstView=first.getViewport({scale:1});
   if(g!==generation)return;
   dimensions.set(page,{width:firstView.width,height:firstView.height});
-  dimensions.set(1,dimensions.get(page)); // fallback for not-yet-measured slots
+  if(page!==1){
+   const cover=await doc.getPage(1),v=cover.getViewport({scale:1});
+   if(g!==generation)return;
+   dimensions.set(1,{width:v.width,height:v.height});
+  }
   // Start with the entire page visible and a small margin on every side.
   zoom=fitEntirePageZoom(page);
   await rebuild();$('page-area').focus({preventScroll:true});
