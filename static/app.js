@@ -154,7 +154,7 @@ async function renderPages(){
 }
 function trimCanvases(){if(pinch||Math.abs(zoom-cssZoomBase)>.01)return;const area=$('page-area').getBoundingClientRect();for(const slot of renderedSlots){const rect=slot.getBoundingClientRect();if(Math.abs(+slot.dataset.page-page)>2&&(rect.bottom<area.top||rect.top>area.bottom)){for(const c of slot.querySelectorAll('canvas')){c.width=0;c.height=0;}slot.replaceChildren(el('span','page-placeholder','Page '+slot.dataset.page));slot.dataset.ready='no';renderedSlots.delete(slot);}}}
 function trackScroll(){
- if(pinch||!layoutReady||!documentPDF||$('view-mode').value!=='scroll'||!slots.length)return;
+ if(pinch||performance.now()<pinchScrollLockUntil||!layoutReady||!documentPDF||$('view-mode').value!=='scroll'||!slots.length)return;
  const area=$('page-area'),target=area.scrollTop+Math.min(area.clientHeight*.35,240);let low=0,high=slots.length-1;
  while(low<high){const mid=Math.ceil((low+high)/2);if(slots[mid].offsetTop<=target)low=mid;else high=mid-1;}
  const n=+slots[low].dataset.page;if(n!==page){page=n;updatePageUI();}
@@ -247,7 +247,7 @@ function updateTouchMode(){$('page-area').classList.toggle('gesture-navigation',
 function toggleReaderControls(){setReaderFocus(!$('reader').classList.contains('focused'));}
 function touchPair(touches){const a=touches[0],b=touches[1];return {distance:Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY),x:(a.clientX+b.clientX)/2,y:(a.clientY+b.clientY)/2};}
 function resetPinch(){cancelAnimationFrame(pinchFrame);pinchFrame=0;$('pages').style.transform='';$('pages').style.transformOrigin='';$('pages').style.willChange='';pinch=null;}
-let zoomSharpenTimer=0,zoomSharpenSerial=0;
+let zoomSharpenTimer=0,zoomSharpenSerial=0,pinchScrollLockUntil=0;
 async function sharpenVisiblePage(slot,serial){
  if(!documentPDF||!slot.isConnected||serial!==zoomSharpenSerial||pinch)return;
  const doc=documentPDF,g=generation,n=+slot.dataset.page;
@@ -284,6 +284,7 @@ async function finishPinch(cancelled=false){
  if(!pinch)return;
  const state=pinch;
  resetPinch();
+ pinchScrollLockUntil=performance.now()+800;
  suppressTapUntil=performance.now()+500;lastTap=null;gestureStart=null;gesturePointers.clear();
  if(cancelled||!documentPDF||state.g!==generation)return;
  const next=Math.round(state.nextZoom*100)/100;
@@ -293,9 +294,13 @@ async function finishPinch(cancelled=false){
  zoom=next;page=state.page;
  // Retain the current canvas, scaling it immediately. Never rebuild on pinch end.
  $('pages').style.zoom=String(zoom/cssZoomBase);
+ // Re-anchor using the original PDF page rather than the viewport's current page.
+ // The scroll listener is locked briefly so it cannot select a neighboring page.
  const after=slot.getBoundingClientRect();
- area.scrollLeft+=after.left+state.fx*after.width-state.x;
- area.scrollTop+=after.top+state.fy*after.height-state.y;
+ const dx=after.left+state.fx*after.width-state.x;
+ const dy=after.top+state.fy*after.height-state.y;
+ area.scrollLeft+=dx;
+ area.scrollTop+=dy;
  updateTouchMode();updatePageUI();remember();
  // The original canvas already contains high-resolution pixels; no second render.
 }
@@ -303,7 +308,8 @@ $('page-area').addEventListener('touchstart',e=>{
  if(e.touches.length!==2||!prefs.gestures||!documentPDF||!layoutReady)return;
  e.preventDefault();lastTap=null;gestureStart=null;clearTimeout(scrollTimer);clearTimeout(zoomSharpenTimer);++zoomSharpenSerial;
  const point=touchPair(e.touches),area=$('page-area'),rect=area.getBoundingClientRect();
- const slot=slots.find(s=>{const r=s.getBoundingClientRect();return point.y>=r.top&&point.y<=r.bottom;})||slots.find(s=>+s.dataset.page===page);
+ // Select the actual page beneath both fingers; a Y-only match can pick an adjacent page.
+ const slot=slots.find(s=>{const r=s.getBoundingClientRect();return point.x>=r.left&&point.x<=r.right&&point.y>=r.top&&point.y<=r.bottom;})||slots.find(s=>+s.dataset.page===page);
  if(!slot||point.distance<10)return;const r=slot.getBoundingClientRect();
  pinch={g:generation,distance:point.distance,startZoom:zoom,nextZoom:zoom,page:+slot.dataset.page,fx:Math.max(0,Math.min(1,(point.x-r.left)/r.width)),fy:Math.max(0,Math.min(1,(point.y-r.top)/r.height)),x:point.x,y:point.y,startX:point.x,startY:point.y};
  $('pages').style.transformOrigin=`${point.x-$('pages').getBoundingClientRect().left}px ${point.y-$('pages').getBoundingClientRect().top}px`;$('pages').style.willChange='transform';
