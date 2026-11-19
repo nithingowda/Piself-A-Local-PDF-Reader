@@ -413,7 +413,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == '/api/health': self.json_response({'status':'ok'},head=head); return
             if path.startswith('/api/page-image/'):
                 parts=path.split('/')
-                if len(parts)!=5 or not re.fullmatch('[a-f0-9]{32}',parts[3]) or not parts[4].isdigit():
+                if len(parts)!=5 or not re.fullmatch('[a-f0-9]{20}',parts[3]) or not parts[4].isdigit():
                     raise APIError(404,'Page not found.')
                 item=next((i for i in self.library_items() if i['id']==parts[3]),None)
                 if not item: raise APIError(404,'Magazine not found.')
