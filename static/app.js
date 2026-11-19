@@ -317,25 +317,31 @@ function finishPinch(cancelled=false){
  suppressTapUntil=performance.now()+500;
  lastTap=null;gestureStart=null;gesturePointers.clear();
  if(cancelled||!documentPDF||state.g!==generation)return;
- const next=Math.max(fitEntirePageZoom(state.page),Math.round(state.nextZoom*100)/100);
- if(Math.abs(next-zoom)<.01)return;
+ const minimum=fitEntirePageZoom(state.page);
+ const next=Math.max(minimum,Math.round(state.nextZoom*100)/100);
  const slot=slots.find(s=>+s.dataset.page===state.page),area=$('page-area');
  if(!slot)return;
+ // Capture the PDF point under the fingers before modifying layout.
+ const before=slot.getBoundingClientRect();
+ const fx=Math.max(0,Math.min(1,(state.x-before.left)/before.width));
+ const fy=Math.max(0,Math.min(1,(state.y-before.top)/before.height));
  zoom=next;page=state.page;
- // CSS zoom reuses the existing high-resolution canvas instead of rebuilding.
- $('pages').style.zoom=String(zoom/cssZoomBase);
+ // Resize the actual page boxes. CSS zoom on the entire pages wrapper
+ // creates a large scrollable gutter in iOS Safari and breaks pinch-out.
+ $('pages').style.zoom='';
+ cssZoomBase=zoom;
+ updateTouchMode();
+ for(const item of slots)sizeSlot(item,+item.dataset.page);
  const after=slot.getBoundingClientRect();
- area.scrollLeft+=after.left+state.fx*after.width-state.x;
- area.scrollTop+=after.top+state.fy*after.height-state.y;
- // A zoomed page wider than the viewport must cover it horizontally:
- // never leave a large blank gutter when the pinch midpoint moves.
- const viewport=area.getBoundingClientRect();
- const pageRect=slot.getBoundingClientRect();
- if(pageRect.width>=viewport.width){
-  if(pageRect.left>viewport.left)area.scrollLeft+=pageRect.left-viewport.left;
-  else if(pageRect.right<viewport.right)area.scrollLeft-=viewport.right-pageRect.right;
+ area.scrollLeft+=after.left+fx*after.width-state.x;
+ area.scrollTop+=after.top+fy*after.height-state.y;
+ // Keep the zoomed page covering the viewport when it is wider than it.
+ const view=area.getBoundingClientRect(),rect=slot.getBoundingClientRect();
+ if(rect.width>=view.width){
+  if(rect.left>view.left)area.scrollLeft+=rect.left-view.left;
+  else if(rect.right<view.right)area.scrollLeft-=view.right-rect.right;
  }
- updateTouchMode();updatePageUI();remember();
+ updatePageUI();remember();
 }
 $('page-area').addEventListener('touchstart',e=>{
  if(e.touches.length!==2||!prefs.gestures||!documentPDF||!layoutReady)return;
@@ -348,7 +354,7 @@ $('page-area').addEventListener('touchstart',e=>{
 },{passive:false});
 $('page-area').addEventListener('touchmove',e=>{
  if(!pinch)return;e.preventDefault();if(e.touches.length!==2)return;
- const point=touchPair(e.touches);pinch.nextZoom=Math.max(fitEntirePageZoom(pinch.page),Math.min(3,pinch.startZoom*point.distance/pinch.distance));pinch.x=point.x;pinch.y=point.y;
+ const point=touchPair(e.touches);pinch.nextZoom=Math.max(fitEntirePageZoom(pinch.page),Math.min(Math.max(3,pinch.startZoom),pinch.startZoom*point.distance/pinch.distance));pinch.x=point.x;pinch.y=point.y;
  if(!pinchFrame)pinchFrame=requestAnimationFrame(()=>{pinchFrame=0;if(pinch)$('pages').style.transform=`translate(${pinch.x-pinch.startX}px, ${pinch.y-pinch.startY}px) scale(${pinch.nextZoom/pinch.startZoom})`;});
 },{passive:false});
 $('page-area').addEventListener('touchend',e=>{if(pinch&&e.touches.length<2){e.preventDefault();finishPinch();}},{passive:false});
