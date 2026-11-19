@@ -27,11 +27,11 @@ PiShelf carries reading progress, favourites and bookmarks to the new filename. 
 
 ## Focused reading and themes
 
-Opening a PDF hides the top and bottom reader bars. Use the small **Controls** button to reveal them; **Hide controls** returns to the full reading area. The reader retains page bookmarks, bookmark jumping, continuous/single-page modes, zoom, rotation, and fullscreen where supported.
+Opening a PDF hides the top and bottom reader bars. Double-tap the PDF page to reveal or hide them; **Hide controls** also returns to the full reading area. There is no floating Controls button. On desktop, double-click the page or press **C**. A keyboard/screen-reader control remains available. The reader retains page bookmarks, bookmark jumping, continuous/single-page modes, zoom, rotation, and fullscreen where supported.
 
 **Settings → Website theme** offers Light, Dark, AMOLED (pure black), and Follow device. **Reading theme** separately controls Light, Warm paper, Dark surroundings, AMOLED surroundings, or Night (dimmer, warmer PDF pages). Night changes the appearance of PDF content; other modes leave page colours unchanged. Preferences persist per browser and are included in downloaded reading backups.
 
-The library, editing forms, settings, and reader controls adapt to phone and tablet screens. On mobile, use touch scrolling and the Controls button; browser-native fullscreen availability varies.
+The library, editing forms, settings, and reader controls adapt to phone and tablet screens. On mobile, use touch scrolling and double-tap controls; browser-native fullscreen availability varies.
 
 ## Backup and restore in Settings
 
@@ -75,13 +75,14 @@ Before upgrading, back up your source folders and data volume. Never use `docker
 
 ## Gestures and remembered reader settings
 
-With **Settings → Swipe pages and double-tap to zoom** enabled:
+With **Settings → Swipe pages and pinch to zoom** enabled:
 
 - Swipe left for the next page and right for the previous page when at fit width or smaller. A vertical scroll remains ordinary scrolling.
-- Double-tap to switch between fit width and 2× zoom. A mouse double-click does the same on desktop.
-- At larger zoom levels, horizontal dragging pans the page instead of changing pages. Two-finger gestures are left to the browser.
+- Double-tap shows or hides the reader bars. It remains available even when swipe/pinch gestures are disabled. Desktop users can double-click or press **C**.
+- Pinch with two fingers to zoom the PDF from 0.5× to 3×. The page previews the scale while pinching and renders once at the new resolution when the gesture ends. Zoom is saved for the issue.
+- At larger zoom levels, horizontal dragging pans the page instead of changing pages. Two-finger pinches zoom the PDF itself.
 
-Page, zoom, rotation and continuous/single-page mode are saved for each issue. Opening it again restores those settings. Browser-native pinch zoom support varies by device. The reader has no Open PDF link and no saving-success banner; failed saves still show a brief error so reading changes are not silently lost.
+Page, zoom, rotation and continuous/single-page mode are saved for each issue. Opening it again restores those settings. Browser zoom outside the reader remains available. The reader has no Open PDF link and no saving-success banner; failed saves still show a brief error so reading changes are not silently lost.
 
 ## Reading collections
 
