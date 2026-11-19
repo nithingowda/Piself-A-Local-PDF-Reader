@@ -298,7 +298,7 @@ function drawCollectionManager(){const box=$('collection-manager');box.replaceCh
 // Double-tap controls remain available even when swipe/pinch gestures are disabled.
 const gesturePointers=new Set();let gestureStart=null,lastTap=null,lastTouchTime=-Infinity,pinch=null,pinchFrame=0,suppressTapUntil=0;
 /** update Touch Mode: Handle touch zoom while maintaining the reader position. */
-function updateTouchMode(){$('page-area').classList.toggle('gesture-navigation',!!prefs.gestures&&zoom<=1);}
+function updateTouchMode(){const area=$('page-area');area.classList.toggle('gesture-navigation',!!prefs.gestures&&zoom<=1);area.classList.toggle('zoomed-in',!!documentPDF&&zoom>fitEntirePageZoom(page)+.01);}
 /** toggle Reader Controls: Support the PiShelf reader or library interface. */
 function toggleReaderControls(){setReaderFocus(!$('reader').classList.contains('focused'));}
 /** touch Pair: Handle touch zoom while maintaining the reader position. */
