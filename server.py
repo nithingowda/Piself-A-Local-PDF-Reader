@@ -1,3 +1,6 @@
+# server.py: PiShelf HTTP server, library APIs, file access, and reading progress.
+# Comments explain responsibilities and non-obvious behavior; keep runtime logic unchanged.
+
 #!/usr/bin/env python3
 """PiShelf: a local PDF library with durable reading state and recoverable trash."""
 import argparse
@@ -20,10 +23,12 @@ from urllib.parse import unquote, urlsplit, quote, parse_qs
 BASE = Path(__file__).resolve().parent
 
 class APIError(Exception):
+    #   init  : handle this step of the server request or library workflow.
     def __init__(self, status, message):
         self.status, self.message = status, message
 
 class Handler(BaseHTTPRequestHandler):
+    # json response: handle this step of the server request or library workflow.
     def json_response(self, value, status=200, head=False):
         body = json.dumps(value).encode()
         self.send_response(status)
@@ -34,6 +39,7 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         if not head: self.wfile.write(body)
 
+    # library items: handle this step of the server request or library workflow.
     def library_items(self):
         with self.server.scan_lock:
             if time.monotonic() - self.server.scan_time < 10:
@@ -66,10 +72,12 @@ class Handler(BaseHTTPRequestHandler):
             self.server.scan_time = time.monotonic()
             return self.server.scan_items
 
+    # categories: handle this step of the server request or library workflow.
     def categories(self):
         self.library_items()
         return self.server.scan_categories
 
+    # upload pdf: handle this step of the server request or library workflow.
     def upload_pdf(self):
         params=parse_qs(urlsplit(self.path).query)
         source=params.get('source',['magazines'])[0]
@@ -112,11 +120,13 @@ class Handler(BaseHTTPRequestHandler):
                 temporary.unlink(missing_ok=True)
         self.json_response({'ok':True,'id':item_id(source,destination.relative_to(root).as_posix())},201)
 
+    # accept origin: handle this step of the server request or library workflow.
     def accept_origin(self):
         origin = self.headers.get('Origin')
         if (origin and urlsplit(origin).netloc != self.headers.get('Host')) or self.headers.get('Sec-Fetch-Site') == 'cross-site':
             raise APIError(403, 'Cross-origin changes are not allowed.')
 
+    # cache cover: handle this step of the server request or library workflow.
     def cache_cover(self):
         key = urlsplit(self.path).path.rsplit('/',1)[-1]
         if not re.fullmatch('[a-f0-9]{64}', key): raise APIError(400, 'Invalid cover key.')
@@ -145,6 +155,7 @@ class Handler(BaseHTTPRequestHandler):
                     old.unlink(missing_ok=True)
         self.json_response({'ok':True})
 
+    # do POST: handle this step of the server request or library workflow.
     def do_POST(self):
         try:
             self.accept_origin()
@@ -169,6 +180,7 @@ class Handler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError): pass
         except (OSError, sqlite3.Error): self.json_response({'error':'Could not write changes. Check folder permissions and free space.'}, 500)
 
+    # mutate: handle this step of the server request or library workflow.
     def mutate(self, data, db):
         route = urlsplit(self.path).path
         if route == '/api/collections':
@@ -389,8 +401,10 @@ class Handler(BaseHTTPRequestHandler):
             return {'ok':True}
         raise APIError(404,'Unknown action.')
 
+    # do HEAD: handle this step of the server request or library workflow.
     def do_HEAD(self): self.do_GET(head=True)
 
+    # do GET: handle this step of the server request or library workflow.
     def do_GET(self, head=False):
         path=unquote(urlsplit(self.path).path)
         try:
@@ -474,17 +488,20 @@ class Handler(BaseHTTPRequestHandler):
         except (BrokenPipeError,ConnectionResetError): pass
         except (OSError,sqlite3.Error): self.send_error(500,'Unable to read library storage.')
 
+# item id: handle this step of the server request or library workflow.
 def item_id(source,relative):
     identity=relative if source=='magazines' else source+':'+relative
     return hashlib.sha256(identity.encode()).hexdigest()[:20]
 
 
+# safe relative: handle this step of the server request or library workflow.
 def safe_relative(value):
     if not isinstance(value,str) or not value or len(value)>240 or '\\' in value or any(ord(c)<32 for c in value): raise ValueError()
     if value.startswith('/') or any(p in ('','.','..') or p.startswith('.') for p in value.split('/')): raise ValueError()
     return value
 
 
+# checked path: handle this step of the server request or library workflow.
 def checked_path(root,relative):
     safe_relative(relative)
     target=root/relative
@@ -496,6 +513,7 @@ def checked_path(root,relative):
     return target
 
 
+# move exclusive: handle this step of the server request or library workflow.
 def move_exclusive(source,destination):
     try: os.link(source,destination)
     except OSError as error:
@@ -509,6 +527,7 @@ def move_exclusive(source,destination):
         destination.unlink(); raise
 
 
+# infer issue: handle this step of the server request or library workflow.
 def infer_issue(stem):
     title=stem.replace('_',' ')
     match=re.search(r'\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(20\d{2}|19\d{2})\b',title,re.I)
@@ -526,6 +545,7 @@ def infer_issue(stem):
     return dict(series=series or title,issueDate=date,tags=[])
 
 
+# validate metadata: handle this step of the server request or library workflow.
 def validate_metadata(value):
     if not isinstance(value,dict) or set(value)-{'series','issueDate','tags'}: raise ValueError()
     for field in ('series','issueDate'):
@@ -539,17 +559,20 @@ def validate_metadata(value):
     return dict(series=value.get('series','').strip(),issueDate=date,tags=list(dict.fromkeys(t.strip() for t in tags)))
 
 
+# validate reader options: handle this step of the server request or library workflow.
 def validate_reader_options(value):
     if 'zoom' in value and (type(value['zoom']) not in (int,float) or not .1<=value['zoom']<=3): raise ValueError()
     if 'rotation' in value and (type(value['rotation']) is not int or value['rotation'] not in (0,90,180,270)): raise ValueError()
     if 'mode' in value and value['mode'] not in ('scroll','single'): raise ValueError()
 
 
+# collection name: handle this step of the server request or library workflow.
 def collection_name(value):
     if not isinstance(value,str) or not value.strip() or len(value.strip())>80 or any(ord(c)<32 for c in value): raise ValueError()
     return value.strip()
 
 
+# read collections: handle this step of the server request or library workflow.
 def read_collections(db):
     members={}
     for collection_id,key in db.execute('SELECT collection_id,item_id FROM collection_items ORDER BY item_id'):
@@ -557,6 +580,7 @@ def read_collections(db):
     return [dict(id=key,name=name,items=members.get(key,[])) for key,name in db.execute('SELECT id,name FROM collections ORDER BY name COLLATE NOCASE')]
 
 
+# validate collections: handle this step of the server request or library workflow.
 def validate_collections(collections):
     if not isinstance(collections,list) or len(collections)>200: raise ValueError()
     ids=set();names=set()
@@ -568,12 +592,14 @@ def validate_collections(collections):
         ids.add(key);names.add(name.casefold())
 
 
+# remove reading state: handle this step of the server request or library workflow.
 def remove_reading_state(db,key):
     db.execute('DELETE FROM progress WHERE id=?',(key,))
     db.execute('DELETE FROM metadata WHERE id=?',(key,))
     db.execute('DELETE FROM collection_items WHERE item_id=?',(key,))
 
 
+# validate progress: handle this step of the server request or library workflow.
 def validate_progress(value):
     if not isinstance(value,dict) or set(value)-{'page','total','favorite','bookmarks','completed','lastRead','zoom','rotation','mode'}: raise ValueError()
     validate_reader_options(value)
@@ -587,6 +613,7 @@ def validate_progress(value):
     if 'lastRead' in value and (type(value['lastRead']) not in (int,float) or not 0<=value['lastRead']<=1e12): raise ValueError()
 
 
+# make server: handle this step of the server request or library workflow.
 def make_server(host,port,library,data,newspapers=None):
     library=Path(library).expanduser().resolve();library.mkdir(parents=True,exist_ok=True)
     data=Path(data).expanduser().resolve();data.mkdir(parents=True,exist_ok=True)

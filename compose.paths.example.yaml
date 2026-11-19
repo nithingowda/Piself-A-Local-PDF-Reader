@@ -1,3 +1,4 @@
+# PiShelf container settings and persistent library mounts.
 # Copy to compose.override.yaml and set your Docker HOST folder paths.
 # Compose automatically combines compose.yaml with compose.override.yaml.
 services:
