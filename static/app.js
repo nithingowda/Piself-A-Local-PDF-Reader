@@ -124,8 +124,17 @@ async function renderPages(){
    const pdfPage=await documentPDF.getPage(n);
    if(g!==generation||epoch!==layoutEpoch||!slot.isConnected)continue;
    const natural=pdfPage.getViewport({scale:1});
+   // Keep the current reading position stable when a differently sized PDF
+   // page gets its real dimensions. Otherwise the scroll position jumps.
+   const area=$('page-area');
+   const previousHeight=slot.getBoundingClientRect().height;
+   const wasAbove=slot.getBoundingClientRect().bottom<=area.getBoundingClientRect().top;
    dimensions.set(n,{width:natural.width,height:natural.height});
    sizeSlot(slot,n);
+   if(wasAbove&&!pinch){
+    const heightDelta=slot.getBoundingClientRect().height-previousHeight;
+    if(Math.abs(heightDelta)>0.5)area.scrollTop+=heightDelta;
+   }
    // Render at a fixed high resolution once, independent of the current zoom.
    // This makes repeated pinch-in / pinch-out instant without another PDF render.
    // Cap canvas area to avoid iOS Safari memory crashes on long magazines.
