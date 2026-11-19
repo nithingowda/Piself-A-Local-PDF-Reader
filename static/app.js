@@ -124,7 +124,7 @@ function applyPrefs(){const sortOptions=[...$('sort').options].map(o=>o.value);i
 /** store Prefs: Support the PiShelf reader or library interface. */
 function storePrefs(){try{localStorage.setItem('pishelf-settings',JSON.stringify(prefs));}catch{toast('Browser settings storage is unavailable.');}applyPrefs();}
 /** open Settings: Support the PiShelf reader or library interface. */
-function openSettings(){for(const k of ['siteTheme','theme','mode','quality','density'])$('pref-'+k).value=prefs[k];$('pref-motion').checked=prefs.motion;$('pref-gestures').checked=prefs.gestures;if(!uploading)populateUploadSources();drawCollectionManager();$('settings').showModal();loadTrash();}
+function openSettings(){for(const k of ['siteTheme','theme','mode','quality','density'])$('pref-'+k).value=prefs[k];$('pref-motion').checked=prefs.motion;$('pref-gestures').checked=prefs.gestures;if(!uploading)populateUploadSources();drawCollectionManager();$('settings').showModal();loadTrash();loadWebPCacheStats();}
 $('settings-open').onclick=openSettings;$('reader-settings').onclick=openSettings;$('settings-close').onclick=()=>$('settings').close();
 for(const k of ['siteTheme','theme','mode','quality','density','interval'])$('pref-'+k).onchange=e=>{prefs[k]=e.target.value;storePrefs();if(documentPDF&&(k==='mode'||k==='quality')){$('view-mode').value=prefs.mode;rebuild();}};
 $('pref-gestures').onchange=e=>{prefs.gestures=e.target.checked;storePrefs();updateTouchMode();};
@@ -133,7 +133,7 @@ $('pref-motion').onchange=e=>{prefs.motion=e.target.checked;storePrefs();};$('cl
 let slots=[],renderQueue=[],renderBusy=false,pageObserver=null;
 const dimensions=new Map(),renderedSlots=new Set();
 /** update Page UI: Keep the visible PDF page and navigation state in sync. */
-function updatePageUI(){if(!documentPDF)return;$('page-number').value=page;$('page-total').textContent='/ '+documentPDF.numPages;$('prev').disabled=page<=1;$('next').disabled=page>=documentPDF.numPages;const marks=saved[current.id]?.bookmarks||[];$('bookmark').textContent=marks.includes(page)?'★':'☆';$('bookmark').setAttribute('aria-pressed',marks.includes(page));}
+function updatePageUI(){if(!documentPDF)return;const percent=Math.round(page/documentPDF.numPages*100);$('reader-progress-fill').style.width=percent+'%';document.querySelector('.reader-progress').setAttribute('aria-valuenow',String(percent));$('page-number').value=page;$('page-total').textContent='/ '+documentPDF.numPages;$('prev').disabled=page<=1;$('next').disabled=page>=documentPDF.numPages;const marks=saved[current.id]?.bookmarks||[];$('bookmark').textContent=marks.includes(page)?'★':'☆';$('bookmark').setAttribute('aria-pressed',marks.includes(page));}
 /** update Bookmarks: Support the PiShelf reader or library interface. */
 function updateBookmarks(){const select=$('bookmarks');select.replaceChildren(new Option('Bookmarks',''));for(const n of saved[current.id]?.bookmarks||[])if(n<=documentPDF.numPages)select.add(new Option('Page '+n,n));}
 /** remember: Support the PiShelf reader or library interface. */
@@ -294,15 +294,37 @@ async function openMagazine(item,start){
   documentPDF=doc;
   page=Math.max(1,Math.min(start||reading.page||1,doc.numPages));
   $('page-number').max=doc.numPages;
-  // Load page dimensions once; page images are rendered only as needed.
-  for(let n=1;n<=doc.numPages;n++){
-   if(g!==generation)return;
-   const p=await doc.getPage(n),v=p.getViewport({scale:1});
-   dimensions.set(n,{width:v.width,height:v.height});
-  }
+  // Open immediately using the current page dimensions. Hydrate other page
+  // sizes in small idle batches to avoid blocking large magazines on startup.
+  const first=await doc.getPage(page),firstView=first.getViewport({scale:1});
+  if(g!==generation)return;
+  dimensions.set(page,{width:firstView.width,height:firstView.height});
+  dimensions.set(1,dimensions.get(page)); // fallback for not-yet-measured slots
   // Start with the entire page visible and a small margin on every side.
   zoom=fitEntirePageZoom(page);
   await rebuild();$('page-area').focus({preventScroll:true});
+  // Read remaining dimensions in the background. Adjust slot heights while
+  // preserving the reader's current scroll anchor when pages above it change.
+  (async()=>{
+   for(let n=1;n<=doc.numPages;n++){
+    if(g!==generation||documentPDF!==doc)return;
+    if(!dimensions.has(n)){
+     try{
+      const pdfPage=await doc.getPage(n),v=pdfPage.getViewport({scale:1});
+      if(g!==generation||documentPDF!==doc)return;
+      dimensions.set(n,{width:v.width,height:v.height});
+      const slot=slots.find(el=>+el.dataset.page===n);
+      if(slot&&!pinch){
+       const area=$('page-area'),before=slot.getBoundingClientRect(),top=area.getBoundingClientRect().top;
+       sizeSlot(slot,n);
+       if(before.bottom<=top)area.scrollTop+=slot.getBoundingClientRect().height-before.height;
+      }
+     }catch{return;} // PDF.js fallback still handles missing dimensions
+    }
+    if(n%4===0)await new Promise(resolve=>setTimeout(resolve,0));
+   }
+  })();
+
  }catch(e){if(g===generation)$('reader-status').textContent='Could not open PDF: '+e.message;}
 }
 /** move: Support the PiShelf reader or library interface. */
@@ -315,6 +337,38 @@ async function closeReader({fromHistory=false}={}){
   history.back();
  }
  clearMagazinePrefetches();resetPinch();clearTimeout(scrollTimer);remember();++generation;++layoutEpoch;layoutReady=false;pageObserver?.disconnect();renderQueue=[];const oldDoc=documentPDF;documentPDF=null;if(oldDoc?.destroy)oldDoc.destroy().catch(()=>{});$('reader').hidden=true;document.body.classList.remove('reader-open');$('library').hidden=false;$('pages').replaceChildren();slots=[];renderedSlots.clear();if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});drawLibrary();refresh(true);}
+// Thumbnail browser: load only the visible part of a bounded thumbnail list.
+$('page-thumbnails').onclick=()=>{
+ if(!documentPDF||!current)return;
+ const grid=$('thumbnail-grid');grid.replaceChildren();
+ const count=documentPDF.numPages;
+ const begin=Math.max(1,Math.min(page-20,Math.max(1,count-59)));
+ const end=Math.min(count,begin+59);
+ for(let n=begin;n<=end;n++){
+  const button=document.createElement('button');
+  button.type='button';button.setAttribute('aria-label','Go to page '+n);
+  if(n===page)button.setAttribute('aria-current','page');
+  const img=document.createElement('img');
+  img.loading='lazy';img.decoding='async';img.alt='';
+  img.src='/api/page-image/'+encodeURIComponent(current.id)+'/'+n+'?width=960';
+  button.append(img,document.createTextNode('Page '+n));
+  button.onclick=()=>{$('thumbnail-dialog').close();move(n);};
+  grid.append(button);
+ }
+ $('thumbnail-dialog').showModal();
+};
+$('thumbnail-close').onclick=()=>$('thumbnail-dialog').close();
+async function loadWebPCacheStats(){
+ try{
+  const stats=await api('/api/webp-cache');
+  $('cache-stats').textContent='Cached '+stats.files+' images · '+(stats.bytes/1048576).toFixed(1)+' MB / '+(stats.limit/1048576).toFixed(0)+' MB';
+ }catch(e){$('cache-stats').textContent='Cache statistics unavailable: '+e.message;}
+}
+$('cache-clear').onclick=async()=>{
+ if(!await confirmAction('Clear WebP cache?','Images will be converted again when you read magazines. Original PDFs are safe.','Clear cache'))return;
+ try{const result=await api('/api/webp-cache/clear',{});toast('Removed '+result.removed+' cached images.');loadWebPCacheStats();}
+ catch(e){toast(e.message);}
+};
 $('back').onclick=closeReader;$('prev').onclick=()=>move(page-1);$('next').onclick=()=>move(page+1);$('page-number').onchange=e=>move(parseInt(e.target.value)||1);
 $('minus').onclick=()=>{if(!documentPDF)return;zoom=Math.max(fitEntirePageZoom(page),zoom-.25);rebuild();};$('plus').onclick=()=>{if(!documentPDF)return;zoom=Math.min(Math.max(3,zoom),zoom+.25);rebuild();};$('fit').onclick=()=>{if(!documentPDF)return;zoom=fitEntirePageZoom(page);rebuild();};$('fit-page').onclick=()=>{if(!documentPDF)return;zoom=fitEntirePageZoom(page);rebuild();};$('rotate').onclick=()=>{rotation=(rotation+90)%360;rebuild();};$('view-mode').onchange=()=>{prefs.mode=$('view-mode').value;storePrefs();rebuild();};
 $('bookmark').onclick=()=>{if(!documentPDF)return;const marks=saved[current.id]?.bookmarks||[];persist(current.id,{bookmarks:marks.includes(page)?marks.filter(n=>n!==page):[...marks,page].sort((a,b)=>a-b)});updatePageUI();updateBookmarks();};$('bookmarks').onchange=e=>{if(e.target.value)move(+e.target.value);e.target.value='';};
