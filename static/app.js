@@ -1,6 +1,19 @@
-/* PiShelf browser client: library UI, PDF rendering, touch gestures, and saved progress.
- * Rendering work is queued and bounded to protect mobile and tablet memory.
- * Keep gesture coordinates and page numbers synchronized when modifying this file.
+/* PiShelf browser client — navigation guide
+ *
+ * Find these named functions to work on a feature:
+ *   Library: refresh(), drawLibrary(), cardFor(), updateFilterOptions()
+ *   Settings: applyPrefs(), openSettings(), storePrefs()
+ *   Reader: openMagazine(), rebuild(), move(), closeReader()
+ *   WebP / memory: renderPages(), preloadMagazineNeighbors(),
+ *                  cancelAllSharpImages(), trimCanvases()
+ *   Navigation: trackScroll(), showThumbnailRange(), updatePageUI()
+ *   State: persist(), remember(), clearProgress()
+ *
+ * Invariants:
+ * - Keep pinch/gesture coordinate math untouched when tuning image loading.
+ * - Each async image response checks generation/layoutEpoch before displaying.
+ * - Release decoded offscreen images; never release during an active pinch.
+ * - A missing optional control must not prevent refresh() from starting.
  */
 const $=id=>document.getElementById(id);
 const defaults={sort:'issue',siteTheme:'light',theme:'dark',mode:'scroll',quality:'1.5',density:'compact',motion:true,gestures:true};
@@ -84,6 +97,8 @@ function cardFor(item,target){
  if(s.page||s.completed){const bar=el('div','progress'),fill=el('span');fill.style.width=(finished(item)?100:Math.min(100,s.page/s.total*100))+'%';bar.append(fill);card.append(bar);}target.append(card);coverObserver.observe(cover);
 }
 /** draw Library: Support the PiShelf reader or library interface. */
+// === Library grid ===========================================================
+// Only create cards for the current visibleLimit; covers are loaded lazily.
 function drawLibrary(){
  coverObserver.disconnect();coverQueue=[];$('grid').replaceChildren();$('resume-grid').replaceChildren();$('count').textContent=library.length;
  $('shelf-label').textContent=collections.find(c=>c.id===collectionFilter)?.name||category||({all:'All publications',reading:'Continue reading',favorites:'Favourites',unread:'Unread',completed:'Finished'}[filter]);
@@ -95,6 +110,9 @@ function drawLibrary(){
  if(!items.length){const empty=el('div','empty');empty.append(el('h2','',library.length?'No matching issues.':'Your reading room is ready.'),el('p','',library.length?'Try another category, search or filter.':'Copy PDFs into your magazine folder. They appear automatically, with subfolders as categories.'));$('grid').append(empty);}
 }
 /** refresh: Support the PiShelf reader or library interface. */
+// === Library refresh =======================================================
+// The explicit refresh=1 query requests a filesystem rescan on page reload.
+// Keep this independent of optional Settings controls (see PR #24).
 async function refresh(quiet=false){
  if(syncing||!$('reader').hidden)return;syncing=true;if(!quiet)$('status').textContent='Scanning your PDF folder…';
  try{await saveChain;if(pendingSaves.size){for(const [id,patch] of [...pendingSaves])await persist(id,patch);if(pendingSaves.size)throw Error('Reading progress is waiting to sync.');}
@@ -163,6 +181,9 @@ function enqueue(slot){
  renderPages();
 }
 /** render Pages: Manage PDF page rendering and canvas lifecycle. */
+// === WebP-first reader ======================================================
+// Render queue is serialized to bound concurrent decoding. A 960px preview
+// appears first, then a sharper WebP may replace it if the slot is still valid.
 async function renderPages(){
  if(renderBusy)return;renderBusy=true;
  try{while(renderQueue.length){
@@ -186,12 +207,21 @@ async function renderPages(){
      if(g!==generation||epoch!==layoutEpoch||!slot.isConnected)continue;
      slot.replaceChildren(img);slot.dataset.ready='yes';slot.dataset.queued='no';
      if(width>960){
+      cancelSharpImage(slot);
       const sharp=new Image();
       sharp.decoding='async';sharp.alt=img.alt;sharp.style.cssText=img.style.cssText;
+      pendingSharpImages.set(slot,sharp);
       sharp.onload=()=>{
-       if(g===generation&&epoch===layoutEpoch&&slot.isConnected&&slot.firstChild===img&&!pinch)slot.replaceChildren(sharp);
+       pendingSharpImages.delete(slot);
+       sharp.onload=null;sharp.onerror=null;
+       if(g===generation&&epoch===layoutEpoch&&slot.isConnected&&slot.firstChild===img&&!pinch){
+        slot.replaceChildren(sharp);
+       }else{
+        // A stale response must not retain a decoded 2800px image.
+        sharp.src='';
+       }
       };
-      sharp.onerror=()=>{sharp.onload=null;};
+      sharp.onerror=()=>{pendingSharpImages.delete(slot);sharp.onload=null;sharp.onerror=null;};
       sharp.src=url;
      }
      renderedSlots.add(slot);trimCanvases();if(n===page)preloadMagazineNeighbors();$('reader-status').textContent='';
@@ -227,6 +257,22 @@ async function renderPages(){
 // Keep only nearby magazine images decoded in Safari; page navigation preloads
 // the next two pages and the previous page without allocating large canvases.
 let imagePrefetches=new Map();
+// === Reader image lifecycle =================================================
+// Sharp WebP upgrades are temporary network/decoded-image allocations.
+// Cancel them when a page leaves the viewport, the layout changes or the
+// reader closes. This avoids Safari retaining offscreen full-resolution images.
+const pendingSharpImages=new Map();
+function cancelSharpImage(slot){
+ const image=pendingSharpImages.get(slot);
+ if(!image)return;
+ image.onload=null;image.onerror=null;image.src='';
+ pendingSharpImages.delete(slot);
+}
+function cancelAllSharpImages(){
+ for(const slot of pendingSharpImages.keys())cancelSharpImage(slot);
+}
+// === Neighbor prefetch ======================================================
+// Keep only nearby images. Avoid 2800px speculative requests on mobile.
 function preloadMagazineNeighbors(){
  if(!documentPDF||!current?.id)return;
  // Never prefetch 2800px zoom images; they are expensive on iPhone Safari.
@@ -237,6 +283,7 @@ function preloadMagazineNeighbors(){
  }
  for(const n of wanted){
   if(imagePrefetches.has(n))continue;
+  // The current page is rendered by renderPages; prefetch neighbors only.
   const img=new Image();
   img.decoding='async';
   img.onload=()=>{if(imagePrefetches.get(n)===img){img.onload=null;img.onerror=null;}};
@@ -249,7 +296,7 @@ function clearMagazinePrefetches(){
  for(const img of imagePrefetches.values()){img.onload=null;img.onerror=null;img.src='';}
  imagePrefetches.clear();
 }
-function trimCanvases(){if(pinch||Math.abs(zoom-cssZoomBase)>.01)return;const area=$('page-area').getBoundingClientRect();for(const slot of renderedSlots){const rect=slot.getBoundingClientRect();if(Math.abs(+slot.dataset.page-page)>2&&(rect.bottom<area.top||rect.top>area.bottom)){for(const c of slot.querySelectorAll('canvas')){c.width=0;c.height=0;}for(const img of slot.querySelectorAll('img')){img.src='';}slot.replaceChildren(el('span','page-placeholder','Page '+slot.dataset.page));slot.dataset.ready='no';renderedSlots.delete(slot);}}}
+function trimCanvases(){if(pinch||Math.abs(zoom-cssZoomBase)>.01)return;const area=$('page-area').getBoundingClientRect();for(const slot of renderedSlots){const rect=slot.getBoundingClientRect();if(Math.abs(+slot.dataset.page-page)>2&&(rect.bottom<area.top||rect.top>area.bottom)){cancelSharpImage(slot);for(const c of slot.querySelectorAll('canvas')){c.width=0;c.height=0;}for(const img of slot.querySelectorAll('img')){img.src='';}slot.replaceChildren(el('span','page-placeholder','Page '+slot.dataset.page));slot.dataset.ready='no';renderedSlots.delete(slot);}}}
 /** track Scroll: Keep the visible PDF page and navigation state in sync. */
 function trackScroll(){
  if(pinch||performance.now()<pinchScrollLockUntil||!layoutReady||!documentPDF||$('view-mode').value!=='scroll'||!slots.length)return;
@@ -261,7 +308,7 @@ function trackScroll(){
 }
 $('page-area').addEventListener('scroll',()=>{if(!scrollFrame)scrollFrame=requestAnimationFrame(()=>{scrollFrame=null;trackScroll();});},{passive:true});
 /** rebuild: Manage PDF page rendering and canvas lifecycle. */
-async function rebuild(){if(!documentPDF)return;$('pages').style.zoom='';$('pages').style.transform='';$('pages').style.transformOrigin='';cssZoomBase=zoom;updateTouchMode();const g=generation,epoch=++layoutEpoch;layoutReady=false;pageObserver?.disconnect();renderQueue=[];for(const c of $('pages').querySelectorAll('canvas')){c.width=0;c.height=0;}$('pages').replaceChildren();slots=[];renderedSlots.clear();
+async function rebuild(){if(!documentPDF)return;cancelAllSharpImages();$('pages').style.zoom='';$('pages').style.transform='';$('pages').style.transformOrigin='';cssZoomBase=zoom;updateTouchMode();const g=generation,epoch=++layoutEpoch;layoutReady=false;pageObserver?.disconnect();renderQueue=[];for(const c of $('pages').querySelectorAll('canvas')){c.width=0;c.height=0;}$('pages').replaceChildren();slots=[];renderedSlots.clear();
  if(g!==generation||epoch!==layoutEpoch)return;
  const single=$('view-mode').value==='single',count=documentPDF.numPages;const fragment=document.createDocumentFragment();for(let n=single?page:1;n<=(single?page:count);n++){const slot=el('div','pdf-slot');slot.dataset.page=n;slot.setAttribute('aria-label','PDF page '+n);sizeSlot(slot,n);slot.append(el('span','page-placeholder','Page '+n));slots.push(slot);fragment.append(slot);}$('pages').append(fragment);
  pageObserver=new IntersectionObserver(entries=>{for(const e of entries)if(e.isIntersecting)enqueue(e.target);},{root:$('page-area'),rootMargin:'500px'});slots.forEach(s=>pageObserver.observe(s));
@@ -290,7 +337,7 @@ async function openMagazine(item,start){
   history.pushState({pishelfReader:true},'',location.href);
   readerHistoryActive=true;
  }
- clearMagazinePrefetches();current=item;const g=++generation;const reading=saved[item.id]||{};
+ clearMagazinePrefetches();cancelAllSharpImages();current=item;const g=++generation;const reading=saved[item.id]||{};
  zoom=1;rotation=reading.rotation||0;dimensions.clear();
  $('reader').hidden=false;document.body.classList.add('reader-open');setReaderFocus(true);
  $('library').hidden=true;$('reader-title').textContent=item.title;
@@ -350,8 +397,10 @@ async function closeReader({fromHistory=false}={}){
   // Back triggers popstate and returns to the existing library history entry.
   history.back();
  }
- clearMagazinePrefetches();resetPinch();clearTimeout(scrollTimer);remember();++generation;++layoutEpoch;layoutReady=false;pageObserver?.disconnect();renderQueue=[];const oldDoc=documentPDF;documentPDF=null;if(oldDoc?.destroy)oldDoc.destroy().catch(()=>{});$('reader').hidden=true;document.body.classList.remove('reader-open');$('library').hidden=false;$('pages').replaceChildren();slots=[];renderedSlots.clear();if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});drawLibrary();refresh(true);}
+ clearMagazinePrefetches();cancelAllSharpImages();resetPinch();clearTimeout(scrollTimer);remember();++generation;++layoutEpoch;layoutReady=false;pageObserver?.disconnect();renderQueue=[];const oldDoc=documentPDF;documentPDF=null;if(oldDoc?.destroy)oldDoc.destroy().catch(()=>{});$('reader').hidden=true;document.body.classList.remove('reader-open');$('library').hidden=false;$('pages').replaceChildren();slots=[];renderedSlots.clear();if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});drawLibrary();refresh(true);}
 // Thumbnail browser: load only the visible part of a bounded thumbnail list.
+// === Thumbnail navigator ====================================================
+// 60 pages per batch; IntersectionObserver loads only visible thumbnails.
 function showThumbnailRange(begin){
  if(!documentPDF||!current)return;
  const grid=$('thumbnail-grid');grid.replaceChildren();
@@ -373,18 +422,33 @@ function showThumbnailRange(begin){
   if(n===page)button.setAttribute('aria-current','page');
   const img=document.createElement('img');
   img.loading='lazy';img.decoding='async';img.alt='';
-  img.src='/api/page-image/'+encodeURIComponent(current.id)+'/'+n+'?width=960';
+  // Assign src only near the visible thumbnail grid; Safari's lazy loading
+  // does not always prevent every eager request inside a modal.
+  img.dataset.src='/api/page-image/'+encodeURIComponent(current.id)+'/'+n+'?width=960';
   button.append(img,document.createTextNode('Page '+n));
   button.onclick=()=>{$('thumbnail-dialog').close();move(n);};
   grid.append(button);
  }
+ // Observe thumbnails in the modal's own scrolling viewport.
+ thumbnailObserver?.disconnect();
+ thumbnailObserver=new IntersectionObserver(entries=>{
+  for(const entry of entries){
+   if(!entry.isIntersecting)continue;
+   const image=entry.target;
+   if(image.dataset.src){image.src=image.dataset.src;delete image.dataset.src;}
+   thumbnailObserver?.unobserve(image);
+  }
+ },{root:grid,rootMargin:'180px'});
+ grid.querySelectorAll('img[data-src]').forEach(img=>thumbnailObserver.observe(img));
 }
+let thumbnailObserver=null;
 $('page-thumbnails').onclick=()=>{
  if(!documentPDF)return;
  showThumbnailRange(Math.floor((page-1)/60)*60+1);
  $('thumbnail-dialog').showModal();
 };
 $('thumbnail-close').onclick=()=>$('thumbnail-dialog').close();
+$('thumbnail-dialog').addEventListener('close',()=>{thumbnailObserver?.disconnect();thumbnailObserver=null;$('thumbnail-grid').replaceChildren();});
 async function loadWebPCacheStats(){
  try{
   const stats=await api('/api/webp-cache');

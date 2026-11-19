@@ -6,6 +6,16 @@ PiShelf turns a folder of PDFs into a personal magazine website. Browse covers, 
 
 Built for self-hosting on your home network, with local storage and a lightweight Python server.
 
+## Reader speed and memory management
+
+PiShelf uses WebP previews and sharper images on demand. The reader cancels stale high-resolution upgrades when you navigate away, change layout, or close the reader. Thumbnail requests are restricted to thumbnails near the visible scroll area to reduce Safari memory and network usage. Pinch-zoom geometry and the PDF.js fallback are unchanged.
+
+**Performance checks:** Try a large magazine on iPhone Safari, swipe through pages, open/close the thumbnail browser, zoom in and out, and return to the library. If the reader becomes slow, see [troubleshooting](USER_MANUAL.md#7-troubleshooting).
+
+## User manual and troubleshooting
+
+**[Read the PiShelf user manual](USER_MANUAL.md)** for features, setup, Docker commands, **where to configure your existing PDF folder path**, adding magazines and newspapers, reading controls, iPhone Safari tips, backups, and troubleshooting an empty library.
+
 ## Library and reading upgrade
 
 See [the library and reader guide](FEATURES.md) for persistent covers, reading collections, gestures, PDF uploads, permanent deletion, publication/month grouping, tags, category creation, renaming, focused reading, AMOLED/night themes, backups, and separate source paths.
@@ -152,7 +162,7 @@ PiShelf uses:
 | Subfolder path | Category |
 | File modification time | “Newest first” order |
 
-By default, the library checks for changes every **15 seconds** while it is open and the browser tab is visible. Scanning pauses while you read an issue. You can change the interval in Settings or use the refresh button.
+The library scans for new PDFs when the webpage reloads. You can also use the library refresh button or **Rescan PDF folder** in Settings. There is no periodic checking interval.
 
 For large files, finish copying before giving the file its `.pdf` extension. This prevents incomplete uploads or copies from appearing as broken issues.
 
