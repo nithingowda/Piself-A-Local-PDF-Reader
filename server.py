@@ -415,8 +415,8 @@ class Handler(BaseHTTPRequestHandler):
                     if angle not in (0,90,180,270): raise ValueError()
                     with fitz.open(target) as doc:
                         if number<1 or number>len(doc): raise APIError(404,'Page not found')
+                        if doc.needs_pass: raise APIError(422,'Password-protected PDF: use PDF.js')
                         p=doc[number-1]
-                        if p.needs_pass: raise APIError(422,'Password-protected PDF: use PDF.js')
                         natural=p.rect
                         scale=min(3.0,width/max(1,natural.width))
                         scale=min(scale,(8000000/max(1,natural.width*natural.height))**.5)
