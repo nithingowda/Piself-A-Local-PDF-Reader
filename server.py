@@ -3,6 +3,8 @@
 import argparse
 import hashlib
 import json
+import urllib.request
+import urllib.error
 import mimetypes
 import os
 import re
@@ -394,7 +396,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self, head=False):
         path=unquote(urlsplit(self.path).path)
         try:
-            if path == '/api/pdf-info':
+            if path in ('/api/pdf-info','/api/render-page'):
                 params=parse_qs(urlsplit(self.path).query)
                 source=params.get('source',[''])[0]
                 if not (source.startswith('/magazines/') or source.startswith('/newspapers/')):
@@ -406,52 +408,31 @@ class Handler(BaseHTTPRequestHandler):
                     raise APIError(404,'PDF not found')
                 target=(root/relative).resolve()
                 if not target.is_relative_to(root.resolve()) or not target.is_file(): raise APIError(404,'PDF not found')
+                request_data={'file':str(target),'info':path=='/api/pdf-info'}
+                if path=='/api/render-page':
+                    try:
+                        request_data.update(page=int(params.get('page',['1'])[0]),
+                                            width=max(100,min(2600,int(params.get('width',['1200'])[0]))),
+                                            rotation=int(params.get('rotation',['0'])[0]),
+                                            format=params.get('format',['jpeg'])[0])
+                    except ValueError: raise APIError(400,'Invalid render parameters')
                 try:
-                    import fitz
-                    with fitz.open(target) as doc:
-                        if doc.needs_pass: raise APIError(422,'Password-protected PDFs are not supported')
-                        pages=len(doc)
-                        dimensions=[{'width':p.rect.width,'height':p.rect.height} for p in doc]
-                except ImportError: raise APIError(503,'PyMuPDF is not installed')
-                self.json_response({'numPages':pages,'dimensions':dimensions},head=head)
-                return
-            if path == '/api/render-page':
-                params=parse_qs(urlsplit(self.path).query)
-                source=params.get('source',[''])[0]
-                if not (source.startswith('/magazines/') or source.startswith('/newspapers/')):
-                    raise APIError(400,'Invalid PDF source')
-                group='magazines' if source.startswith('/magazines/') else 'newspapers'
-                root=self.server.library if group=='magazines' else self.server.roots.get('newspapers')
-                relative=unquote(source[len('/'+group+'/'):])
-                if root is None or Path(relative).suffix.lower()!='.pdf' or any(p.startswith('.') for p in Path(relative).parts):
-                    raise APIError(404,'PDF not found')
-                target=(root/relative).resolve()
-                if not target.is_relative_to(root.resolve()) or not target.is_file():
-                    raise APIError(404,'PDF not found')
-                try:
-                    import fitz
-                    number=int(params.get('page',['1'])[0])
-                    width=max(300,min(2600,int(params.get('width',['1200'])[0])))
-                    angle=int(params.get('rotation',['0'])[0])
-                    if angle not in (0,90,180,270): raise ValueError()
-                    with fitz.open(target) as doc:
-                        if number<1 or number>len(doc): raise APIError(404,'Page not found')
-                        p=doc[number-1]
-                        if p.needs_pass: raise APIError(422,'Password-protected PDF: use PDF.js')
-                        natural=p.rect
-                        scale=min(3.0,width/max(1,natural.width))
-                        scale=min(scale,(8000000/max(1,natural.width*natural.height))**.5)
-                        pix=p.get_pixmap(matrix=fitz.Matrix(scale,scale).prerotate(angle),alpha=False)
-                        body=pix.tobytes('png')
-                except (ValueError,TypeError): raise APIError(400,'Invalid render parameters')
-                except ImportError: raise APIError(503,'PyMuPDF is not installed')
+                    upstream=urllib.request.Request(os.environ.get('PISHELF_RENDERER_URL','http://pdfjs-renderer:3001/render'),
+                        data=json.dumps(request_data).encode(),headers={'Content-Type':'application/json'},method='POST')
+                    with urllib.request.urlopen(upstream,timeout=90) as response:
+                        body=response.read(18000000)
+                        mime=response.headers.get('Content-Type','application/octet-stream')
+                except urllib.error.HTTPError as error:
+                    raise APIError(422,'PDF.js renderer failed: '+error.read(512).decode('utf-8','replace'))
+                except (urllib.error.URLError,TimeoutError) as error:
+                    raise APIError(503,'PDF.js renderer unavailable: '+str(error))
                 self.send_response(200)
-                self.send_header('Content-Type','image/png')
+                self.send_header('Content-Type',mime)
                 self.send_header('Content-Length',str(len(body)))
-                self.send_header('Cache-Control','private, max-age=300')
+                self.send_header('Cache-Control','private, max-age=300' if path=='/api/render-page' else 'no-store')
                 self.send_header('X-Content-Type-Options','nosniff')
                 self.end_headers()
-                if not head: self.wfile.write(body)
+                if not head:self.wfile.write(body)
                 return
             if path == '/api/health': self.json_response({'status':'ok'},head=head); return
             if path == '/api/library':
