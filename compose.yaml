@@ -1,3 +1,4 @@
+# PiShelf container settings and persistent library mounts.
 services:
   pishelf:
     build: .
