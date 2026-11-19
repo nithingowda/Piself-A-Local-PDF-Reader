@@ -140,6 +140,17 @@ function updateBookmarks(){const select=$('bookmarks');select.replaceChildren(ne
 function remember(){if(!documentPDF||!layoutReady||pinch)return;const patch={page,total:documentPDF.numPages,zoom,rotation,mode:$('view-mode').value},previous=saved[current.id]||{};if(Object.entries(patch).every(([k,v])=>previous[k]===v))return;persist(current.id,patch);}
 /** page Width: Keep the visible PDF page and navigation state in sync. */
 function pageWidth(){const available=Math.max(200,$('page-area').clientWidth-40);return Math.min(available,1100)*zoom;}
+/** Initial zoom that fits the complete PDF page inside the reader viewport. */
+function fitEntirePageZoom(n){
+ const d=dimensions.get(n)||dimensions.get(1);
+ if(!d)return 1;
+ const area=$('page-area'),swapped=rotation%180!==0;
+ const width=swapped?d.height:d.width,height=swapped?d.width:d.height;
+ const availableWidth=Math.max(100,area.clientWidth-32);
+ const availableHeight=Math.max(100,area.clientHeight-32);
+ const baseWidth=Math.min(Math.max(200,area.clientWidth-40),1100);
+ return Math.max(.1,Math.min(availableWidth/baseWidth,availableHeight*width/(baseWidth*height)));
+}
 /** size Slot: Support the PiShelf reader or library interface. */
 function sizeSlot(slot,n){const d=dimensions.get(n)||dimensions.get(1)||{width:420,height:580};const swapped=rotation%180!==0;const w=swapped?d.height:d.width,h=swapped?d.width:d.height;slot.style.width=pageWidth()+'px';slot.style.height=pageWidth()*h/w+'px';}
 /** enqueue: Manage PDF page rendering and canvas lifecycle. */
@@ -214,7 +225,7 @@ async function pdfEngine(){
 /** open Magazine: Support the PiShelf reader or library interface. */
 async function openMagazine(item,start){
  current=item;const g=++generation;const reading=saved[item.id]||{};
- zoom=reading.zoom||1;rotation=reading.rotation||0;dimensions.clear();
+ zoom=1;rotation=reading.rotation||0;dimensions.clear();
  $('reader').hidden=false;document.body.classList.add('reader-open');setReaderFocus(true);
  $('library').hidden=true;$('reader-title').textContent=item.title;
  $('view-mode').value=reading.mode||prefs.mode;$('pages').replaceChildren();
@@ -233,6 +244,8 @@ async function openMagazine(item,start){
    const p=await doc.getPage(n),v=p.getViewport({scale:1});
    dimensions.set(n,{width:v.width,height:v.height});
   }
+  // Start with the entire page visible and a small margin on every side.
+  zoom=fitEntirePageZoom(page);
   await rebuild();$('page-area').focus({preventScroll:true});
  }catch(e){if(g===generation)$('reader-status').textContent='Could not open PDF: '+e.message;}
 }
