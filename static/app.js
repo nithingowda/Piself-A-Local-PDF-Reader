@@ -353,7 +353,20 @@ $('page-area').addEventListener('touchstart',e=>{
 $('page-area').addEventListener('touchmove',e=>{
  if(!pinch)return;e.preventDefault();if(e.touches.length!==2)return;
  const point=touchPair(e.touches);pinch.nextZoom=Math.max(fitEntirePageZoom(pinch.page),Math.min(Math.max(3,pinch.startZoom),pinch.startZoom*point.distance/pinch.distance));pinch.x=point.x;pinch.y=point.y;
- if(!pinchFrame)pinchFrame=requestAnimationFrame(()=>{pinchFrame=0;if(pinch)pinch.slot.style.transform=`translate(${pinch.x-pinch.startX}px, ${pinch.y-pinch.startY}px) scale(${pinch.nextZoom/pinch.startZoom})`;});
+ if(!pinchFrame)pinchFrame=requestAnimationFrame(()=>{
+  pinchFrame=0;if(!pinch)return;
+  const slot=pinch.slot,area=$('page-area');
+  const scale=pinch.nextZoom/pinch.startZoom;
+  let dx=pinch.x-pinch.startX,dy=pinch.y-pinch.startY;
+  slot.style.transform=`translate(${dx}px, ${dy}px) scale(${scale})`;
+  // Constrain the temporary pinch preview to the viewport, not the page list.
+  const view=area.getBoundingClientRect(),rect=slot.getBoundingClientRect();
+  if(rect.width>=view.width){
+   if(rect.left>view.left)dx-=rect.left-view.left;
+   else if(rect.right<view.right)dx+=view.right-rect.right;
+  }else dx+=(view.left+view.width/2)-(rect.left+rect.width/2);
+  slot.style.transform=`translate(${dx}px, ${dy}px) scale(${scale})`;
+ });
 },{passive:false});
 $('page-area').addEventListener('touchend',e=>{if(pinch&&e.touches.length<2){e.preventDefault();finishPinch();}},{passive:false});
 $('page-area').addEventListener('touchcancel',()=>finishPinch(true),{passive:true});
