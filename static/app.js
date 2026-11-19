@@ -125,7 +125,7 @@ async function renderPages(){
    sizeSlot(slot,n);
    const img=document.createElement('img');img.alt=`Page ${n} of ${documentPDF.numPages}`;img.decoding='async';img.style.cssText='display:block;width:100%;height:100%;object-fit:fill';
    const width=Math.min(2600,Math.ceil(parseFloat(slot.style.width)*2.5));
-   const url='/api/render-page?source='+encodeURIComponent(pdfURL(current))+'&page='+n+'&width='+width+'&rotation='+rotation;
+   const url='/api/render-page?source='+encodeURIComponent(pdfURL(current))+'&page='+n+'&width='+width+'&rotation='+rotation+'&format=jpeg';
    await new Promise((resolve,reject)=>{img.onload=resolve;img.onerror=()=>reject(Error('HTTP image rendering failed'));img.src=url;});
    if(g!==generation||epoch!==layoutEpoch||!slot.isConnected)continue;
    slot.replaceChildren(img);slot.dataset.ready='yes';renderedSlots.add(slot);trimCanvases();$('reader-status').textContent='';
