@@ -1,3 +1,6 @@
+# docker-entrypoint.py: Container startup configuration and initialization.
+# Comments explain responsibilities and non-obvious behavior; keep runtime logic unchanged.
+
 """Prepare PiShelf storage, drop privileges, then replace this process with the app."""
 import os
 from pathlib import Path
@@ -5,6 +8,7 @@ import stat
 import sys
 
 
+# prepare data: handle this step of the startup workflow.
 def prepare_data(directory, uid, gid):
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
@@ -33,6 +37,7 @@ def prepare_data(directory, uid, gid):
             os.close(fd)
 
 
+# main: handle this step of the startup workflow.
 def main():
     if len(sys.argv) < 2:
         raise ValueError("No application command was provided.")
