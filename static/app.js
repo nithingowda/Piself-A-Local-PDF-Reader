@@ -148,16 +148,13 @@ async function rebuild(){if(!documentPDF)return;$('pages').style.zoom='';$('page
  const single=$('view-mode').value==='single',count=documentPDF.numPages;const fragment=document.createDocumentFragment();for(let n=single?page:1;n<=(single?page:count);n++){const slot=el('div','pdf-slot');slot.dataset.page=n;slot.setAttribute('aria-label','PDF page '+n);sizeSlot(slot,n);slot.append(el('span','page-placeholder','Page '+n));slots.push(slot);fragment.append(slot);}$('pages').append(fragment);
  pageObserver=new IntersectionObserver(entries=>{for(const e of entries)if(e.isIntersecting)enqueue(e.target);},{root:$('page-area'),rootMargin:'500px'});slots.forEach(s=>pageObserver.observe(s));
  layoutReady=true;const target=slots.find(s=>+s.dataset.page===page);if(target){$('page-area').scrollTop=target.offsetTop-20;enqueue(target);}updatePageUI();updateBookmarks();remember();}
-async function openMagazine(item,start){
- current=item;const g=++generation;const reading=saved[item.id]||{};zoom=reading.zoom||1;rotation=reading.rotation||0;coverQueue=[];dimensions.clear();$('reader').hidden=false;document.body.classList.add('reader-open');setReaderFocus(true);$('library').hidden=true;$('reader-title').textContent=item.title;$('view-mode').value=reading.mode||prefs.mode;$('pages').replaceChildren();$('reader-status').textContent='Opening magazine…';
- try{
-  const response=await fetch('/api/pdf-info?source='+encodeURIComponent(pdfURL(item)));
-  if(!response.ok)throw Error('PDF metadata request failed: '+response.status);
-  const doc=await response.json();if(g!==generation)return;
-  documentPDF=doc;doc.dimensions.forEach((d,i)=>dimensions.set(i+1,d));
-  page=Math.max(1,Math.min(start||saved[item.id]?.page||1,doc.numPages));$('page-number').max=doc.numPages;
-  await rebuild();$('page-area').focus();
- }catch(e){if(g===generation)$('reader-status').textContent='Could not open this PDF: '+e.message;}
+function openMagazine(item,start){
+ // Open the complete original PDF in the browser's native viewer.
+ // This avoids all page image rendering, PDF.js workers and custom pinch handling.
+ current=item;
+ persist(item.id,{lastRead:Date.now()/1000});
+ const url=pdfURL(item)+(start&&start>1?'#page='+Math.floor(start):'');
+ window.location.assign(url);
 }
 function move(n){if(!documentPDF)return;remember();page=Math.max(1,Math.min(documentPDF.numPages,n));updatePageUI();if($('view-mode').value==='single')rebuild();else{const slot=slots[page-1];enqueue(slot);$('page-area').scrollTo({top:slot.offsetTop-20,behavior:prefs.motion&&!matchMedia('(prefers-reduced-motion: reduce)').matches?'smooth':'auto'});clearTimeout(scrollTimer);scrollTimer=setTimeout(remember,500);}}
 async function closeReader(){resetPinch();clearTimeout(scrollTimer);remember();++generation;++layoutEpoch;layoutReady=false;pageObserver?.disconnect();renderQueue=[];documentPDF=null;$('reader').hidden=true;document.body.classList.remove('reader-open');$('library').hidden=false;$('pages').replaceChildren();slots=[];renderedSlots.clear();if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});drawLibrary();refresh(true);}
