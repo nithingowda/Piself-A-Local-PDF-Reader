@@ -327,6 +327,14 @@ function finishPinch(cancelled=false){
  const after=slot.getBoundingClientRect();
  area.scrollLeft+=after.left+state.fx*after.width-state.x;
  area.scrollTop+=after.top+state.fy*after.height-state.y;
+ // A zoomed page wider than the viewport must cover it horizontally:
+ // never leave a large blank gutter when the pinch midpoint moves.
+ const viewport=area.getBoundingClientRect();
+ const pageRect=slot.getBoundingClientRect();
+ if(pageRect.width>=viewport.width){
+  if(pageRect.left>viewport.left)area.scrollLeft+=pageRect.left-viewport.left;
+  else if(pageRect.right<viewport.right)area.scrollLeft-=viewport.right-pageRect.right;
+ }
  updateTouchMode();updatePageUI();remember();
 }
 $('page-area').addEventListener('touchstart',e=>{
