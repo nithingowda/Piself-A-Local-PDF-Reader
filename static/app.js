@@ -113,7 +113,14 @@ function updateBookmarks(){const select=$('bookmarks');select.replaceChildren(ne
 function remember(){if(!documentPDF||!layoutReady||pinch)return;const patch={page,total:documentPDF.numPages,zoom,rotation,mode:$('view-mode').value},previous=saved[current.id]||{};if(Object.entries(patch).every(([k,v])=>previous[k]===v))return;persist(current.id,patch);}
 function pageWidth(){const available=Math.max(200,$('page-area').clientWidth-40);return Math.min(available,1100)*zoom;}
 function sizeSlot(slot,n){const d=dimensions.get(n)||dimensions.get(1)||{width:420,height:580};const swapped=rotation%180!==0;const w=swapped?d.height:d.width,h=swapped?d.width:d.height;slot.style.width=pageWidth()+'px';slot.style.height=pageWidth()*h/w+'px';}
-function enqueue(slot){if(slot.dataset.ready==='yes'||slot.dataset.queued==='yes')return;slot.dataset.queued='yes';renderQueue.push({slot,g:generation,epoch:layoutEpoch});renderPages();}
+function enqueue(slot){
+ if(!slot||!slot.isConnected||slot.dataset.ready==='yes'||slot.dataset.queued==='yes')return;
+ slot.dataset.queued='yes';
+ renderQueue.push({slot,g:generation,epoch:layoutEpoch});
+ // Render the current page first, then pages nearest to it.
+ renderQueue.sort((a,b)=>Math.abs(+a.slot.dataset.page-page)-Math.abs(+b.slot.dataset.page-page));
+ renderPages();
+}
 async function renderPages(){
  if(renderBusy)return;renderBusy=true;
  try{while(renderQueue.length){
@@ -139,7 +146,7 @@ async function renderPages(){
    // This makes repeated pinch-in / pinch-out instant without another PDF render.
    // Cap canvas area to avoid iOS Safari memory crashes on long magazines.
    const viewport=pdfPage.getViewport({scale:1,rotation});
-   const targetWidth=Math.max(2400,Math.min(3200,Math.ceil(pageWidth()*3)));
+   const targetWidth=2600; // Fixed quality avoids extra work when zoom changes.
    const scale=Math.min(targetWidth/viewport.width,Math.sqrt(8000000/(viewport.width*viewport.height)));
    const view=pdfPage.getViewport({scale,rotation});
    const canvas=document.createElement('canvas');
@@ -204,7 +211,7 @@ async function openMagazine(item,start){
  }catch(e){if(g===generation)$('reader-status').textContent='Could not open PDF: '+e.message;}
 }
 function move(n){if(!documentPDF)return;remember();page=Math.max(1,Math.min(documentPDF.numPages,n));updatePageUI();if($('view-mode').value==='single')rebuild();else{const slot=slots[page-1];enqueue(slot);$('page-area').scrollTo({top:slot.offsetTop-20,behavior:prefs.motion&&!matchMedia('(prefers-reduced-motion: reduce)').matches?'smooth':'auto'});clearTimeout(scrollTimer);scrollTimer=setTimeout(remember,500);}}
-async function closeReader(){clearTimeout(zoomSharpenTimer);++zoomSharpenSerial;resetPinch();clearTimeout(scrollTimer);remember();++generation;++layoutEpoch;layoutReady=false;pageObserver?.disconnect();renderQueue=[];const oldDoc=documentPDF;documentPDF=null;if(oldDoc?.destroy)oldDoc.destroy().catch(()=>{});$('reader').hidden=true;document.body.classList.remove('reader-open');$('library').hidden=false;$('pages').replaceChildren();slots=[];renderedSlots.clear();if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});drawLibrary();refresh(true);}
+async function closeReader(){resetPinch();clearTimeout(scrollTimer);remember();++generation;++layoutEpoch;layoutReady=false;pageObserver?.disconnect();renderQueue=[];const oldDoc=documentPDF;documentPDF=null;if(oldDoc?.destroy)oldDoc.destroy().catch(()=>{});$('reader').hidden=true;document.body.classList.remove('reader-open');$('library').hidden=false;$('pages').replaceChildren();slots=[];renderedSlots.clear();if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});drawLibrary();refresh(true);}
 $('back').onclick=closeReader;$('prev').onclick=()=>move(page-1);$('next').onclick=()=>move(page+1);$('page-number').onchange=e=>move(parseInt(e.target.value)||1);
 $('minus').onclick=()=>{zoom=Math.max(.5,zoom-.25);rebuild();};$('plus').onclick=()=>{zoom=Math.min(3,zoom+.25);rebuild();};$('fit').onclick=()=>{zoom=1;rebuild();};$('fit-page').onclick=()=>{if(!documentPDF)return;const d=dimensions.get(page)||dimensions.get(1);if(!d)return;const ratio=rotation%180?d.width/d.height:d.height/d.width;zoom=Math.max(.1,Math.min(1,($('page-area').clientHeight-20)/(Math.min(Math.max(200,$('page-area').clientWidth-40),1100)*ratio)));rebuild();};$('rotate').onclick=()=>{rotation=(rotation+90)%360;rebuild();};$('view-mode').onchange=()=>{prefs.mode=$('view-mode').value;storePrefs();rebuild();};
 $('bookmark').onclick=()=>{if(!documentPDF)return;const marks=saved[current.id]?.bookmarks||[];persist(current.id,{bookmarks:marks.includes(page)?marks.filter(n=>n!==page):[...marks,page].sort((a,b)=>a-b)});updatePageUI();updateBookmarks();};$('bookmarks').onchange=e=>{if(e.target.value)move(+e.target.value);e.target.value='';};
@@ -247,39 +254,7 @@ function updateTouchMode(){$('page-area').classList.toggle('gesture-navigation',
 function toggleReaderControls(){setReaderFocus(!$('reader').classList.contains('focused'));}
 function touchPair(touches){const a=touches[0],b=touches[1];return {distance:Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY),x:(a.clientX+b.clientX)/2,y:(a.clientY+b.clientY)/2};}
 function resetPinch(){cancelAnimationFrame(pinchFrame);pinchFrame=0;$('pages').style.transform='';$('pages').style.transformOrigin='';$('pages').style.willChange='';pinch=null;}
-let zoomSharpenTimer=0,zoomSharpenSerial=0,pinchScrollLockUntil=0;
-async function sharpenVisiblePage(slot,serial){
- if(!documentPDF||!slot.isConnected||serial!==zoomSharpenSerial||pinch)return;
- const doc=documentPDF,g=generation,n=+slot.dataset.page;
- const old=slot.querySelector('canvas');if(!old)return;
- try{
-  const pdfPage=await doc.getPage(n);
-  if(serial!==zoomSharpenSerial||g!==generation||!slot.isConnected||pinch)return;
-  const viewport=pdfPage.getViewport({scale:1,rotation});
-  const targetWidth=Math.min(3000,Math.max(1,slot.getBoundingClientRect().width)*Math.min(devicePixelRatio||1,2));
-  const scale=Math.min(targetWidth/viewport.width,Math.sqrt(7000000/(viewport.width*viewport.height)));
-  const view=pdfPage.getViewport({scale,rotation});
-  // Avoid an expensive render when the existing canvas is already sharp enough.
-  if(old.width>=view.width*.92&&old.height>=view.height*.92)return;
-  const canvas=document.createElement('canvas');
-  canvas.width=Math.ceil(view.width);canvas.height=Math.ceil(view.height);
-  canvas.style.cssText='display:block;width:100%;height:100%';
-  await pdfPage.render({canvasContext:canvas.getContext('2d',{alpha:false}),viewport:view}).promise;
-  if(serial!==zoomSharpenSerial||g!==generation||!slot.isConnected||pinch){canvas.width=0;canvas.height=0;return;}
-  // Keep the old image visible until the replacement is completely ready.
-  slot.replaceChildren(canvas);
- }catch(e){console.warn('Background PDF sharpening failed',e);}
-}
-function scheduleZoomSharpen(){
- clearTimeout(zoomSharpenTimer);const serial=++zoomSharpenSerial;
- zoomSharpenTimer=setTimeout(()=>{
-  if(pinch||!documentPDF)return;
-  const area=$('page-area').getBoundingClientRect();
-  const visible=slots.filter(slot=>{const r=slot.getBoundingClientRect();return r.bottom>=area.top&&r.top<=area.bottom;});
-  // Limit expensive iPhone canvas work to the visible page.
-  if(visible.length)sharpenVisiblePage(visible[0],serial);
- },450);
-}
+let pinchScrollLockUntil=0;
 async function finishPinch(cancelled=false){
  if(!pinch)return;
  const state=pinch;
@@ -306,7 +281,7 @@ async function finishPinch(cancelled=false){
 }
 $('page-area').addEventListener('touchstart',e=>{
  if(e.touches.length!==2||!prefs.gestures||!documentPDF||!layoutReady)return;
- e.preventDefault();lastTap=null;gestureStart=null;clearTimeout(scrollTimer);clearTimeout(zoomSharpenTimer);++zoomSharpenSerial;
+ e.preventDefault();lastTap=null;gestureStart=null;clearTimeout(scrollTimer);
  const point=touchPair(e.touches),area=$('page-area'),rect=area.getBoundingClientRect();
  // Select the actual page beneath both fingers; a Y-only match can pick an adjacent page.
  const slot=slots.find(s=>{const r=s.getBoundingClientRect();return point.x>=r.left&&point.x<=r.right&&point.y>=r.top&&point.y<=r.bottom;})||slots.find(s=>+s.dataset.page===page);
