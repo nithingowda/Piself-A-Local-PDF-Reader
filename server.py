@@ -23,6 +23,9 @@ from pathlib import Path
 from urllib.parse import unquote, urlsplit, quote, parse_qs
 
 BASE = Path(__file__).resolve().parent
+# Serialize WebP conversions, cache eviction and clearing across HTTP threads.
+WEBP_CACHE_LOCK = threading.RLock()
+WEBP_CACHE_LIMIT = 512*1024*1024
 
 class APIError(Exception):
     #   init  : handle this step of the server request or library workflow.
@@ -161,6 +164,16 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         try:
             self.accept_origin()
+            if urlsplit(self.path).path == '/api/webp-cache/clear':
+                with WEBP_CACHE_LOCK:
+                    cache=self.server.state_db.parent/'page-images'
+                    removed=0
+                    if cache.is_dir():
+                        for cached in cache.glob('*.webp'):
+                            cached.unlink(missing_ok=True)
+                            removed+=1
+                    self.json_response({'removed':removed})
+                return
             if urlsplit(self.path).path == "/api/upload":
                 self.upload_pdf(); return
             if urlsplit(self.path).path.startswith('/api/covers/'):
@@ -411,6 +424,12 @@ class Handler(BaseHTTPRequestHandler):
         path=unquote(urlsplit(self.path).path)
         try:
             if path == '/api/health': self.json_response({'status':'ok'},head=head); return
+            if path == '/api/webp-cache':
+                cache=self.server.state_db.parent/'page-images'
+                with WEBP_CACHE_LOCK:
+                    files=list(cache.glob('*.webp')) if cache.is_dir() else []
+                    self.json_response({'files':len(files),'bytes':sum(p.stat().st_size for p in files),'limit':WEBP_CACHE_LIMIT},head=head)
+                return
             if path.startswith('/api/page-image/'):
                 parts=path.split('/')
                 if len(parts)!=5 or not re.fullmatch('[a-f0-9]{20}',parts[3]) or not parts[4].isdigit():
@@ -428,43 +447,44 @@ class Handler(BaseHTTPRequestHandler):
                 cache=self.server.state_db.parent/'page-images'
                 cache.mkdir(parents=True,exist_ok=True)
                 target=cache/(key+'.webp')
-                if not target.is_file():
-                    try:
-                        import fitz
-                        with fitz.open(pdf) as document:
-                            if n>len(document): raise APIError(404,'Page not found.')
-                            p=document[n-1]
-                            scale=width/p.rect.width
-                            pix=p.get_pixmap(matrix=fitz.Matrix(scale,scale),alpha=False)
-                            # Pillow writes WebP, with a predictable file size and quality.
-                            from PIL import Image
-                            import io
-                            image=Image.frombytes('RGB',(pix.width,pix.height),pix.samples)
-                            output=io.BytesIO()
-                            image.save(output,format='WEBP',quality=85,method=4)
-                        temporary=cache/(uuid.uuid4().hex+'.tmp')
+                with WEBP_CACHE_LOCK:
+                    if not target.is_file():
                         try:
-                            temporary.write_bytes(output.getvalue())
-                            temporary.replace(target)
-                        finally: temporary.unlink(missing_ok=True)
-                    except APIError: raise
-                    except Exception as exc: raise APIError(500,'Image conversion failed: '+str(exc))
-                # Byte-limited, least-recently-used cache; keep the requested page.
-                # Touching on read records recent use without changing PDF identity.
-                data=target.read_bytes()
-                try:
-                    os.utime(target,None)
-                    max_bytes=512*1024*1024
-                    entries=sorted(cache.glob('*.webp'),key=lambda p:p.stat().st_mtime_ns)
-                    total=sum(p.stat().st_size for p in entries)
-                    for old in entries:
-                        if total<=max_bytes: break
-                        if old==target: continue
-                        size=old.stat().st_size
-                        old.unlink(missing_ok=True)
-                        total-=size
-                except OSError:
-                    pass  # A cache maintenance error must not interrupt reading.
+                            import fitz
+                            with fitz.open(pdf) as document:
+                                if n>len(document): raise APIError(404,'Page not found.')
+                                p=document[n-1]
+                                scale=width/p.rect.width
+                                pix=p.get_pixmap(matrix=fitz.Matrix(scale,scale),alpha=False)
+                                # Pillow writes WebP, with a predictable file size and quality.
+                                from PIL import Image
+                                import io
+                                image=Image.frombytes('RGB',(pix.width,pix.height),pix.samples)
+                                output=io.BytesIO()
+                                image.save(output,format='WEBP',quality=85,method=4)
+                            temporary=cache/(uuid.uuid4().hex+'.tmp')
+                            try:
+                                temporary.write_bytes(output.getvalue())
+                                temporary.replace(target)
+                            finally: temporary.unlink(missing_ok=True)
+                        except APIError: raise
+                        except Exception as exc: raise APIError(500,'Image conversion failed: '+str(exc))
+                    # Byte-limited, least-recently-used cache; keep the requested page.
+                    # Touching on read records recent use without changing PDF identity.
+                    data=target.read_bytes()
+                    try:
+                        os.utime(target,None)
+                        max_bytes=WEBP_CACHE_LIMIT
+                        entries=sorted(cache.glob('*.webp'),key=lambda p:p.stat().st_mtime_ns)
+                        total=sum(p.stat().st_size for p in entries)
+                        for old in entries:
+                            if total<=max_bytes: break
+                            if old==target: continue
+                            size=old.stat().st_size
+                            old.unlink(missing_ok=True)
+                            total-=size
+                    except OSError:
+                        pass  # A cache maintenance error must not interrupt reading.
                 self.send_response(200)
                 self.send_header('Content-Type','image/webp')
                 self.send_header('Content-Length',str(len(data)))
