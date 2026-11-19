@@ -1,0 +1,11 @@
+# Copy to compose.override.yaml and set your Docker HOST folder paths.
+# Compose automatically combines compose.yaml with compose.override.yaml.
+services:
+  pishelf:
+    volumes:
+      - type: bind
+        source: /mnt/Nithin-Nas/nextcloud/data/nithingowda/files/Magazines
+        target: /magazines
+      - type: bind
+        source: /mnt/Nithin-Nas/nextcloud/data/nithingowda/files/NewsPapers
+        target: /newspapers

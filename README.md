@@ -6,6 +6,10 @@ PiShelf turns a folder of PDFs into a personal magazine website. Browse covers, 
 
 Built for self-hosting on your home network, with local storage and a lightweight Python server.
 
+## Library and reading upgrade
+
+See [the library and reader guide](FEATURES.md) for persistent cover caching, publication/month grouping, tags, category creation, PDF renaming, focused reading, AMOLED/night themes, Settings backup/restore, and separate magazine/newspaper paths.
+
 ## Features
 
 - **A visual library** — PDF covers, search, category folders, favourites, and sorting.
@@ -58,7 +62,6 @@ Extract the download, then open a terminal in the `pi-magazine-reader` folder co
 Create the storage folders before starting the container:
 
 ```sh
-mkdir -p magazines
 cp .env.example .env
 ```
 
@@ -77,7 +80,8 @@ Edit `.env` and set `PISHELF_UID` and `PISHELF_GID` to those values:
 PISHELF_UID=1000
 PISHELF_GID=1000
 PISHELF_PORT=8098
-MAGAZINE_DIR=./magazines
+MAGAZINE_DIR=/mnt/Nithin-Nas/nextcloud/data/nithingowda/files/Magazines
+NEWSPAPER_DIR=/mnt/Nithin-Nas/nextcloud/data/nithingowda/files/NewsPapers
 ```
 
 | Variable | Purpose | Default |
@@ -85,7 +89,8 @@ MAGAZINE_DIR=./magazines
 | `PISHELF_UID` | User ID used by the container | `1000` |
 | `PISHELF_GID` | Group ID used by the container | `1000` |
 | `PISHELF_PORT` | Host port mapped to container port 8080 | `8098` |
-| `MAGAZINE_DIR` | Host folder containing your PDFs | `./magazines` |
+| `MAGAZINE_DIR` | Host magazine folder | See `.env.example` |
+| `NEWSPAPER_DIR` | Host newspaper folder | See `.env.example` |
 
 The configured user must be able to read and write the magazine folder and the `piself` Docker volume. PDF write access is needed to move files into Trash and restore them. Use appropriate ownership and permissions rather than making folders writable by everyone.
 
@@ -95,7 +100,7 @@ The configured user must be able to read and write the magazine folder and the `
 MAGAZINE_DIR=/media/pi/SSD/Magazines
 ```
 
-Mount external storage before starting PiShelf. Docker stores reading state in the named volume `piself`, mounted at `/data`. `DATA_DIR` is no longer used by Compose.
+Create both configured source directories and mount external storage before starting PiShelf. Docker stores reading state in the named volume `piself`, mounted at `/data`. `DATA_DIR` is no longer used by Compose.
 
 ### 3. Create the data volume and start PiShelf
 
@@ -248,7 +253,7 @@ Copy your magazine folder and back up the `piself` volume to your backup destina
 docker compose start
 ```
 
-File paths identify issues. Moving or renaming a PDF creates a new reading record. Reading positions stored only in a browser by the earliest Folio version are not imported.
+File paths identify issues. Renaming or changing categories through PiShelf preserves reading records; moving or renaming PDFs outside the app creates a new reading record. Reading positions stored only in a browser by the earliest Folio version are not imported.
 
 ## Updates and maintenance
 

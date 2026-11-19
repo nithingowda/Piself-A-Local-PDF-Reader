@@ -8,13 +8,18 @@ import sys
 def prepare_data(directory, uid, gid):
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
+    covers = directory / "covers"
+    if covers.is_symlink():
+        raise ValueError("Cover cache cannot be a symlink.")
     paths = [directory, *directory.glob("progress.sqlite3*")]
+    if covers.exists():
+        paths.extend([covers, *covers.glob("*.jpg")])
     for path in paths:
         # Refuse symlinks so permission changes stay within the data volume.
         fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
         try:
             info = os.fstat(fd)
-            if path == directory:
+            if path in (directory, covers):
                 if not stat.S_ISDIR(info.st_mode):
                     raise ValueError("The data path must be a directory.")
                 access = 0o700

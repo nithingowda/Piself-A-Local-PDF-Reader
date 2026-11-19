@@ -2,6 +2,7 @@ services:
   pishelf:
     build: .
     image: pishelf:local
+    command: ["python", "server.py", "--library", "/magazines", "--newspapers", "/newspapers", "--data", "/data"]
     restart: unless-stopped
     init: true
     user: "0:0"
@@ -11,7 +12,8 @@ services:
     ports:
       - "${PISHELF_PORT:-8098}:8080"
     volumes:
-      - "/mnt/Nithin-Nas/nextcloud/data/nithingowda/files/Magazines/:/magazines"
+      - "${MAGAZINE_DIR:-/mnt/Nithin-Nas/nextcloud/data/nithingowda/files/Magazines}:/magazines"
+      - "${NEWSPAPER_DIR:-/mnt/Nithin-Nas/nextcloud/data/nithingowda/files/NewsPapers}:/newspapers"
       - "piself:/data"
     read_only: true
     tmpfs:

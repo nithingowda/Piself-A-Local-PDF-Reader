@@ -66,3 +66,7 @@ If the entrypoint fails, inspect its logs and available disk space. Confirm the 
 ## Upgrade from the two-container setup
 
 Run `docker compose up -d --build --remove-orphans` after updating from GitHub. This removes the obsolete `pishelf-init` container while retaining the `piself` volume. In Dockhand, rebuild/redeploy the updated stack and remove the old stopped init container if it remains. Do not delete the volume. The magazine mount and host port 8098 are unchanged.
+
+## Magazine and newspaper paths
+
+Configure `MAGAZINE_DIR` and `NEWSPAPER_DIR` in `.env`, or copy `compose.paths.example.yaml` to `compose.override.yaml` and edit its two source paths. The volume at `/data` continues to store reading state and now also persistent cover images. See [FEATURES.md](FEATURES.md) for upgrade and Settings backup/restore instructions.
