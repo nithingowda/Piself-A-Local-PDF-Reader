@@ -178,12 +178,22 @@ async function renderPages(){
     img.style.cssText='display:block;width:100%;height:100%;object-fit:contain';
     const width=zoom>1.6?2800:zoom>0.85?1600:960;
     const url='/api/page-image/'+encodeURIComponent(current.id)+'/'+n+'?width='+width;
+    const previewUrl='/api/page-image/'+encodeURIComponent(current.id)+'/'+n+'?width=960';
     try{
      await new Promise((resolve,reject)=>{
-      img.onload=resolve;img.onerror=reject;img.src=url;
+      img.onload=resolve;img.onerror=reject;img.src=width>960?previewUrl:url;
      });
      if(g!==generation||epoch!==layoutEpoch||!slot.isConnected)continue;
      slot.replaceChildren(img);slot.dataset.ready='yes';slot.dataset.queued='no';
+     if(width>960){
+      const sharp=new Image();
+      sharp.decoding='async';sharp.alt=img.alt;sharp.style.cssText=img.style.cssText;
+      sharp.onload=()=>{
+       if(g===generation&&epoch===layoutEpoch&&slot.isConnected&&slot.firstChild===img&&!pinch)slot.replaceChildren(sharp);
+      };
+      sharp.onerror=()=>{sharp.onload=null;};
+      sharp.src=url;
+     }
      renderedSlots.add(slot);trimCanvases();if(n===page)preloadMagazineNeighbors();$('reader-status').textContent='';
      continue;
     }catch(error){img.src='';}
