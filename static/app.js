@@ -352,12 +352,21 @@ async function closeReader({fromHistory=false}={}){
  }
  clearMagazinePrefetches();resetPinch();clearTimeout(scrollTimer);remember();++generation;++layoutEpoch;layoutReady=false;pageObserver?.disconnect();renderQueue=[];const oldDoc=documentPDF;documentPDF=null;if(oldDoc?.destroy)oldDoc.destroy().catch(()=>{});$('reader').hidden=true;document.body.classList.remove('reader-open');$('library').hidden=false;$('pages').replaceChildren();slots=[];renderedSlots.clear();if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});drawLibrary();refresh(true);}
 // Thumbnail browser: load only the visible part of a bounded thumbnail list.
-$('page-thumbnails').onclick=()=>{
+function showThumbnailRange(begin){
  if(!documentPDF||!current)return;
  const grid=$('thumbnail-grid');grid.replaceChildren();
  const count=documentPDF.numPages;
- const begin=Math.max(1,Math.min(page-20,Math.max(1,count-59)));
+ begin=Math.max(1,Math.min(begin,Math.max(1,count-59)));
  const end=Math.min(count,begin+59);
+ const nav=document.createElement('div');
+ nav.className='thumbnail-navigation';
+ const previous=document.createElement('button'),next=document.createElement('button');
+ previous.textContent='← Previous 60';next.textContent='Next 60 →';
+ previous.disabled=begin===1;next.disabled=end===count;
+ previous.onclick=()=>showThumbnailRange(begin-60);
+ next.onclick=()=>showThumbnailRange(begin+60);
+ nav.append(previous,document.createTextNode('Pages '+begin+'–'+end+' of '+count),next);
+ grid.append(nav);
  for(let n=begin;n<=end;n++){
   const button=document.createElement('button');
   button.type='button';button.setAttribute('aria-label','Go to page '+n);
@@ -369,6 +378,10 @@ $('page-thumbnails').onclick=()=>{
   button.onclick=()=>{$('thumbnail-dialog').close();move(n);};
   grid.append(button);
  }
+}
+$('page-thumbnails').onclick=()=>{
+ if(!documentPDF)return;
+ showThumbnailRange(Math.floor((page-1)/60)*60+1);
  $('thumbnail-dialog').showModal();
 };
 $('thumbnail-close').onclick=()=>$('thumbnail-dialog').close();
