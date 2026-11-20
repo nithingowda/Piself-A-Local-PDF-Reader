@@ -632,7 +632,7 @@ async function turnBook(direction,fromSwipe=null){
  if(spreadStart(target)===start)return;
  const sheet=fromSwipe?.sheet||((direction>0)?slots[slots.length-1]:slots[0]);
  const canAnimate=!!sheet?.animate&&prefs.motion&&!matchMedia('(prefers-reduced-motion: reduce)').matches;
- if(!canAnimate){if(fromSwipe?.sheet){fromSwipe.sheet.style.transform='';fromSwipe.sheet.classList.remove('paper-dragging');}move(target);return;}
+ if(!canAnimate){if(fromSwipe?.sheet){fromSwipe.sheet.style.transform='';fromSwipe.sheet.classList.remove('paper-dragging');}move(target,direction);return;}
  const fromDegrees=fromSwipe?.degrees||0;
  const endDegrees=direction>0?-175:175;
  const turn={sheet,animation:null,document:documentPDF,generation,source:start};
