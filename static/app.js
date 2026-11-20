@@ -218,21 +218,42 @@ function isBookSpread(){return $('view-mode').value==='book';}
 /** A book's first PDF page is its cover; subsequent spreads are 2–3, 4–5, etc. */
 function spreadStart(n){const clamped=Math.max(1,Math.min(documentPDF?.numPages||1,Math.floor(n)||1));return clamped===1?1:2+2*Math.floor((clamped-2)/2);}
 function spreadPages(n){const first=spreadStart(n),last=documentPDF?.numPages||1;return first===1?[1]:[first,first+1].filter(p=>p<=last);}
+function bookPageBaseWidth(){
+ const available=Math.max(200,$('page-area').clientWidth-40);
+ return Math.max(90,Math.min(550,(available-12)/2));
+}
 function pageWidth(){
  const available=Math.max(200,$('page-area').clientWidth-40);
- const base=isBookSpread()?Math.max(90,Math.min(550,(available-12)/2)):Math.min(available,1100);
- return base*zoom;
+ return (isBookSpread()?bookPageBaseWidth():Math.min(available,1100))*zoom;
 }
-/** Initial zoom that fits the complete PDF page inside the reader viewport. */
+/** Fit the *entire* current book spread rather than measuring only one page.
+ * Width includes the gutter and padding. Height accounts for both aspect ratios.
+ * Page 1 is a single cover; later spreads contain at most two PDF pages.
+ */
 function fitEntirePageZoom(n){
+ const area=$('page-area'),swapped=rotation%180!==0;
+ if(isBookSpread()){
+  const pages=spreadPages(n),base=bookPageBaseWidth();
+  const compact=matchMedia('(max-width:600px)').matches;
+  const gap=compact?4:8,paddingX=compact?10:32,paddingY=compact?16:36;
+  const maxHeight=Math.max(...pages.map(p=>{
+   const d=dimensions.get(p)||dimensions.get(1)||{width:420,height:580};
+   const w=swapped?d.height:d.width,h=swapped?d.width:d.height;
+   return base*h/Math.max(1,w);
+  }));
+  const availableWidth=Math.max(80,area.clientWidth-12);
+  const availableHeight=Math.max(80,area.clientHeight-12);
+  const widthScale=(availableWidth-paddingX-gap*(pages.length-1))/(base*pages.length);
+  const heightScale=(availableHeight-paddingY)/maxHeight;
+  return Math.max(.1,Math.min(widthScale,heightScale));
+ }
  const d=dimensions.get(n)||dimensions.get(1);
  if(!d)return 1;
- const area=$('page-area'),swapped=rotation%180!==0;
  const width=swapped?d.height:d.width,height=swapped?d.width:d.height;
  const availableWidth=Math.max(100,area.clientWidth-32);
  const availableHeight=Math.max(100,area.clientHeight-32);
- const baseWidth=isBookSpread()?Math.max(90,Math.min(550,(Math.max(200,area.clientWidth-40)-12)/2)):Math.min(Math.max(200,area.clientWidth-40),1100);
- return Math.max(.1,Math.min(availableWidth/(baseWidth*(isBookSpread()?2:1)),availableHeight*width/(baseWidth*height)));
+ const baseWidth=Math.min(Math.max(200,area.clientWidth-40),1100);
+ return Math.max(.1,Math.min(availableWidth/baseWidth,availableHeight*width/(baseWidth*height)));
 }
 /** size Slot: Support the PiShelf reader or library interface. */
 function sizeSlot(slot,n){const d=dimensions.get(n)||dimensions.get(1)||{width:420,height:580};const swapped=rotation%180!==0;const w=swapped?d.height:d.width,h=swapped?d.width:d.height;slot.style.width=pageWidth()+'px';slot.style.height=pageWidth()*h/w+'px';}
@@ -673,33 +694,44 @@ async function zoomWithControls(targetZoom){
  if(!documentPDF||pinch||!layoutReady)return;
  const area=$('page-area'),view=area.getBoundingClientRect();
  const centerX=view.left+view.width/2,centerY=view.top+view.height/2;
- const slot=slots.find(candidate=>{
-  const rect=candidate.getBoundingClientRect();
-  return rect.top<=centerY&&rect.bottom>=centerY;
- })||slots.find(candidate=>Number(candidate.dataset.page)===page);
- if(!slot)return;
- const rect=slot.getBoundingClientRect();
+ const spreadMode=isBookSpread();
+ const anchorElement=spreadMode
+  ?$('pages').querySelector('.book-spread')
+  :slots.find(candidate=>{
+    const rect=candidate.getBoundingClientRect();
+    return rect.top<=centerY&&rect.bottom>=centerY;
+   })||slots.find(candidate=>Number(candidate.dataset.page)===page);
+ if(!anchorElement)return;
+ const rect=anchorElement.getBoundingClientRect();
  const anchor={
-  number:Number(slot.dataset.page),
+  number:spreadMode?spreadStart(page):Number(anchorElement.dataset.page),
   x:Math.max(0,Math.min(1,(centerX-rect.left)/Math.max(1,rect.width))),
   y:Math.max(0,Math.min(1,(centerY-rect.top)/Math.max(1,rect.height)))
  };
- const next=Math.max(fitEntirePageZoom(anchor.number),Math.min(3,Number(targetZoom)));
- if(!Number.isFinite(next)||Math.abs(next-zoom)<0.001)return;
+ const minimum=fitEntirePageZoom(anchor.number);
+ const next=Math.max(minimum,Math.min(3,Number(targetZoom)));
+ if(!Number.isFinite(next))return;
+ const fits=spreadMode&&next<=minimum+0.001;
+ // Re-center even when the user is already at minimum and has panned sideways.
+ if(Math.abs(next-zoom)<0.001&&!fits)return;
  const original=documentPDF,g=generation;
- page=anchor.number;
- zoom=next;
- // Ignore scroll notifications while the page layout is replaced.
+ page=anchor.number;zoom=next;
  pinchScrollLockUntil=performance.now()+500;
  await rebuild();
  if(g!==generation||documentPDF!==original)return;
- const updated=slots.find(candidate=>Number(candidate.dataset.page)===anchor.number);
- if(!updated)return;
- const changed=updated.getBoundingClientRect();
- area.scrollLeft+=changed.left+changed.width*anchor.x-centerX;
- area.scrollTop+=changed.top+changed.height*anchor.y-centerY;
- updatePageUI();
- remember();
+ if(fits){
+  // The spread is CSS-centered when it fits; scroll offsets must not override it.
+  area.scrollLeft=0;area.scrollTop=0;
+ }else{
+  const updated=spreadMode?$('pages').querySelector('.book-spread')
+   :slots.find(candidate=>Number(candidate.dataset.page)===anchor.number);
+  if(updated){
+   const changed=updated.getBoundingClientRect();
+   area.scrollLeft+=changed.left+changed.width*anchor.x-centerX;
+   area.scrollTop+=changed.top+changed.height*anchor.y-centerY;
+  }
+ }
+ updatePageUI();remember();
 }
 $('minus').onclick=()=>zoomWithControls(zoom-.25);
 $('plus').onclick=()=>zoomWithControls(zoom+.25);
