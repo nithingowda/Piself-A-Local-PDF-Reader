@@ -117,6 +117,7 @@ test('animation waits until both next spread pages have decoded, then shows pred
   spreadPages:n=>n===1?[1]:[n,n+1].filter(x=>x<=8),
   matchMedia:()=>({matches:false}),imagePrefetches:previews,
   ensureDecodedPreview(n){return new Promise(resolve=>toResolve.set(n,resolve));},
+  primeSpreadDimensions:async()=>{},
   $:name=>name==='pages'?root:name==='reader-status'?status:{value:'book'},
   el:(tag,kind)=>({
    kind,style:{},classList:{add(){}},setAttribute(){},append(img){this.image=img;},

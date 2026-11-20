@@ -255,6 +255,20 @@ function fitEntirePageZoom(n){
  const baseWidth=Math.min(Math.max(200,area.clientWidth-40),1100);
  return Math.max(.1,Math.min(availableWidth/baseWidth,availableHeight*width/(baseWidth*height)));
 }
+/** Resolve real PDF dimensions before a new book spread is displayed.
+ * Image prefetch provides decoded pixels but not PDF page aspect ratios.
+ * Using a prior page's dimensions makes the new spread briefly small and then
+ * jump when the background dimension scan finally reaches these pages.
+ */
+async function primeSpreadDimensions(pages,doc=documentPDF,g=generation){
+ if(typeof doc?.getPage!=='function')return;
+ await Promise.all(pages.filter(n=>!dimensions.has(n)).map(async n=>{
+  const pdfPage=await doc.getPage(n);
+  if(g!==generation||documentPDF!==doc)return;
+  const view=pdfPage.getViewport({scale:1});
+  dimensions.set(n,{width:view.width,height:view.height});
+ }));
+}
 /** size Slot: Support the PiShelf reader or library interface. */
 function sizeSlot(slot,n){const d=dimensions.get(n)||dimensions.get(1)||{width:420,height:580};const swapped=rotation%180!==0;const w=swapped?d.height:d.width,h=swapped?d.width:d.height;slot.style.width=pageWidth()+'px';slot.style.height=pageWidth()*h/w+'px';}
 /** enqueue: Manage PDF page rendering and canvas lifecycle. */
@@ -604,6 +618,10 @@ async function openMagazine(item,start){
    if(g!==generation)return;
    dimensions.set(1,{width:v.width,height:v.height});
   }
+  // Size both book pages using their real PDF dimensions before the first
+  // paint; otherwise the companion page can resize after it appears.
+  if(isBookSpread())await primeSpreadDimensions(spreadPages(page),doc,g);
+  if(g!==generation||documentPDF!==doc)return;
   // Start with the entire page visible and a small margin on every side.
   zoom=fitEntirePageZoom(page);
   await rebuild();$('page-area').focus({preventScroll:true});
@@ -647,11 +665,10 @@ function move(n,turn=0){
  remember();updatePageUI();
  // Do not evict decoded incoming previews before rebuild() has consumed them.
  if(isBookSpread()){
+  // The outgoing sheet already performed the paper flip. Do not animate or
+  // rotate the *new* spread again: it should be visible at its final size.
   rebuild().then(()=>{
    if(wasAtFit){$('page-area').scrollLeft=0;$('page-area').scrollTop=0;}
-   if(!documentPDF||!isBookSpread()||!turn||!prefs.motion||matchMedia('(prefers-reduced-motion: reduce)').matches)return;
-   const sheet=$('pages').querySelector('.book-spread');
-   sheet?.classList.add(turn>0?'turn-forward':'turn-backward');
   });
  }else if($('view-mode').value==='single')rebuild();
  else{
@@ -746,6 +763,14 @@ async function turnBook(direction,fromSwipe=null){
    if(fromSwipe?.sheet){sheet.style.transform='';sheet.classList.remove('paper-dragging');}
    move(target,direction);return; // PDF.js fallback handles unreadable WebP
   }
+ }
+ // Decoded WebP previews are ready. Also resolve the real dimensions of
+ // BOTH incoming PDF pages before the fold begins, so move() computes the
+ // final fit once and the new spread never shrinks/grows after landing.
+ try{await primeSpreadDimensions(incoming,turn.document,turn.generation);}
+ catch(error){
+  // Keep navigation usable if a PDF has a corrupt page geometry.
+  console.warn('Could not prepare PDF page geometry:',error);
  }
  if(activePageTurn!==turn)return;
  if(documentPDF!==turn.document||generation!==turn.generation
