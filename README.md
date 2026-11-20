@@ -25,7 +25,7 @@ See [the library and reader guide](FEATURES.md) for persistent covers, reading c
 **Login is required** to access the library and PDFs. Admins can manage users and files; reader accounts have view-only permissions. After upgrading, create the first administrator with:
 
 ```sh
-docker compose exec -it pishelf python auth.py create-admin /data/progress.sqlite3
+docker compose exec --user 1000:1000 -it pishelf python auth.py create-admin /data/progress.sqlite3
 ```
 
 See [Authentication and administrator guide](AUTHENTICATION.md) for first-time setup, role permissions, account management, password security, and HTTPS reverse-proxy configuration. **There is no default password.**
