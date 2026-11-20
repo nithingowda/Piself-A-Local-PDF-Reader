@@ -16,7 +16,7 @@
  * - A missing optional control must not prevent refresh() from starting.
  */
 const $=id=>document.getElementById(id);
-const defaults={sort:'issue',siteTheme:'light',theme:'dark',mode:'scroll',quality:'1.5',density:'compact',motion:true,gestures:true,readerBrightness:75,comfort:'custom',epubTheme:'light',epubFontSize:100};
+const defaults={sort:'issue',siteTheme:'light',theme:'dark',mode:'scroll',quality:'1.5',density:'compact',gestures:true,readerBrightness:75,comfort:'custom',epubTheme:'light',epubFontSize:100};
 let prefs={...defaults};try{const stored=JSON.parse(localStorage.getItem('pishelf-settings')||'{}');for(const k in defaults)if(k in stored)prefs[k]=stored[k];}catch{}
 let collections=[],collectionFilter='',collectionSets=new Map();
 let categories=[],sourceFilter='',seriesFilter='',tagFilter='',visibleLimit=60;
@@ -163,7 +163,7 @@ function applyPrefs(){const sortOptions=[...$('sort').options].map(o=>o.value);i
 /** store Prefs: Support the PiShelf reader or library interface. */
 function storePrefs(){try{localStorage.setItem('pishelf-settings',JSON.stringify(prefs));}catch{toast('Browser settings storage is unavailable.');}applyPrefs();}
 /** open Settings: Support the PiShelf reader or library interface. */
-function openSettings(){$('pref-comfort').value=prefs.comfort||'custom';$('pref-readerBrightness').value=prefs.readerBrightness;$('reader-brightness-value').textContent=prefs.readerBrightness+'%';for(const k of ['siteTheme','theme','mode','quality','density'])$('pref-'+k).value=prefs[k];$('pref-motion').checked=prefs.motion;$('pref-gestures').checked=prefs.gestures;if(!uploading)populateUploadSources();drawCollectionManager();$('settings').showModal();loadTrash();loadWebPCacheStats();}
+function openSettings(){$('pref-comfort').value=prefs.comfort||'custom';$('pref-readerBrightness').value=prefs.readerBrightness;$('reader-brightness-value').textContent=prefs.readerBrightness+'%';for(const k of ['siteTheme','theme','mode','quality','density'])$('pref-'+k).value=prefs[k];$('pref-gestures').checked=prefs.gestures;if(!uploading)populateUploadSources();drawCollectionManager();$('settings').showModal();loadTrash();loadWebPCacheStats();}
 // Reading comfort presets are display-only and never alter PDF bytes.
 const comfortPresets={daylight:{theme:'light',readerBrightness:100},bedtime:{theme:'night',readerBrightness:55},amoled:{theme:'amoled',readerBrightness:80}};
 $('pref-comfort').onchange=e=>{
@@ -193,7 +193,7 @@ $('pref-readerBrightness').onchange=()=>storePrefs();
 $('settings-open').onclick=openSettings;$('reader-settings').onclick=openSettings;$('settings-close').onclick=()=>$('settings').close();
 for(const k of ['siteTheme','theme','mode','quality','density'])$('pref-'+k).onchange=e=>{prefs[k]=e.target.value;if(k==='theme'){prefs.comfort='custom';$('pref-comfort').value='custom';}if(k==='theme'&&['light','sepia','dark'].includes(prefs.theme))lastDayTheme=prefs.theme;storePrefs();if(documentPDF&&(k==='mode'||k==='quality')){$('view-mode').value=prefs.mode;rebuild();}};
 $('pref-gestures').onchange=e=>{prefs.gestures=e.target.checked;storePrefs();updateTouchMode();};
-$('pref-motion').onchange=e=>{prefs.motion=e.target.checked;storePrefs();};$('clear-all').onclick=()=>{if(documentPDF){toast('Return to the library before clearing all progress.');return;}clearProgress();};$('rescan').onclick=()=>{if(documentPDF){toast('Return to the library to rescan.');return;}refresh();toast('Library scan requested.');};
+$('clear-all').onclick=()=>{if(documentPDF){toast('Return to the library before clearing all progress.');return;}clearProgress();};$('rescan').onclick=()=>{if(documentPDF){toast('Return to the library to rescan.');return;}refresh();toast('Library scan requested.');};
 // Continuous reader: lightweight page placeholders, serialized rendering, bounded canvas memory.
 let slots=[],renderQueue=[],renderBusy=false,pageObserver=null;
 const dimensions=new Map(),renderedSlots=new Set();
@@ -650,7 +650,7 @@ async function openMagazine(item,start){
  }catch(e){if(g===generation)$('reader-status').textContent='Could not open PDF: '+e.message;}
 }
 /** move: Support the PiShelf reader or library interface. */
-function move(n,turn=0){
+function move(n){
  if(!documentPDF)return;
  const oldPage=page;
  const wasAtFit=isBookSpread()&&Math.abs(zoom-fitEntirePageZoom(oldPage))<.04;
@@ -661,9 +661,9 @@ function move(n,turn=0){
  // when navigating from the cover or another fitted pair.
  if(wasAtFit)zoom=fitEntirePageZoom(page);
  remember();updatePageUI();
- // Do not evict decoded incoming previews before rebuild() has consumed them.
+ // Preserve already-decoded neighbor previews until the new slots use them.
  if(isBookSpread()){
-  // Swap the book spread directly with no page animation.
+  // Replace the two-page spread directly without any page-turn effect.
   rebuild().then(()=>{
    if(wasAtFit){$('page-area').scrollLeft=0;$('page-area').scrollTop=0;}
   });
@@ -828,7 +828,7 @@ $('filters-clear').onclick=()=>{sourceFilter=seriesFilter=tagFilter=category=col
 $('load-more').onclick=()=>{visibleLimit+=60;drawLibrary();};
 $('backup-export').onclick=async()=>{try{if(documentPDF)remember();await saveChain;if(pendingSaves.size)throw Error('Reconnect and sync your reading progress before backing up.');const data=await api('/api/backup');data.preferences={...prefs};const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const link=el('a');link.href=url;link.download='pishelf-backup-'+new Date().toISOString().slice(0,10)+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('Reading backup downloaded. Back up PDF folders separately.');}catch(error){toast(error.message);}};
 $('backup-import').onclick=()=>{if(documentPDF||!$('epub-reader').hidden){toast('Return to the library before restoring a backup.');return;}$('backup-file').click();};
-$('backup-file').onchange=async e=>{const file=e.target.files[0];e.target.value='';if(!file)return;try{if(file.size>5*1024*1024)throw Error('Backup must be under 5 MB.');const data=JSON.parse(await file.text());if(data.format!=='pishelf-backup'||data.version!==1)throw Error('Select a PiShelf reading backup.');if(!await confirmAction('Restore reading backup?','Matching reading records and metadata will be replaced. Other records and your PDFs are kept.','Restore backup'))return;await saveChain;if(pendingSaves.size)throw Error('Sync pending reading progress before restoring.');await api('/api/backup/restore',data);if(data.preferences){for(const key in defaults){const value=data.preferences[key];if(key==='motion'||key==='gestures'){if(typeof value==='boolean')prefs[key]=value;}else if(key==='sort'){if([...$('sort').options].some(o=>o.value===value))prefs.sort=value;}else if($('pref-'+key)&&[...$('pref-'+key).options].some(o=>o.value===value))prefs[key]=value;}storePrefs();}await refresh();toast('Backup restored.');}catch(error){toast(error.message);}};
+$('backup-file').onchange=async e=>{const file=e.target.files[0];e.target.value='';if(!file)return;try{if(file.size>5*1024*1024)throw Error('Backup must be under 5 MB.');const data=JSON.parse(await file.text());if(data.format!=='pishelf-backup'||data.version!==1)throw Error('Select a PiShelf reading backup.');if(!await confirmAction('Restore reading backup?','Matching reading records and metadata will be replaced. Other records and your PDFs are kept.','Restore backup'))return;await saveChain;if(pendingSaves.size)throw Error('Sync pending reading progress before restoring.');await api('/api/backup/restore',data);if(data.preferences){for(const key in defaults){const value=data.preferences[key];if(key==='gestures'){if(typeof value==='boolean')prefs[key]=value;}else if(key==='sort'){if([...$('sort').options].some(o=>o.value===value))prefs.sort=value;}else if($('pref-'+key)&&[...$('pref-'+key).options].some(o=>o.value===value))prefs[key]=value;}storePrefs();}await refresh();toast('Backup restored.');}catch(error){toast(error.message);}};
 // Uploads stream one File at a time; the browser never reads the entire file into JS memory.
 let uploadXHR=null,uploading=false,uploadCancelled=false;
 /** populate Upload Sources: Support the PiShelf reader or library interface. */
