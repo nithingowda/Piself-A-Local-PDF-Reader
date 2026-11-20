@@ -675,27 +675,12 @@ async function openMagazine(item,start){
 function move(n){
  if(!documentPDF)return;
  const oldPage=page;
- const wasAtFit=isBookSpread()&&Math.abs(zoom-fitEntirePageZoom(oldPage))<.04;
  const target=Math.max(1,Math.min(documentPDF.numPages,Number(n)||1));
  page=isBookSpread()?spreadStart(target):target;
  if(page===oldPage)return;
- // Each spread can have different page dimensions. Maintain full-spread fit
- // when navigating from the cover or another fitted pair.
- if(wasAtFit)zoom=fitEntirePageZoom(page);
- remember();updatePageUI();
- // Preserve already-decoded neighbor previews until the new slots use them.
- if(isBookSpread()){
-  // Replace the two-page spread directly without any page-turn effect.
-  rebuild().then(()=>{
-   if(wasAtFit){$('page-area').scrollLeft=0;$('page-area').scrollTop=0;}
-  });
- }else if($('view-mode').value==='single')rebuild();
- else{
-  preloadMagazineNeighbors();
-  const slot=slots[page-1];enqueue(slot);
-  $('page-area').scrollTo({top:slot.offsetTop-20,behavior:'auto'});
-  clearTimeout(scrollTimer);scrollTimer=setTimeout(remember,500);
- }
+ automaticFit='page';
+ updatePageUI();
+ rebuild();
 }
 /** Instant page navigation, one spread per step in Two-page Book mode. */
 function turnBook(direction){
