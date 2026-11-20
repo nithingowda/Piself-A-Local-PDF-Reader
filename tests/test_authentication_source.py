@@ -10,7 +10,7 @@ JS=(ROOT/'static/app.js').read_text()
 class AuthenticationSourceTests(unittest.TestCase):
     def test_pdf_and_api_gets_require_session(self):
         self.assertIn("user=self.require_session(admin=path in ('/admin.html','/admin.js'))",SERVER)
-        self.assertIn("if path not in ('/login.html','/login.js'):",SERVER)
+        self.assertIn("if path not in ('/login.html','/login.js','/setup.html','/setup.js'):",SERVER)
     def test_all_non_auth_mutations_admin_only(self):
         self.assertIn("self.require_session(admin=route!='/api/progress',mutation=True)",SERVER)
         self.assertNotIn("if(signedInUser?.role!=='admin')",JS)
