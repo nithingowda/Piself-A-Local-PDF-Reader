@@ -589,12 +589,17 @@ async function openMagazine(item,start){
 function move(n,turn=0){
  if(!documentPDF)return;
  const oldPage=page;
+ const wasAtFit=isBookSpread()&&Math.abs(zoom-fitEntirePageZoom(oldPage))<.04;
  const target=Math.max(1,Math.min(documentPDF.numPages,Number(n)||1));
  page=isBookSpread()?spreadStart(target):target;
  if(page===oldPage)return;
+ // Each spread can have different page dimensions. Maintain full-spread fit
+ // when navigating from the cover or another fitted pair.
+ if(wasAtFit)zoom=fitEntirePageZoom(page);
  remember();updatePageUI();preloadMagazineNeighbors();
  if(isBookSpread()){
   rebuild().then(()=>{
+   if(wasAtFit){$('page-area').scrollLeft=0;$('page-area').scrollTop=0;}
    if(!documentPDF||!isBookSpread()||!turn||!prefs.motion||matchMedia('(prefers-reduced-motion: reduce)').matches)return;
    const sheet=$('pages').querySelector('.book-spread');
    sheet?.classList.add(turn>0?'turn-forward':'turn-backward');
