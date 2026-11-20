@@ -31,6 +31,7 @@ function fixture({motion=true,reduced=false}={}){
   prefs:{motion},
   isBookSpread:()=>true,
   isAnimatedPageMode:()=>true,
+  primeSpreadDimensions:async()=>{},
   current:null,
   imagePrefetches:new Map([1,4,5].map(n=>[n,{ready:true,id:'book',img:{}}])),
   spreadPages:n=>n===1?[1]:[n,n+1].filter(page=>page<=8),
