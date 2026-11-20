@@ -26,7 +26,7 @@ class FakeImage{
 function makeCache({book=false,page=2,count=8}={}){
  FakeImage.created=[];
  const ctx={
-  documentPDF:{numPages:count},current:{id:'the-book'},page,Image:FakeImage,encodeURIComponent,
+  documentPDF:{numPages:count},current:{id:'the-book'},page,slots:[],Image:FakeImage,encodeURIComponent,
   isBookSpread:()=>book,
   spreadStart:n=>n<=1?1:2+2*Math.floor((n-2)/2),
   spreadPages:n=>n===1?[1]:[n,n+1].filter(x=>x<=count)
@@ -63,6 +63,24 @@ test('two-page book mode warms both upcoming pages and prior spread with bounded
  assert.ok(c.imagePrefetches.size<=4);
  c.clearMagazinePrefetches();
  assert.equal(c.imagePrefetches.size,0);
+});
+
+test('decoded second book page survives after first page renders, then releases after use',()=>{
+ const c=makeCache({book:true,page:4});
+ const image=new FakeImage();image.src='/api/page-image/the-book/5?width=960';
+ const entry={img:image,id:'the-book',ready:true,cancelled:false,transferred:false,finish:()=>{},promise:Promise.resolve(true)};
+ c.imagePrefetches.set(5,entry);
+ const left={dataset:{page:'4',ready:'yes'}};
+ const right={dataset:{page:'5',ready:'no'}};
+ c.ctx.slots=[left,right];
+ c.preloadMagazineNeighbors();
+ assert.strictEqual(c.imagePrefetches.get(5),entry,'decoded right-hand page must not be discarded early');
+ assert.strictEqual(c.takeDecodedPreview(5),image);
+ assert.equal(image.src,'/api/page-image/the-book/5?width=960');
+ c.preloadMagazineNeighbors();
+ assert.equal(c.imagePrefetches.has(5),false,'cache entry transferred to visible page');
+ c.clearMagazinePrefetches();
+ assert.equal(image.src,'/api/page-image/the-book/5?width=960','visible image must survive cache cleanup');
 });
 
 test('canceling a pending decoded preview immediately resolves its wait',async()=>{
