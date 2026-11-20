@@ -5,9 +5,9 @@ PiShelf requires a login for all PDFs, WebP images, the library and API endpoint
 | Role | Permissions |
 | --- | --- |
 | **Administrator** | Read PDFs, manage library, upload/delete PDFs, save shared reading state, create/disable/delete users, reset user passwords |
-| **Reader** | Read PDFs and browse library only. All POST operations, including saving reading progress, are denied by the server |
+| **Reader** | Read PDFs, browse the library, and save reading progress, bookmarks and favourites. File and user management are denied by the server |
 
-**Important:** Reading progress remains shared rather than per-user. Reader accounts cannot update it. Existing progress is retained.
+**Important:** Reading progress remains **shared across accounts**, not private per-user. All signed-in users can update the same magazine's last-read page and bookmarks; the latest saved value is used. Existing progress is retained.
 
 ## First-time setup / migration
 
