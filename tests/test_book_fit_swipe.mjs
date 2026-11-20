@@ -77,7 +77,8 @@ test('one-finger paper drag folds current page and commits a whole spread turn',
  assert.equal(turned.length,1);
  assert.equal(turned[0].dir,1);
  assert.match(sheet.style.transform,/rotateY\(-/);
- assert.ok(!names.has('paper-dragging'));
+ // The released page stays folded until turnBook takes over the animation.
+ assert.ok(names.has('paper-dragging'));
  // Two-finger pinch must not be captured by paper turning.
  ctx.pinch={};
  swipe.beginBookPaperSwipe({pointerType:'touch',pointerId:10,clientX:320,clientY:200});
