@@ -604,11 +604,51 @@ $('cache-clear').onclick=async()=>{
  catch(e){toast(e.message);}
 };
 $('back').onclick=closeReader;$('prev').onclick=()=>move(page-1);$('next').onclick=()=>move(page+1);$('page-number').onchange=e=>move(parseInt(e.target.value)||1);
-$('minus').onclick=()=>{if(!documentPDF)return;zoom=Math.max(fitEntirePageZoom(page),zoom-.25);rebuild();};$('plus').onclick=()=>{if(!documentPDF)return;zoom=Math.min(Math.max(3,zoom),zoom+.25);rebuild();};$('fit').onclick=()=>{if(!documentPDF)return;zoom=fitEntirePageZoom(page);rebuild();};$('fit-page').onclick=()=>{if(!documentPDF)return;zoom=fitEntirePageZoom(page);rebuild();};$('rotate').onclick=()=>{rotation=(rotation+90)%360;rebuild();};$('view-mode').onchange=()=>{prefs.mode=$('view-mode').value;storePrefs();rebuild();};
+/** Button zoom keeps the page point under the viewport center visible.
+ * rebuild() recreates page slots and normally scrolls to the page top; restore
+ * a fractional anchor afterwards to avoid jumping left or losing the paragraph.
+ * Two-finger pinch geometry is intentionally separate and unchanged.
+ */
+async function zoomWithControls(targetZoom){
+ if(!documentPDF||pinch||!layoutReady)return;
+ const area=$('page-area'),view=area.getBoundingClientRect();
+ const centerX=view.left+view.width/2,centerY=view.top+view.height/2;
+ const slot=slots.find(candidate=>{
+  const rect=candidate.getBoundingClientRect();
+  return rect.top<=centerY&&rect.bottom>=centerY;
+ })||slots.find(candidate=>Number(candidate.dataset.page)===page);
+ if(!slot)return;
+ const rect=slot.getBoundingClientRect();
+ const anchor={
+  number:Number(slot.dataset.page),
+  x:Math.max(0,Math.min(1,(centerX-rect.left)/Math.max(1,rect.width))),
+  y:Math.max(0,Math.min(1,(centerY-rect.top)/Math.max(1,rect.height)))
+ };
+ const next=Math.max(fitEntirePageZoom(anchor.number),Math.min(3,Number(targetZoom)));
+ if(!Number.isFinite(next)||Math.abs(next-zoom)<0.001)return;
+ const original=documentPDF,g=generation;
+ page=anchor.number;
+ zoom=next;
+ // Ignore scroll notifications while the page layout is replaced.
+ pinchScrollLockUntil=performance.now()+500;
+ await rebuild();
+ if(g!==generation||documentPDF!==original)return;
+ const updated=slots.find(candidate=>Number(candidate.dataset.page)===anchor.number);
+ if(!updated)return;
+ const changed=updated.getBoundingClientRect();
+ area.scrollLeft+=changed.left+changed.width*anchor.x-centerX;
+ area.scrollTop+=changed.top+changed.height*anchor.y-centerY;
+ updatePageUI();
+ remember();
+}
+$('minus').onclick=()=>zoomWithControls(zoom-.25);
+$('plus').onclick=()=>zoomWithControls(zoom+.25);
+$('fit').onclick=()=>zoomWithControls(fitEntirePageZoom(page));
+$('fit-page').onclick=()=>zoomWithControls(fitEntirePageZoom(page));$('rotate').onclick=()=>{rotation=(rotation+90)%360;rebuild();};$('view-mode').onchange=()=>{prefs.mode=$('view-mode').value;storePrefs();rebuild();};
 $('bookmark').onclick=()=>{if(!documentPDF)return;const marks=saved[current.id]?.bookmarks||[];persist(current.id,{bookmarks:marks.includes(page)?marks.filter(n=>n!==page):[...marks,page].sort((a,b)=>a-b)});updatePageUI();updateBookmarks();};$('bookmarks').onchange=e=>{if(e.target.value)move(+e.target.value);e.target.value='';};
 $('fullscreen').onclick=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await $('reader').requestFullscreen();}catch{toast('Fullscreen is unavailable in this browser.');}};
 let searchTimer;$('search').oninput=()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>{visibleLimit=60;drawLibrary();},150);};$('sort').onchange=e=>{prefs.sort=e.target.value;storePrefs();drawLibrary();};$('refresh').onclick=()=>refresh();document.querySelectorAll('[data-filter]').forEach(b=>b.onclick=()=>{filter=b.dataset.filter;category=collectionFilter='';visibleLimit=60;document.querySelectorAll('.tab,.category').forEach(t=>t.classList.toggle('active',t===b));drawLibrary();});
-document.addEventListener('keydown',e=>{if($('reader').hidden||document.querySelector('dialog[open]')||/INPUT|SELECT/.test(e.target.tagName))return;if(e.key==='ArrowRight'){e.preventDefault();move(page+1);}if(e.key==='ArrowLeft'){e.preventDefault();move(page-1);}if(e.key==='Escape'&&!document.fullscreenElement)closeReader();if(e.key.toLowerCase()==='b')$('bookmark').click();if(e.key.toLowerCase()==='c'){e.preventDefault();smartDoubleTapZoom(e.clientX,e.clientY);}});
+document.addEventListener('keydown',e=>{if($('reader').hidden||document.querySelector('dialog[open]')||/INPUT|SELECT/.test(e.target.tagName))return;if(e.key==='ArrowRight'){e.preventDefault();move(page+1);}if(e.key==='ArrowLeft'){e.preventDefault();move(page-1);}if(e.key==='Escape'&&!document.fullscreenElement)closeReader();if(e.key.toLowerCase()==='b')$('bookmark').click();if(e.key.toLowerCase()==='c'){e.preventDefault();toggleReaderControls();}});
 window.addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>{if(documentPDF){resetPinch();rebuild();}},250);});
 document.addEventListener('visibilitychange',()=>{if(document.hidden)remember();else{for(const [id,patch] of [...pendingSaves])persist(id,patch);refresh(true);}});window.addEventListener('pagehide',remember);
 // Library editing and backup controls.
@@ -663,28 +703,6 @@ function toggleReaderControls(){
  const hide=!$('reader').classList.contains('focused');
  setReaderFocus(hide);
  if(!hide)scheduleImmersiveHide();
-}
-/** Smart double-tap zoom. Preserve the separate two-finger Safari pinch path.
- * A second double-tap returns to fit-width. Tap position stays near the centre.
- */
-function smartDoubleTapZoom(clientX,clientY){
- if(!documentPDF||pinch||!layoutReady)return;
- const area=$('page-area'),rect=area.getBoundingClientRect();
- const slot=slots.find(item=>{const r=item.getBoundingClientRect();return clientX>=r.left&&clientX<=r.right&&clientY>=r.top&&clientY<=r.bottom;});
- if(!slot)return;
- const pageNumber=Number(slot.dataset.page),slotRect=slot.getBoundingClientRect();
- const fx=Math.max(0,Math.min(1,(clientX-slotRect.left)/slotRect.width));
- const fy=Math.max(0,Math.min(1,(clientY-slotRect.top)/slotRect.height));
- suppressTapUntil=performance.now()+450;
- const next=zoom>1.35?1:2;
- zoom=next;page=pageNumber;
- rebuild();
- const updated=slots.find(item=>Number(item.dataset.page)===pageNumber);
- if(updated){
-  const newRect=updated.getBoundingClientRect();
-  area.scrollLeft+=newRect.left+newRect.width*fx-(rect.left+rect.width/2);
-  area.scrollTop+=newRect.top+newRect.height*fy-(rect.top+rect.height/2);
- }
 }
 /** touch Pair: Handle touch zoom while maintaining the reader position. */
 function touchPair(touches){const a=touches[0],b=touches[1];return {distance:Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY),x:(a.clientX+b.clientX)/2,y:(a.clientY+b.clientY)/2};}
@@ -768,9 +786,9 @@ $('page-area').addEventListener('pointerup',e=>{
  gesturePointers.delete(e.pointerId);if(e.pointerType!=='touch'||pinch||performance.now()<suppressTapUntil||!gestureStart||gestureStart.multi||gesturePointers.size)return;
  const start=gestureStart;gestureStart=null;const dx=e.clientX-start.x,dy=e.clientY-start.y,elapsed=performance.now()-start.time;
  if(prefs.gestures&&documentPDF&&zoom<=1&&Math.abs(dx)>70&&Math.abs(dx)>Math.abs(dy)*2&&elapsed<700){move(page+(dx<0?1:-1));lastTap=null;return;}
- if(Math.hypot(dx,dy)<18&&elapsed<300){const now=performance.now();if(lastTap&&now-lastTap.time<320&&Math.hypot(e.clientX-lastTap.x,e.clientY-lastTap.y)<35){smartDoubleTapZoom(e.clientX,e.clientY);lastTap=null;}else lastTap={time:now,x:e.clientX,y:e.clientY};}else lastTap=null;
+ if(Math.hypot(dx,dy)<18&&elapsed<300){const now=performance.now();if(lastTap&&now-lastTap.time<320&&Math.hypot(e.clientX-lastTap.x,e.clientY-lastTap.y)<35){toggleReaderControls();lastTap=null;}else lastTap={time:now,x:e.clientX,y:e.clientY};}else lastTap=null;
 },{passive:true});
-$('page-area').addEventListener('dblclick',e=>{if(performance.now()-lastTouchTime>600){e.preventDefault();smartDoubleTapZoom(e.clientX,e.clientY);}});
+$('page-area').addEventListener('dblclick',e=>{if(performance.now()-lastTouchTime>600){e.preventDefault();toggleReaderControls();}});
 $('reader-accessibility-controls').onclick=toggleReaderControls;
 /** set Reader Focus: Support the PiShelf reader or library interface. */
 function setReaderFocus(focused){$('reader').classList.toggle('focused',focused);$('reader-focus').setAttribute('aria-pressed',String(focused));$('reader-focus').textContent=focused?'Show controls':'Immersive';$('reader-accessibility-controls').setAttribute('aria-expanded',String(!focused));if(focused&&$('reader').contains(document.activeElement))$('page-area').focus({preventScroll:true});}
