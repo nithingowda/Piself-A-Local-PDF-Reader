@@ -574,6 +574,7 @@ function smartDoubleTapZoom(clientX,clientY){
  const pageNumber=Number(slot.dataset.page),slotRect=slot.getBoundingClientRect();
  const fx=Math.max(0,Math.min(1,(clientX-slotRect.left)/slotRect.width));
  const fy=Math.max(0,Math.min(1,(clientY-slotRect.top)/slotRect.height));
+ suppressTapUntil=performance.now()+450;
  const next=zoom>1.35?1:2;
  zoom=next;page=pageNumber;
  rebuild();
@@ -668,7 +669,7 @@ $('page-area').addEventListener('pointerup',e=>{
  if(prefs.gestures&&documentPDF&&zoom<=1&&Math.abs(dx)>70&&Math.abs(dx)>Math.abs(dy)*2&&elapsed<700){move(page+(dx<0?1:-1));lastTap=null;return;}
  if(Math.hypot(dx,dy)<18&&elapsed<300){const now=performance.now();if(lastTap&&now-lastTap.time<320&&Math.hypot(e.clientX-lastTap.x,e.clientY-lastTap.y)<35){smartDoubleTapZoom(e.clientX,e.clientY);lastTap=null;}else lastTap={time:now,x:e.clientX,y:e.clientY};}else lastTap=null;
 },{passive:true});
-$('page-area').addEventListener('dblclick',e=>{if(performance.now()-lastTouchTime>600){e.preventDefault();toggleReaderControls();}});
+$('page-area').addEventListener('dblclick',e=>{if(performance.now()-lastTouchTime>600){e.preventDefault();smartDoubleTapZoom(e.clientX,e.clientY);}});
 $('reader-accessibility-controls').onclick=toggleReaderControls;
 /** set Reader Focus: Support the PiShelf reader or library interface. */
 function setReaderFocus(focused){$('reader').classList.toggle('focused',focused);$('reader-focus').setAttribute('aria-pressed',String(focused));$('reader-focus').textContent=focused?'Show controls':'Immersive';$('reader-accessibility-controls').setAttribute('aria-expanded',String(!focused));if(focused&&$('reader').contains(document.activeElement))$('page-area').focus({preventScroll:true});}
