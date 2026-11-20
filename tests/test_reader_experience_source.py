@@ -14,14 +14,23 @@ class ReaderExperienceTests(unittest.TestCase):
         self.assertIn("$('reader-page-slider').addEventListener('input'",JS)
         self.assertIn("$('reader-page-slider').addEventListener('change'",JS)
         self.assertIn("move(Math.max(1,Math.min(documentPDF.numPages",JS)
-    def test_smart_zoom_preserves_pinch(self):
-        self.assertIn('function smartDoubleTapZoom(clientX,clientY)',JS)
-        self.assertIn('const next=zoom>1.35?1:2;',JS)
+    def test_button_zoom_preserves_center_and_safari_pinch(self):
+        self.assertIn('async function zoomWithControls(targetZoom)',JS)
+        self.assertIn('await rebuild();',JS)
+        self.assertIn('area.scrollLeft+=changed.left+changed.width*anchor.x-centerX;',JS)
+        self.assertIn('area.scrollTop+=changed.top+changed.height*anchor.y-centerY;',JS)
+        for control in ('minus','plus','fit','fit-page'):
+            self.assertIn("$('"+control+"').onclick=()=>zoomWithControls(",JS)
+        self.assertIn('min-width:100%;width:max-content',CSS)
+        self.assertIn('margin-left:auto;margin-right:auto',CSS)
         self.assertIn('function finishPinch(cancelled=false)',JS)
-        self.assertIn("addEventListener('touchstart'",JS)
-        self.assertIn("addEventListener('touchmove'",JS)
-        self.assertIn("addEventListener('touchend'",JS)
-        self.assertIn('smartDoubleTapZoom(e.clientX,e.clientY)',JS)
+        for touch in ('touchstart','touchmove','touchend'):
+            self.assertIn("addEventListener('"+touch+"'",JS)
+    def test_double_tap_no_longer_zooms(self):
+        self.assertNotIn('smartDoubleTapZoom',JS)
+        self.assertNotIn('const next=zoom>1.35?1:2;',JS)
+        self.assertIn('toggleReaderControls();lastTap=null;',JS)
+        self.assertIn("e.preventDefault();toggleReaderControls();",JS)
     def test_immersive_controls(self):
         self.assertIn('id="reader-focus"',HTML)
         self.assertIn('function scheduleImmersiveHide()',JS)
