@@ -639,7 +639,6 @@ async function turnBook(direction,fromSwipe=null){
  activePageTurn=turn;
  sheet.classList.remove('paper-dragging');
  sheet.classList.add('paper-turning');
- sheet.style.transform='';
  sheet.style.transformOrigin=direction>0?'left center':'right center';
  const frames=[
   {transform:'perspective(1100px) rotateY('+fromDegrees+'deg)',opacity:1},
@@ -661,7 +660,7 @@ async function turnBook(direction,fromSwipe=null){
  }
  if(!documentPDF||documentPDF!==turn.document||generation!==turn.generation||!isBookSpread())return;
  if(spreadStart(page)!==start)return;
- move(target);
+ move(target,direction);
 }
 /** close Reader: Support the PiShelf reader or library interface. */
 async function closeReader({fromHistory=false}={}){
@@ -899,7 +898,7 @@ function finishPinch(cancelled=false){
 }
 $('page-area').addEventListener('touchstart',e=>{
  if(e.touches.length!==2||!prefs.gestures||!documentPDF||!layoutReady)return;
- clearBookPaperSwipe();
+ cancelPageTurn();clearBookPaperSwipe();
  e.preventDefault();lastTap=null;gestureStart=null;clearTimeout(scrollTimer);
  const point=touchPair(e.touches),area=$('page-area'),rect=area.getBoundingClientRect();
  const slot=slots.find(s=>{const r=s.getBoundingClientRect();return point.x>=r.left&&point.x<=r.right&&point.y>=r.top&&point.y<=r.bottom;})||slots.find(s=>+s.dataset.page===page);
