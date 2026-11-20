@@ -644,12 +644,14 @@ async function turnBook(direction,fromSwipe=null){
   {transform:'perspective(1100px) rotateY('+fromDegrees+'deg)',opacity:1},
   {transform:'perspective(1100px) rotateY('+endDegrees+'deg)',opacity:.92}
  ];
+ let completed=false;
  try{
   turn.animation=sheet.animate(frames,{
    duration:Math.max(180,Math.min(420,350*(1-Math.abs(fromDegrees)/180))),
    easing:'cubic-bezier(.2,.65,.2,1)',fill:'forwards'
   });
   await turn.animation.finished;
+  completed=activePageTurn===turn;
  }catch{return;}finally{
   if(activePageTurn===turn){
    activePageTurn=null;
@@ -658,7 +660,7 @@ async function turnBook(direction,fromSwipe=null){
    sheet.style.transform='';sheet.style.transformOrigin='';
   }
  }
- if(!documentPDF||documentPDF!==turn.document||generation!==turn.generation||!isBookSpread())return;
+ if(!completed||!documentPDF||documentPDF!==turn.document||generation!==turn.generation||!isBookSpread())return;
  if(spreadStart(page)!==start)return;
  move(target,direction);
 }
