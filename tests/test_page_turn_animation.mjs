@@ -32,6 +32,8 @@ function fixture({motion=true,reduced=false}={}){
   isBookSpread:()=>true,
   isAnimatedPageMode:()=>true,
   current:null,
+  imagePrefetches:new Map([1,4,5].map(n=>[n,{ready:true,id:'book',img:{}}])),
+  spreadPages:n=>n===1?[1]:[n,n+1].filter(page=>page<=8),
   $:()=>({value:'book'}),
   spreadStart:n=>n===1?1:2+2*Math.floor((Math.min(8,n)-2)/2),
   matchMedia:()=>({matches:reduced}),

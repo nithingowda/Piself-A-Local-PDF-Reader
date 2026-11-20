@@ -279,7 +279,8 @@ async function renderPages(){
   try{
    // Prefer cached magazine images; retain PDF.js rendering as a fallback.
    if(current?.id){
-    const img=document.createElement('img');
+    const prefetched=takeDecodedPreview(n);
+    const img=prefetched||document.createElement('img');
     img.alt='Magazine page '+n;
     img.decoding='async';
     img.style.cssText='display:block;width:100%;height:100%;object-fit:contain';
@@ -287,9 +288,11 @@ async function renderPages(){
     const url='/api/page-image/'+encodeURIComponent(current.id)+'/'+n+'?width='+width;
     const previewUrl='/api/page-image/'+encodeURIComponent(current.id)+'/'+n+'?width=960';
     try{
-     await new Promise((resolve,reject)=>{
-      img.onload=resolve;img.onerror=reject;img.src=width>960?previewUrl:url;
-     });
+     if(!prefetched){
+      await new Promise((resolve,reject)=>{
+       img.onload=resolve;img.onerror=reject;img.src=width>960?previewUrl:url;
+      });
+     }
      if(g!==generation||epoch!==layoutEpoch||!slot.isConnected)continue;
      slot.replaceChildren(img);slot.dataset.ready='yes';slot.dataset.queued='no';
      if(width>960){
@@ -342,11 +345,9 @@ async function renderPages(){
 /** trim Canvases: Manage PDF page rendering and canvas lifecycle. */
 // Keep only nearby magazine images decoded in Safari; page navigation preloads
 // the next two pages and the previous page without allocating large canvases.
+// Decoded 960px previews for adjacent pages. Each cache entry owns a
+// settleable promise, so navigating away cannot leave a page turn hanging.
 let imagePrefetches=new Map();
-// === Reader image lifecycle =================================================
-// Sharp WebP upgrades are temporary network/decoded-image allocations.
-// Cancel them when a page leaves the viewport, the layout changes or the
-// reader closes. This avoids Safari retaining offscreen full-resolution images.
 const pendingSharpImages=new Map();
 function cancelSharpImage(slot){
  const image=pendingSharpImages.get(slot);
@@ -357,29 +358,74 @@ function cancelSharpImage(slot){
 function cancelAllSharpImages(){
  for(const slot of pendingSharpImages.keys())cancelSharpImage(slot);
 }
-// === Neighbor prefetch ======================================================
-// Keep only nearby images. Avoid 2800px speculative requests on mobile.
+function discardDecodedPreview(n,entry){
+ if(imagePrefetches.get(n)===entry)imagePrefetches.delete(n);
+ entry.cancelled=true;entry.img.onload=null;entry.img.onerror=null;
+ if(!entry.transferred)entry.img.src='';
+ entry.finish(false);
+}
+function ensureDecodedPreview(n){
+ if(!documentPDF||!current?.id||n<1||n>documentPDF.numPages)return Promise.resolve(false);
+ const existing=imagePrefetches.get(n);
+ if(existing?.id===current.id&&!existing.cancelled)return existing.promise;
+ if(existing)discardDecodedPreview(n,existing);
+ const img=new Image();img.decoding='async';
+ let resolvePromise;
+ const entry={id:current.id,img,ready:false,cancelled:false,transferred:false,settled:false,finish:null,promise:null};
+ entry.promise=new Promise(resolve=>{resolvePromise=resolve;});
+ entry.finish=ok=>{if(!entry.settled){entry.settled=true;resolvePromise(ok);}};
+ imagePrefetches.set(n,entry);
+ img.onload=async()=>{
+  try{if(typeof img.decode==='function')await img.decode();}catch{}
+  if(entry.cancelled)return;
+  entry.ready=img.naturalWidth>0&&img.naturalHeight>0;
+  entry.finish(entry.ready);
+ };
+ img.onerror=()=>{
+  if(entry.cancelled)return;
+  entry.finish(false);
+  if(imagePrefetches.get(n)===entry)imagePrefetches.delete(n);
+ };
+ img.src='/api/page-image/'+encodeURIComponent(entry.id)+'/'+n+'?width=960';
+ return entry.promise;
+}
+// Transfer the decoded original, instead of creating another image whose
+// onload would delay the newly turned page.
+function takeDecodedPreview(n){
+ const entry=imagePrefetches.get(n);
+ if(!entry||!entry.ready||entry.id!==current?.id)return null;
+ imagePrefetches.delete(n);
+ entry.transferred=true;entry.img.onload=null;entry.img.onerror=null;
+ return entry.img;
+}
+function neighborPreviewPages(){
+ if(!documentPDF)return [];
+ const count=documentPDF.numPages;
+ if(isBookSpread()){
+  const start=spreadStart(page),previous=start<=2?1:start-2;
+  const next=start===1?2:start+2;
+  return [...new Set([
+   ...(previous<start?spreadPages(previous):[]),
+   ...(next<=count?spreadPages(next):[])
+  ].filter(n=>n>=1&&n<=count))];
+ }
+ return [page-2,page-1,page+1,page+2].filter(n=>n>=1&&n<=count);
+}
 function preloadMagazineNeighbors(){
  if(!documentPDF||!current?.id)return;
- // Never prefetch 2800px zoom images; they are expensive on iPhone Safari.
- const width=zoom>0.85?1600:960;
- const wanted=new Set([page-1,page+1,page+2].filter(n=>n>=1&&n<=documentPDF.numPages));
- for(const [n,img] of imagePrefetches){
-  if(!wanted.has(n)){img.onload=null;img.onerror=null;img.src='';imagePrefetches.delete(n);}
+ const wanted=new Set(neighborPreviewPages());
+ // When the first page of a new book spread is installed, its companion
+ // might still be queued. Never evict that ALREADY decoded image before the
+ // second slot takes it. Do not start duplicate requests for queued slots.
+ if(isBookSpread())for(const n of spreadPages(page)){
+  const slot=slots.find(candidate=>Number(candidate.dataset.page)===n);
+  if(slot?.dataset.ready!=='yes'&&imagePrefetches.has(n))wanted.add(n);
  }
- for(const n of wanted){
-  if(imagePrefetches.has(n))continue;
-  // The current page is rendered by renderPages; prefetch neighbors only.
-  const img=new Image();
-  img.decoding='async';
-  img.onload=()=>{if(imagePrefetches.get(n)===img){img.onload=null;img.onerror=null;}};
-  img.onerror=()=>{if(imagePrefetches.get(n)===img)imagePrefetches.delete(n);};
-  imagePrefetches.set(n,img);
-  img.src='/api/page-image/'+encodeURIComponent(current.id)+'/'+n+'?width='+width;
- }
+ for(const [n,entry] of imagePrefetches)if(!wanted.has(n))discardDecodedPreview(n,entry);
+ for(const n of wanted)void ensureDecodedPreview(n);
 }
 function clearMagazinePrefetches(){
- for(const img of imagePrefetches.values()){img.onload=null;img.onerror=null;img.src='';}
+ for(const [n,entry] of imagePrefetches)discardDecodedPreview(n,entry);
  imagePrefetches.clear();
 }
 function trimCanvases(){if(pinch||Math.abs(zoom-cssZoomBase)>.01)return;const area=$('page-area').getBoundingClientRect();for(const slot of renderedSlots){const rect=slot.getBoundingClientRect();if(Math.abs(+slot.dataset.page-page)>2&&(rect.bottom<area.top||rect.top>area.bottom)){cancelSharpImage(slot);for(const c of slot.querySelectorAll('canvas')){c.width=0;c.height=0;}for(const img of slot.querySelectorAll('img')){img.src='';}slot.replaceChildren(el('span','page-placeholder','Page '+slot.dataset.page));slot.dataset.ready='no';renderedSlots.delete(slot);}}}
@@ -588,6 +634,8 @@ async function openMagazine(item,start){
 /** move: Support the PiShelf reader or library interface. */
 function move(n,turn=0){
  if(!documentPDF)return;
+ // A direct page-number/slider jump interrupts any pending WebP predecode.
+ if(activePageTurn&&!activePageTurn.animation)cancelPageTurn();
  const oldPage=page;
  const wasAtFit=isBookSpread()&&Math.abs(zoom-fitEntirePageZoom(oldPage))<.04;
  const target=Math.max(1,Math.min(documentPDF.numPages,Number(n)||1));
@@ -596,7 +644,8 @@ function move(n,turn=0){
  // Each spread can have different page dimensions. Maintain full-spread fit
  // when navigating from the cover or another fitted pair.
  if(wasAtFit)zoom=fitEntirePageZoom(page);
- remember();updatePageUI();preloadMagazineNeighbors();
+ remember();updatePageUI();
+ // Do not evict decoded incoming previews before rebuild() has consumed them.
  if(isBookSpread()){
   rebuild().then(()=>{
    if(wasAtFit){$('page-area').scrollLeft=0;$('page-area').scrollTop=0;}
@@ -606,6 +655,7 @@ function move(n,turn=0){
   });
  }else if($('view-mode').value==='single')rebuild();
  else{
+  preloadMagazineNeighbors();
   const slot=slots[page-1];enqueue(slot);
   $('page-area').scrollTo({top:slot.offsetTop-20,behavior:prefs.motion&&!matchMedia('(prefers-reduced-motion: reduce)').matches?'smooth':'auto'});
   clearTimeout(scrollTimer);scrollTimer=setTimeout(remember,500);
@@ -620,26 +670,38 @@ function move(n,turn=0){
 const PAPER_TURN_DURATION_MS=1050;
 let activePageTurn=null;
 function isAnimatedPageMode(){return isBookSpread()||$('view-mode').value==='single';}
-function prepareSinglePageUnderlay(sheet,target){
+// The underlay uses a CLONE of an already-decoded neighbor image. Never
+// start a new image request while the paper is turning.
+function prepareTurnUnderlay(sheet,pageNumber,kind){
  if(!current?.id||!sheet?.isConnected)return null;
+ const cached=imagePrefetches.get(pageNumber);
+ if(!cached?.ready||cached.id!==current.id)return null;
  const root=$('pages'),pageRect=sheet.getBoundingClientRect(),rootRect=root.getBoundingClientRect();
  const underlay=el('div','paper-turn-underlay');
+ underlay.classList.add(kind==='book'?'paper-underlay-book':'paper-underlay-single');
  underlay.setAttribute('aria-hidden','true');
  underlay.style.left=(pageRect.left-rootRect.left)+'px';
  underlay.style.top=(pageRect.top-rootRect.top)+'px';
  underlay.style.width=pageRect.width+'px';
  underlay.style.height=pageRect.height+'px';
- const image=document.createElement('img');
- image.alt='';image.decoding='async';
- // 960px is already used by the reader's WebP preview/prefetch pipeline.
- image.src='/api/page-image/'+encodeURIComponent(current.id)+'/'+target+'?width=960';
+ const image=cached.img.cloneNode(false);
+ image.alt='';image.decoding='sync';
  underlay.append(image);root.append(underlay);
  return underlay;
+}
+function prepareSinglePageUnderlay(sheet,target){
+ return prepareTurnUnderlay(sheet,target,'single');
+}
+function prepareBookPageUnderlay(sheet,target,direction){
+ const pages=spreadPages(target);
+ const nextVisible=direction>0?pages[pages.length-1]:pages[0];
+ return prepareTurnUnderlay(sheet,nextVisible,'book');
 }
 function cancelPageTurn(){
  if(!activePageTurn)return;
  const turn=activePageTurn;
  activePageTurn=null;
+ if($('reader-status').textContent==='Preparing next page…')$('reader-status').textContent='';
  turn.animation?.cancel();
  turn.underlay?.remove();
  turn.sheet?.classList.remove('paper-turning','paper-dragging');
@@ -668,14 +730,36 @@ async function turnBook(direction,fromSwipe=null){
   move(target,direction);
   return;
  }
- const fromDegrees=Math.max(-160,Math.min(160,fromSwipe?.degrees||0));
- const endDegrees=direction>0?-178:178;
+ // The current WebP page remains visible while missing target pages download
+ // and decode. This prevents an empty flash after a 1-second paper flip.
+ const incoming=bookMode?spreadPages(target):[target];
  const turn={
   sheet,animation:null,underlay:null,document:documentPDF,
   generation,source:start,mode:$('view-mode').value
  };
  activePageTurn=turn;
- if(!bookMode)turn.underlay=prepareSinglePageUnderlay(sheet,target);
+ const alreadyDecoded=incoming.every(n=>imagePrefetches.get(n)?.ready);
+ if(!alreadyDecoded){
+  $('reader-status').textContent='Preparing next page…';
+  const ready=await Promise.all(incoming.map(ensureDecodedPreview));
+  if(activePageTurn!==turn)return;
+  $('reader-status').textContent='';
+  if(!ready.every(Boolean)){
+   activePageTurn=null;
+   if(fromSwipe?.sheet){sheet.style.transform='';sheet.classList.remove('paper-dragging');}
+   move(target,direction);return; // PDF.js fallback handles unreadable WebP
+  }
+ }
+ if(activePageTurn!==turn)return;
+ if(documentPDF!==turn.document||generation!==turn.generation
+    ||$('view-mode').value!==turn.mode||(bookMode?spreadStart(page):page)!==start){
+  cancelPageTurn();return;
+ }
+ const fromDegrees=Math.max(-160,Math.min(160,fromSwipe?.degrees||0));
+ const endDegrees=direction>0?-178:178;
+ turn.underlay=bookMode
+  ?prepareBookPageUnderlay(sheet,target,direction)
+  :prepareSinglePageUnderlay(sheet,target);
  sheet.classList.remove('paper-dragging');
  sheet.classList.add('paper-turning');
  sheet.style.transformOrigin=direction>0?'left center':'right center';

@@ -32,6 +32,7 @@ function fixture({mode='single',motion=true,reduced=false,page=2}={}){
  const document={createElement:()=>({alt:'',decoding:'',src:''})};
  const el=(tag,name)=>{
   const elem={tag,name,style:{},children:[],attributes:{},
+   classList:{add(){}},
    setAttribute(k,v){this.attributes[k]=v;},
    append(child){this.children.push(child);},
    remove(){this.removed=true;events.push({type:'underlay-removed'});}
@@ -47,6 +48,13 @@ function fixture({mode='single',motion=true,reduced=false,page=2}={}){
   matchMedia:()=>({matches:reduced}),
   $:name=>name==='pages'?root:{value:mode},
   el,document,encodeURIComponent,
+  imagePrefetches:new Map(Array.from({length:7},(_,i)=>{
+   const n=i+1;
+   return [n,{ready:true,id:'bookid123',img:{
+    src:'/api/page-image/bookid123/'+n+'?width=960',
+    cloneNode(){return {src:this.src,alt:'',decoding:'async'};}
+   }}];
+  })),
   move:(target,direction)=>{events.push({type:'move',target,direction});ctx.page=target;}
  };
  const factory=new Function('ctx','with(ctx){'+source.slice(start,end)+'return {turnBook,cancelPageTurn};}');
