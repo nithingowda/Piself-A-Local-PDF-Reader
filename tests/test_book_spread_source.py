@@ -23,11 +23,12 @@ class BookSpreadTests(unittest.TestCase):
   self.assertIn("slots.push(slot);spread.append(slot)",JS)
   self.assertIn("if(isBookSpread())for(const slot of slots)enqueue(slot)",JS)
  def test_navigation_and_transitions(self):
-  self.assertIn('function turnBook(direction)',JS)
+  self.assertIn('async function turnBook(direction,fromSwipe=null)',JS)
   self.assertIn("$('book-turn-prev').onclick=()=>turnBook(-1)",JS)
   self.assertIn("$('book-turn-next').onclick=()=>turnBook(1)",JS)
   self.assertIn("turnBook(dx<0?1:-1)",JS)
   self.assertIn("turn>0?'turn-forward':'turn-backward'",JS)
+  self.assertIn('await turn.animation.finished',JS)
   self.assertIn('@media(prefers-reduced-motion:reduce)',CSS)
  def test_existing_modes_and_webp_safari_pinch_preserved(self):
   self.assertIn("mode==='single'?page:1",JS)

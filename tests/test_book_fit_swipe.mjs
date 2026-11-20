@@ -65,7 +65,7 @@ test('one-finger paper drag folds current page and commits a whole spread turn',
   isBookSpread:()=>true,fitEntirePageZoom:()=>.8,
   performance:{now:()=>time},
   $:key=>key==='page-area'?{clientWidth:400}:key==='book-turn-next'?{disabled:false}:{disabled:false},
-  turnBook:dir=>turned.push(dir)
+  turnBook:(dir,fromSwipe)=>turned.push({dir,fromSwipe})
  };
  const swipe=production('let bookPaperSwipe=null;',"$('page-area').addEventListener('pointerdown'",'{beginBookPaperSwipe,previewBookPaperSwipe,endBookPaperSwipe,clearBookPaperSwipe}',ctx);
  swipe.beginBookPaperSwipe({pointerType:'touch',pointerId:10,clientX:320,clientY:200});
@@ -74,14 +74,16 @@ test('one-finger paper drag folds current page and commits a whole spread turn',
  assert.match(sheet.style.transform,/rotateY\(-/);
  time=1200;
  assert.equal(swipe.endBookPaperSwipe({pointerId:10,clientX:170,clientY:204}),true);
- assert.deepEqual(turned,[1]);
- assert.equal(sheet.style.transform,'');
- assert.ok(!names.has('paper-dragging'));
+ assert.equal(turned.length,1);
+ assert.equal(turned[0].dir,1);
+ assert.match(sheet.style.transform,/rotateY\(-/);
+ // The released page stays folded until turnBook takes over the animation.
+ assert.ok(names.has('paper-dragging'));
  // Two-finger pinch must not be captured by paper turning.
  ctx.pinch={};
  swipe.beginBookPaperSwipe({pointerType:'touch',pointerId:10,clientX:320,clientY:200});
  assert.equal(swipe.endBookPaperSwipe({pointerId:10,clientX:120,clientY:200}),false);
- assert.deepEqual(turned,[1]);
+ assert.equal(turned.length,1);
 });
 
 test('production still uses Safari two-touch pinch and WebP image pages',()=>{

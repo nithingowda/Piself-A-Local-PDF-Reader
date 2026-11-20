@@ -8,7 +8,7 @@ const end=src.indexOf('function pageWidth()',start);
 assert.ok(start>=0&&end>start);
 const definitions=src.slice(start,end);
 const build=new Function('context','with(context){'+definitions+'return {spreadStart,spreadPages};}');
-const navStart=src.indexOf('function turnBook(direction)');
+const navStart=src.indexOf('async function turnBook(direction,fromSwipe=null)');
 const navEnd=src.indexOf('/** close Reader:',navStart);
 assert.ok(navStart>=0&&navEnd>navStart);
 const buildNavigator=new Function('context','with(context){'+src.slice(navStart,navEnd)+'return turnBook;}');
@@ -32,7 +32,7 @@ test('even page count leaves last spread a single right-hand page',()=>{
 });
 
 test('turn controls navigate one spread and respect cover and endpoints',()=>{
- const ctx={documentPDF:{numPages:7},page:1,moves:[],isBookSpread:()=>true};
+ const ctx={documentPDF:{numPages:7},page:1,moves:[],activePageTurn:null,isBookSpread:()=>true,slots:[]};
  const helpers=build(ctx);ctx.spreadStart=helpers.spreadStart;
  ctx.move=(target,direction)=>{const next=helpers.spreadStart(target);ctx.moves.push([next,direction]);ctx.page=next;};
  const turn=buildNavigator(ctx);
