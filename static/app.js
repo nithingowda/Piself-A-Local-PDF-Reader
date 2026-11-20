@@ -198,7 +198,7 @@ $('pref-motion').onchange=e=>{prefs.motion=e.target.checked;storePrefs();};$('cl
 let slots=[],renderQueue=[],renderBusy=false,pageObserver=null;
 const dimensions=new Map(),renderedSlots=new Set();
 /** update Page UI: Keep the visible PDF page and navigation state in sync. */
-function updatePageUI(){if(!documentPDF)return;const percent=Math.round(page/documentPDF.numPages*100);$('reader-progress-fill').style.width=percent+'%';document.querySelector('.reader-progress').setAttribute('aria-valuenow',String(percent));$('page-number').value=page;$('reader-page-slider').max=documentPDF.numPages;$('reader-page-slider').value=page;$('reader-page-slider-label').textContent=page+' / '+documentPDF.numPages;$('page-total').textContent='/ '+documentPDF.numPages;$('prev').disabled=page<=1;$('next').disabled=isBookSpread()?spreadStart(page)+1>=documentPDF.numPages:page>=documentPDF.numPages;$('book-turn-prev').disabled=page<=1;$('book-turn-next').disabled=$('next').disabled;const marks=saved[current.id]?.bookmarks||[];$('bookmark').textContent=marks.includes(page)?'★':'☆';$('bookmark').setAttribute('aria-pressed',marks.includes(page));}
+function updatePageUI(){if(!documentPDF)return;const percent=Math.round(page/documentPDF.numPages*100);$('reader-progress-fill').style.width=percent+'%';document.querySelector('.reader-progress').setAttribute('aria-valuenow',String(percent));$('page-number').value=page;$('reader-page-slider').max=documentPDF.numPages;$('reader-page-slider').value=page;$('reader-page-slider-label').textContent=page+' / '+documentPDF.numPages;$('page-total').textContent='/ '+documentPDF.numPages;$('prev').disabled=page<=1;$('next').disabled=isBookSpread()?(page===1?documentPDF.numPages===1:spreadStart(page)+1>=documentPDF.numPages):page>=documentPDF.numPages;$('book-turn-prev').disabled=page<=1;$('book-turn-next').disabled=$('next').disabled;const marks=saved[current.id]?.bookmarks||[];$('bookmark').textContent=marks.includes(page)?'★':'☆';$('bookmark').setAttribute('aria-pressed',marks.includes(page));}
 // Scrub previews page numbers without rerendering dozens of pages while
 // dragging; the final change uses the existing move() navigation path.
 $('reader-page-slider').addEventListener('input',e=>{
@@ -786,7 +786,7 @@ function finishPinch(cancelled=false){
  if(!slot)return;
  // Capture the PDF point under the fingers before modifying layout.
  const fx=state.fx,fy=state.fy;
- zoom=next;page=state.page;
+ zoom=next;page=isBookSpread()?spreadStart(state.page):state.page;
  // Resize the actual page boxes. CSS zoom on the entire pages wrapper
  // creates a large scrollable gutter in iOS Safari and breaks pinch-out.
  $('pages').style.zoom='';
