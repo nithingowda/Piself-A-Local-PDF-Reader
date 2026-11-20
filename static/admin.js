@@ -20,7 +20,17 @@ async function load(){
    button.onclick=async()=>{
     if(action==='delete'&&!confirm('Permanently delete account '+user.username+'?'))return;
     const data={action,id:user.id};
-    if(action==='reset-password'){const password=prompt('New password (12+ characters)');if(password===null)return;data.password=password;}
+    if(action==='reset-password'){
+     const dialog=document.createElement('dialog');
+     const form=document.createElement('form');form.method='dialog';
+     const field=document.createElement('input');field.type='password';field.minLength=12;field.required=true;field.placeholder='New password (12+ characters)';field.autocomplete='new-password';
+     const submit=document.createElement('button');submit.type='submit';submit.textContent='Reset password';
+     const cancel=document.createElement('button');cancel.type='button';cancel.textContent='Cancel';cancel.onclick=()=>dialog.close();
+     form.append(field,submit,cancel);dialog.append(form);document.body.append(dialog);
+     dialog.addEventListener('close',()=>dialog.remove(),{once:true});
+     form.onsubmit=async event=>{event.preventDefault();try{await request('/api/admin/users',{...data,password:field.value});dialog.close();await load();}catch(e){error.textContent=e.message;}};
+     dialog.showModal();return;
+    }
     try{await request('/api/admin/users',data);await load();}catch(e){error.textContent=e.message;}
    };li.append(button);
   }list.append(li);
