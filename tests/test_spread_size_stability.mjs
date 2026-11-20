@@ -7,11 +7,6 @@ const geometryStart=source.indexOf('async function primeSpreadDimensions(');
 const geometryEnd=source.indexOf('/** size Slot:',geometryStart);
 assert.ok(geometryStart>=0&&geometryEnd>geometryStart);
 const makeGeometry=new Function('ctx','with(ctx){'+source.slice(geometryStart,geometryEnd)+'return primeSpreadDimensions;}');
-const turnStart=source.indexOf('const PAPER_TURN_DURATION_MS=');
-const turnEnd=source.indexOf('/** close Reader:',turnStart);
-assert.ok(turnStart>=0&&turnEnd>turnStart);
-const makeTurn=new Function('ctx','with(ctx){'+source.slice(turnStart,turnEnd)+'return turnBook;}');
-
 test('read dimensions of both target pages and cache actual aspect ratios before layout',async()=>{
  const dimensions=new Map([[1,{width:500,height:700}]]);
  const requests=[];
@@ -41,50 +36,13 @@ test('stale geometry for a closed document is never committed',async()=>{
  assert.equal(dimensions.has(7),false);
 });
 
-test('two-page paper turn only animates after both incoming sizes are prepared',async()=>{
- let primeResolve,finishAnimation;
- const events=[];
- const doc={numPages:12};
- const sheet={style:{},classList:{add(){},remove(){}},
-  animate(){
-   events.push('animate');
-   return {finished:new Promise(resolve=>finishAnimation=resolve),cancel(){}};
-  }
- };
- const ctx={
-  documentPDF:doc,page:2,generation:10,slots:[sheet,sheet],
-  prefs:{motion:true},current:null,
-  imagePrefetches:new Map([4,5].map(n=>[n,{ready:true}])),
-  isBookSpread:()=>true,isAnimatedPageMode:()=>true,
-  spreadStart:n=>n<=1?1:2+2*Math.floor((n-2)/2),
-  spreadPages:n=>n===1?[1]:[n,n+1],
-  primeSpreadDimensions:pages=>{
-   events.push('geometry-'+pages.join('-'));
-   return new Promise(resolve=>primeResolve=resolve);
-  },
-  matchMedia:()=>({matches:false}),
-  $:()=>({value:'book'}),
-  move:(target,direction)=>events.push('move-'+target+'-'+direction)
- };
- const turn=makeTurn(ctx);
- const pending=turn(1);
- assert.deepEqual(events,['geometry-4-5']);
- assert.equal(typeof finishAnimation,'undefined','must not flip before PDF sizes are known');
- primeResolve();
- await Promise.resolve();await Promise.resolve();
- assert.deepEqual(events,['geometry-4-5','animate']);
- finishAnimation();
- await pending;
- assert.deepEqual(events,['geometry-4-5','animate','move-4-1']);
-});
-
-test('do not animate the incoming spread again after the leaf flips',()=>{
- const start=source.indexOf('function move(n,turn=0)');
- const end=source.indexOf('const PAPER_TURN_DURATION_MS=',start);
+test('book spread navigates without a secondary animation',()=>{
+ const start=source.indexOf('function move(n)');
+ const end=source.indexOf('/** close Reader:',start);
  assert.ok(start>=0&&end>start);
- const move=source.slice(start,end);
- assert.doesNotMatch(move,/classList\.add\(turn>0\?'turn-forward':'turn-backward'/);
- assert.match(move,/if\(wasAtFit\)zoom=fitEntirePageZoom\(page\)/);
+ const navigation=source.slice(start,end);
+ assert.doesNotMatch(navigation,/animate\(|paper-turn|paper-dragging|turn-forward|turn-backward/);
+ assert.match(navigation,/if\(wasAtFit\)zoom=fitEntirePageZoom\(page\)/);
  assert.match(source,/if\(isBookSpread\(\)\)await primeSpreadDimensions\(spreadPages\(page\),doc,g\)/);
  assert.match(source,/function finishPinch\(cancelled=false\)/);
 });

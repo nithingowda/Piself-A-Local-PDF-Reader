@@ -93,66 +93,15 @@ test('canceling a pending decoded preview immediately resolves its wait',async()
  assert.equal(old.src,'');
 });
 
-test('animation waits until both next spread pages have decoded, then shows predecoded underlay',async()=>{
- const start=js.indexOf('const PAPER_TURN_DURATION_MS=');
- const end=js.indexOf('/** close Reader:',start);
- assert.ok(start>=0&&end>start);
- let completeAnimation=()=>{};
- const calls=[],status={textContent:''};
- const sheet={isConnected:true,style:{},
-  classList:{add(){},remove(){}},
-  getBoundingClientRect:()=>({left:20,top:20,width:160,height:240}),
-  animate(frames,options){
-   calls.push({kind:'animate',frames,options});
-   return {finished:new Promise(resolve=>completeAnimation=resolve),cancel(){}};
-  }
- };
- const root={getBoundingClientRect:()=>({left:0,top:0}),append(node){calls.push({kind:'underlay',node});}};
- const generated=new Map(),previews=new Map(),toResolve=new Map();
- const ctx={
-  documentPDF:{numPages:8},current:{id:'the-book'},page:2,generation:3,
-  slots:[sheet,sheet],prefs:{motion:true},
-  isAnimatedPageMode:()=>true,isBookSpread:()=>true,
-  spreadStart:n=>n===1?1:2+2*Math.floor((n-2)/2),
-  spreadPages:n=>n===1?[1]:[n,n+1].filter(x=>x<=8),
-  matchMedia:()=>({matches:false}),imagePrefetches:previews,
-  ensureDecodedPreview(n){return new Promise(resolve=>toResolve.set(n,resolve));},
-  primeSpreadDimensions:async()=>{},
-  $:name=>name==='pages'?root:name==='reader-status'?status:{value:'book'},
-  el:(tag,kind)=>({
-   kind,style:{},classList:{add(){}},setAttribute(){},append(img){this.image=img;},
-   remove(){calls.push({kind:'remove'});}
-  }),
-  move:(n,direction)=>calls.push({kind:'move',n,direction}),
-  encodeURIComponent
- };
- const create=new Function('ctx','with(ctx){'+js.slice(start,end)+'return {turnBook,cancelPageTurn};}');
- const turn=create(ctx);
- const inProgress=turn.turnBook(1);
- assert.equal(status.textContent,'Preparing next page…');
- assert.equal(calls.some(x=>x.kind==='animate'),false);
- assert.deepEqual([...toResolve.keys()].sort(),[4,5]);
- previews.set(4,{id:'the-book',ready:true,img:{src:'page4.webp',cloneNode(){return {src:this.src};}}});
- toResolve.get(4)(true);
- await Promise.resolve();
- assert.equal(calls.some(x=>x.kind==='animate'),false,'both PDF pages must decode');
- previews.set(5,{id:'the-book',ready:true,img:{src:'page5.webp',cloneNode(){return {src:this.src};}}});
- toResolve.get(5)(true);
- await Promise.resolve();await Promise.resolve();await Promise.resolve();
- assert.equal(status.textContent,'');
- assert.equal(calls[0].kind,'underlay');
- assert.equal(calls[0].node.image.src,'page5.webp','right-hand leaf reveals already decoded next right page');
- assert.equal(calls[1].kind,'animate');
- assert.equal(calls.some(x=>x.kind==='move'),false,'new spread is not requested mid-turn');
- completeAnimation();
- await inProgress;
- assert.deepEqual(calls.filter(x=>x.kind==='move').map(x=>x.n),[4]);
-});
-
-test('renderPages uses the decoded image directly and avoids a second onload wait',()=>{
+test('instant page navigation keeps decoded WebP reuse without a second onload wait',()=>{
  assert.match(js,/const prefetched=takeDecodedPreview\(n\);/);
  assert.match(js,/const img=prefetched\|\|document\.createElement\('img'\);/);
  assert.match(js,/if\(!prefetched\)\{\s*await new Promise\(/);
  assert.match(js,/\/api\/page-image\/.*\?width=960/);
  assert.match(js,/function finishPinch\(cancelled=false\)/);
+});
+
+test('page changes never wait for paper fold or Web Animations API',()=>{
+ assert.match(js,/function turnBook\(direction\)/);
+ assert.doesNotMatch(js,/PAPER_TURN_DURATION_MS|activePageTurn|prepareTurnUnderlay|paper-dragging|animate\(frames/);
 });
