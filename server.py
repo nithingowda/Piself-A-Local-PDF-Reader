@@ -769,7 +769,8 @@ def validate_epub(path):
         with zipfile.ZipFile(path) as archive:
             files=archive.infolist()
             if not files or len(files)>4000: raise APIError(400,'EPUB contains too many files.')
-            if archive.read('mimetype')!=b'application/epub+zip':
+            entry=archive.getinfo('mimetype')
+            if entry.file_size>64 or archive.read('mimetype')!=b'application/epub+zip':
                 raise APIError(400,'Invalid EPUB mimetype.')
             if 'META-INF/container.xml' not in archive.namelist():
                 raise APIError(400,'EPUB is missing its package container.')
