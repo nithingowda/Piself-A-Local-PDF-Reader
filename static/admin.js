@@ -11,6 +11,15 @@ async function request(url,data){
 async function load(){
  const me=await request('/api/auth/me');if(me.role!=='admin')throw Error('Administrator account required.');
  csrf=me.csrf;
+ const form=document.getElementById('paths'),paths=await request('/api/admin/paths');
+ for(const key of ['magazines','newspapers','books'])form.elements[key].value=paths[key]||'';
+ form.querySelector('button').disabled=false;
+ form.onsubmit=async event=>{
+  event.preventDefault();
+  const status=document.getElementById('paths-status');
+  try{await request('/api/admin/paths',Object.fromEntries(new FormData(form)));status.textContent='Saved. Restart PiShelf to apply.';}
+  catch(e){status.textContent=e.message;}
+ };
  const users=await request('/api/admin/users'),list=document.getElementById('users');list.replaceChildren();
  for(const user of users){
   const li=document.createElement('li');
