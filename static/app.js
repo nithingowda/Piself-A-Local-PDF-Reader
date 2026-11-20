@@ -612,12 +612,56 @@ function move(n,turn=0){
  }
 }
 /** Next/previous page in book mode moves a whole spread, not just one page. */
-function turnBook(direction){
+// Animate the existing WebP page to the opposite side, then replace the
+// spread only when its flip has finished. No extra PDF render during a turn.
+let activePageTurn=null;
+function cancelPageTurn(){
+ if(!activePageTurn)return;
+ const turn=activePageTurn;
+ activePageTurn=null;
+ turn.animation?.cancel();
+ turn.sheet?.classList.remove('paper-turning','paper-dragging');
+ if(turn.sheet){turn.sheet.style.transform='';turn.sheet.style.transformOrigin='';}
+}
+async function turnBook(direction,fromSwipe=null){
  if(!documentPDF)return;
  if(!isBookSpread()){move(page+direction);return;}
+ if(activePageTurn)return;
  const start=spreadStart(page);
  const target=direction>0?(start===1?2:start+2):(start<=2?1:start-2);
- move(target,direction);
+ if(spreadStart(target)===start)return;
+ const sheet=fromSwipe?.sheet||((direction>0)?slots[slots.length-1]:slots[0]);
+ const canAnimate=!!sheet?.animate&&prefs.motion&&!matchMedia('(prefers-reduced-motion: reduce)').matches;
+ if(!canAnimate){if(fromSwipe?.sheet){fromSwipe.sheet.style.transform='';fromSwipe.sheet.classList.remove('paper-dragging');}move(target);return;}
+ const fromDegrees=fromSwipe?.degrees||0;
+ const endDegrees=direction>0?-175:175;
+ const turn={sheet,animation:null,document:documentPDF,generation,source:start};
+ activePageTurn=turn;
+ sheet.classList.remove('paper-dragging');
+ sheet.classList.add('paper-turning');
+ sheet.style.transform='';
+ sheet.style.transformOrigin=direction>0?'left center':'right center';
+ const frames=[
+  {transform:'perspective(1100px) rotateY('+fromDegrees+'deg)',opacity:1},
+  {transform:'perspective(1100px) rotateY('+endDegrees+'deg)',opacity:.92}
+ ];
+ try{
+  turn.animation=sheet.animate(frames,{
+   duration:Math.max(180,Math.min(420,350*(1-Math.abs(fromDegrees)/180))),
+   easing:'cubic-bezier(.2,.65,.2,1)',fill:'forwards'
+  });
+  await turn.animation.finished;
+ }catch{return;}finally{
+  if(activePageTurn===turn){
+   activePageTurn=null;
+   turn.animation?.cancel();
+   sheet.classList.remove('paper-turning','paper-dragging');
+   sheet.style.transform='';sheet.style.transformOrigin='';
+  }
+ }
+ if(!documentPDF||documentPDF!==turn.document||generation!==turn.generation||!isBookSpread())return;
+ if(spreadStart(page)!==start)return;
+ move(target);
 }
 /** close Reader: Support the PiShelf reader or library interface. */
 async function closeReader({fromHistory=false}={}){
@@ -626,7 +670,7 @@ async function closeReader({fromHistory=false}={}){
   // Back triggers popstate and returns to the existing library history entry.
   history.back();
  }
- clearMagazinePrefetches();cancelAllSharpImages();clearBookPaperSwipe();resetPinch();clearTimeout(scrollTimer);clearTimeout(immersiveTimer);remember();++generation;++layoutEpoch;layoutReady=false;pageObserver?.disconnect();renderQueue=[];const oldDoc=documentPDF;documentPDF=null;if(oldDoc?.destroy)oldDoc.destroy().catch(()=>{});$('reader').hidden=true;document.body.classList.remove('reader-open');$('library').hidden=false;$('pages').replaceChildren();slots=[];renderedSlots.clear();if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});drawLibrary();refresh(true);}
+ clearMagazinePrefetches();cancelAllSharpImages();cancelPageTurn();clearBookPaperSwipe();resetPinch();clearTimeout(scrollTimer);clearTimeout(immersiveTimer);remember();++generation;++layoutEpoch;layoutReady=false;pageObserver?.disconnect();renderQueue=[];const oldDoc=documentPDF;documentPDF=null;if(oldDoc?.destroy)oldDoc.destroy().catch(()=>{});$('reader').hidden=true;document.body.classList.remove('reader-open');$('library').hidden=false;$('pages').replaceChildren();slots=[];renderedSlots.clear();if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});drawLibrary();refresh(true);}
 // Thumbnail browser: load only the visible part of a bounded thumbnail list.
 // === Thumbnail navigator ====================================================
 // 60 pages per batch; IntersectionObserver loads only visible thumbnails.
@@ -741,7 +785,7 @@ async function zoomWithControls(targetZoom){
 $('minus').onclick=()=>zoomWithControls(zoom-.25);
 $('plus').onclick=()=>zoomWithControls(zoom+.25);
 $('fit').onclick=()=>zoomWithControls(fitEntirePageZoom(page));
-$('fit-page').onclick=()=>zoomWithControls(fitEntirePageZoom(page));$('rotate').onclick=()=>{rotation=(rotation+90)%360;rebuild();};$('view-mode').onchange=()=>{prefs.mode=$('view-mode').value;storePrefs();if(documentPDF){if(isBookSpread())page=spreadStart(page);zoom=fitEntirePageZoom(page);rebuild();}};
+$('fit-page').onclick=()=>zoomWithControls(fitEntirePageZoom(page));$('rotate').onclick=()=>{rotation=(rotation+90)%360;rebuild();};$('view-mode').onchange=()=>{prefs.mode=$('view-mode').value;cancelPageTurn();clearBookPaperSwipe();storePrefs();if(documentPDF){if(isBookSpread())page=spreadStart(page);zoom=fitEntirePageZoom(page);rebuild();}};
 $('bookmark').onclick=()=>{if(!documentPDF)return;const marks=saved[current.id]?.bookmarks||[];persist(current.id,{bookmarks:marks.includes(page)?marks.filter(n=>n!==page):[...marks,page].sort((a,b)=>a-b)});updatePageUI();updateBookmarks();};$('bookmarks').onchange=e=>{if(e.target.value)move(+e.target.value);e.target.value='';};
 $('fullscreen').onclick=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await $('reader').requestFullscreen();}catch{toast('Fullscreen is unavailable in this browser.');}};
 let searchTimer;$('search').oninput=()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>{visibleLimit=60;drawLibrary();},150);};$('sort').onchange=e=>{prefs.sort=e.target.value;storePrefs();drawLibrary();};$('refresh').onclick=()=>refresh();document.querySelectorAll('[data-filter]').forEach(b=>b.onclick=()=>{filter=b.dataset.filter;category=collectionFilter='';visibleLimit=60;document.querySelectorAll('.tab,.category').forEach(t=>t.classList.toggle('active',t===b));drawLibrary();});
@@ -930,10 +974,16 @@ function endBookPaperSwipe(e){
  const turn=state.dragging&&Math.abs(dx)>Math.max(60,$('page-area').clientWidth*.16)
   &&Math.abs(dx)>Math.abs(dy)*1.35&&performance.now()-state.time<1600;
  const direction=state.direction;
- clearBookPaperSwipe();
- if(!state.dragging)return false;
+ if(!state.dragging){clearBookPaperSwipe();return false;}
  gestureStart=null;lastTap=null;suppressTapUntil=performance.now()+450;
- if(turn)turnBook(direction);
+ if(turn){
+  // Hand the already-folded sheet to the finish animation: do not snap it
+  // back to its original angle when the finger leaves the glass.
+  const sheet=state.sheet;
+  const degrees=direction>0?-Math.min(135,Math.round(Math.abs(dx)/Math.max(100,$('page-area').clientWidth*.55)*135)):Math.min(135,Math.round(Math.abs(dx)/Math.max(100,$('page-area').clientWidth*.55)*135));
+  bookPaperSwipe=null;
+  void turnBook(direction,{sheet,degrees});
+ }else clearBookPaperSwipe();
  return true;
 }
 $('page-area').addEventListener('pointerdown',e=>{
