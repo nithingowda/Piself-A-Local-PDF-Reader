@@ -414,6 +414,13 @@ function neighborPreviewPages(){
 function preloadMagazineNeighbors(){
  if(!documentPDF||!current?.id)return;
  const wanted=new Set(neighborPreviewPages());
+ // When the first page of a new book spread is installed, its companion
+ // might still be queued. Never evict that ALREADY decoded image before the
+ // second slot takes it. Do not start duplicate requests for queued slots.
+ if(isBookSpread())for(const n of spreadPages(page)){
+  const slot=slots.find(candidate=>Number(candidate.dataset.page)===n);
+  if(slot?.dataset.ready!=='yes'&&imagePrefetches.has(n))wanted.add(n);
+ }
  for(const [n,entry] of imagePrefetches)if(!wanted.has(n))discardDecodedPreview(n,entry);
  for(const n of wanted)void ensureDecodedPreview(n);
 }
