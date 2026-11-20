@@ -1,8 +1,8 @@
 # PiShelf
 
-**Your magazines. Your pace. Your Raspberry Pi.**
+**Your magazines, newspapers and books. Your Raspberry Pi.**
 
-PiShelf turns a folder of PDFs into a personal magazine website. Browse covers, organise issues by category, and pick up where you left off—from a browser on your phone, tablet, or computer.
+PiShelf turns PDF magazines, PDF newspapers and PDF/EPUB books into a personal reading website. Browse covers, organise issues by category, and pick up where you left off—from a browser on your phone, tablet, or computer.
 
 Built for self-hosting on your home network, with local storage and a lightweight Python server.
 
@@ -51,6 +51,22 @@ See [Authentication and administrator guide](AUTHENTICATION.md) for first-time s
 - [Run without Docker](#run-without-docker)
 - [Network access and limitations](#network-access-and-limitations)
 
+## Books and EPUB support
+
+PiShelf includes a third **Books** source alongside Magazines and Newspapers. Books can contain **PDF** (read through PiShelf's existing WebP viewer) and **DRM-free EPUB** (read through a dedicated reflowable EPUB.js viewer).
+
+Set `BOOK_DIR` in `.env` to a writable folder on your Raspberry Pi, USB disk or NAS. For example:
+
+```dotenv
+BOOK_DIR=/mnt/Nithin-Nas/nextcloud/data/nithingowda/files/Books
+```
+
+Create the host folder before starting Docker and make sure the configured `PISHELF_UID` can read/write it. PiShelf scans subfolders as book categories. EPUB upload is limited to 100 MiB per file; PDFs retain the 512 MiB limit. Import existing files simply by copying them into the Books folder.
+
+In the browser, select **Books** from Sources. EPUB books support chapter navigation, reflowable text, font-size adjustment, day/sepia/night/AMOLED modes and shared CFI resume positions. A book's EPUB cover uses a lightweight title design instead of PDF image rasterization.
+
+EPUB.js and JSZip are loaded on demand from jsDelivr, so the browser needs CDN access when first opening an EPUB; PDF and WebP features remain unchanged. For security, use trusted DRM-free EPUB files, and keep PiShelf behind LAN/Tailscale or HTTPS access controls.
+
 ## Quick start with Docker
 
 ### 1. Prepare your Raspberry Pi
@@ -98,6 +114,7 @@ PISHELF_GID=1000
 PISHELF_PORT=8098
 MAGAZINE_DIR=/mnt/Nithin-Nas/nextcloud/data/nithingowda/files/Magazines
 NEWSPAPER_DIR=/mnt/Nithin-Nas/nextcloud/data/nithingowda/files/NewsPapers
+BOOK_DIR=/media/pi/SSD/Books
 ```
 
 | Variable | Purpose | Default |
@@ -107,6 +124,7 @@ NEWSPAPER_DIR=/mnt/Nithin-Nas/nextcloud/data/nithingowda/files/NewsPapers
 | `PISHELF_PORT` | Host port mapped to container port 8080 | `8098` |
 | `MAGAZINE_DIR` | Host magazine folder | See `.env.example` |
 | `NEWSPAPER_DIR` | Host newspaper folder | See `.env.example` |
+| `BOOK_DIR` | Host PDF/EPUB book folder | `./books` |
 
 The configured user must be able to read and write the magazine folder and the `piself` Docker volume. PDF write access is needed to move files into Trash and restore them. Use appropriate ownership and permissions rather than making folders writable by everyone.
 
@@ -116,7 +134,7 @@ The configured user must be able to read and write the magazine folder and the `
 MAGAZINE_DIR=/media/pi/SSD/Magazines
 ```
 
-Create both configured source directories and mount external storage before starting PiShelf. Docker stores reading state in the named volume `piself`, mounted at `/data`. `DATA_DIR` is no longer used by Compose.
+Create all configured source directories and mount external storage before starting PiShelf. Docker stores reading state in the named volume `piself`, mounted at `/data`. `DATA_DIR` is no longer used by Compose.
 
 ### 3. Create the data volume and start PiShelf
 
@@ -345,7 +363,7 @@ Do not expose it directly through internet port forwarding. Use a private VPN if
 
 Other current limits:
 
-- **PDF only:** EPUB, CBZ, and CBR are not supported.
+- **Book formats:** PDF and DRM-free EPUB are supported. CBZ, CBR, MOBI, AZW and DRM-protected EPUB are not supported.
 - **One shared profile:** no separate accounts or reading histories.
 - **Folder-based organisation:** no automatic subject or language detection.
 - **Canvas reader:** download the PDF from its issue menu and use a native reader for text selection, in-document search, printing, or native accessibility support.

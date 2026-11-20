@@ -16,7 +16,7 @@
  * - A missing optional control must not prevent refresh() from starting.
  */
 const $=id=>document.getElementById(id);
-const defaults={sort:'issue',siteTheme:'light',theme:'dark',mode:'scroll',quality:'1.5',density:'compact',motion:true,gestures:true,readerBrightness:75,comfort:'custom'};
+const defaults={sort:'issue',siteTheme:'light',theme:'dark',mode:'scroll',quality:'1.5',density:'compact',motion:true,gestures:true,readerBrightness:75,comfort:'custom',epubTheme:'light',epubFontSize:100};
 let prefs={...defaults};try{const stored=JSON.parse(localStorage.getItem('pishelf-settings')||'{}');for(const k in defaults)if(k in stored)prefs[k]=stored[k];}catch{}
 let collections=[],collectionFilter='',collectionSets=new Map();
 let categories=[],sourceFilter='',seriesFilter='',tagFilter='',visibleLimit=60;
@@ -52,7 +52,10 @@ function persist(id,patch){
 /** confirm Action: Support the PiShelf reader or library interface. */
 function confirmAction(title,message,label){return new Promise(resolve=>{const d=$('confirm-dialog');$('confirm-title').textContent=title;$('confirm-text').textContent=message;$('confirm-yes').textContent=label;const done=v=>{d.close();resolve(v);};$('confirm-no').onclick=()=>done(false);$('confirm-yes').onclick=()=>done(true);d.oncancel=e=>{e.preventDefault();done(false);};d.showModal();});}
 const pdfURL=i=>'/'+(i.source||'magazines')+'/' +i.path.split('/').map(encodeURIComponent).join('/');
-const finished=i=>!!saved[i.id]?.completed||(saved[i.id]?.page>=saved[i.id]?.total&&!!saved[i.id]?.total);
+const isEpub=item=>item.format==='epub'||item.path.toLowerCase().endsWith('.epub');
+const started=i=>!!(saved[i.id]?.page||saved[i.id]?.epubCfi);
+const finished=i=>!!saved[i.id]?.completed||(!!saved[i.id]?.total&&saved[i.id]?.total>1&&saved[i.id]?.page>=saved[i.id]?.total);
+const itemKind=i=>i.source==='books'?'Book':i.source==='newspapers'?'Newspaper':'Magazine';
 const fileSize=n=>n<1048576?Math.max(1,Math.round(n/1024))+' KB':(n/1048576).toFixed(1)+' MB';
 const thumbs=new Map();let coverQueue=[],coverBusy=false;
 const coverURL=item=>'/api/covers/'+item.coverKey;
@@ -64,6 +67,7 @@ async function covers(){
  try{while(coverQueue.length){
   if(!$('reader').hidden)break;
   const {item,button}=coverQueue.shift();if(!button.isConnected)continue;
+   if(isEpub(item))continue; // EPUB book covers use a clean typography placeholder.
   try{
    const key=item.coverKey;let data=thumbs.get(key);
    if(!data){
@@ -98,12 +102,12 @@ function updateFilterOptions(){
 const coverObserver=new IntersectionObserver(entries=>{for(const e of entries)if(e.isIntersecting){coverObserver.unobserve(e.target);coverQueue.push({item:e.target.item,button:e.target});covers();}},{rootMargin:'100px'});
 /** card For: Support the PiShelf reader or library interface. */
 function cardFor(item,target){
- const s=saved[item.id]||{},card=el('article','card'),cover=el('button','cover');cover.setAttribute('aria-label','Read '+item.title);cover.append(el('span','placeholder',item.title));cover.onclick=()=>openMagazine(item);cover.item=item;
- const heading=el('div','card-head');heading.append(el('h2','',dateLabel(item)||item.title));const star=el('button','favorite',s.favorite?'★':'☆');star.setAttribute('aria-label','Favourite '+item.title);star.setAttribute('aria-pressed',!!s.favorite);star.onclick=()=>{persist(item.id,{favorite:!saved[item.id]?.favorite});drawLibrary();};heading.append(star);
+ const s=saved[item.id]||{},card=el('article','card'),cover=el('button','cover');cover.setAttribute('aria-label','Read '+item.title);cover.append(el('span','placeholder',item.title));cover.onclick=()=>openDocument(item);cover.item=item;if(isEpub(item))cover.classList.add('epub-cover');
+ const heading=el('div','card-head');heading.append(el('h2','',item.source==='books'?item.title:dateLabel(item)||item.title));const star=el('button','favorite',s.favorite?'★':'☆');star.setAttribute('aria-label','Favourite '+item.title);star.setAttribute('aria-pressed',!!s.favorite);star.onclick=()=>{persist(item.id,{favorite:!saved[item.id]?.favorite});drawLibrary();};heading.append(star);
  const more=el('button','more','•••');more.setAttribute('aria-label','Options for '+item.title);more.onclick=()=>showIssue(item);heading.append(more);
  const seriesButton=el('button','series-link',item.series||item.title);seriesButton.onclick=()=>selectSeries(item.series||item.title);card.append(cover,seriesButton,heading);const chips=el('div','tag-chips');for(const tag of item.tags||[]){const b=el('button','tag-chip',tag);b.onclick=()=>selectTag(tag);chips.append(b);}card.append(chips);
- card.append(el('div','meta',finished(item)?'Finished':s.page?`Page ${s.page} of ${s.total}`:`${item.category==='.'?(item.source==='newspapers'?'Newspaper':'Magazine'):item.category} · ${fileSize(item.size)}`));
- if(s.page||s.completed){const bar=el('div','progress'),fill=el('span');fill.style.width=(finished(item)?100:Math.min(100,s.page/s.total*100))+'%';bar.append(fill);card.append(bar);}target.append(card);coverObserver.observe(cover);
+ card.append(el('div','meta',finished(item)?'Finished':s.epubCfi&&isEpub(item)?`EPUB · ${s.page&&s.total?Math.round(s.page/s.total*100)+'%':'Reading'}`:s.page?`Page ${s.page} of ${s.total}`:`${item.category==='.'?itemKind(item):item.category} · ${item.format.toUpperCase()} · ${fileSize(item.size)}`));
+ if(s.page||s.epubCfi||s.completed){const bar=el('div','progress'),fill=el('span');fill.style.width=(finished(item)?100:Math.min(100,(s.page||0)/(s.total||1)*100))+'%';bar.append(fill);card.append(bar);}target.append(card);coverObserver.observe(cover);
 }
 /** draw Library: Support the PiShelf reader or library interface. */
 // === Library grid ===========================================================
@@ -111,19 +115,19 @@ function cardFor(item,target){
 function drawLibrary(){
  coverObserver.disconnect();coverQueue=[];$('grid').replaceChildren();$('resume-grid').replaceChildren();$('count').textContent=library.length;
  $('shelf-label').textContent=collections.find(c=>c.id===collectionFilter)?.name||category||({all:'All publications',reading:'Continue reading',favorites:'Favourites',unread:'Unread',completed:'Finished'}[filter]);
- const q=$('search').value.trim().toLowerCase();const terms=q.split(/\s+/).filter(Boolean);const items=library.filter(i=>(!collectionFilter||collectionSets.get(collectionFilter)?.has(i.id))&&(!sourceFilter||i.source===sourceFilter)&&(!seriesFilter||i.series===seriesFilter)&&(!tagFilter||(i.tags||[]).includes(tagFilter))&&(!category||i.category===category)&&terms.every(term=>(i.title+' '+i.series+' '+dateLabel(i)+' '+i.issueDate+' '+i.category+' '+(i.tags||[]).join(' ')).toLowerCase().includes(term))).filter(i=>filter==='all'||filter==='favorites'&&saved[i.id]?.favorite||filter==='reading'&&saved[i.id]?.page&&!finished(i)||filter==='unread'&&!saved[i.id]?.page&&!finished(i)||filter==='completed'&&finished(i));
+ const q=$('search').value.trim().toLowerCase();const terms=q.split(/\s+/).filter(Boolean);const items=library.filter(i=>(!collectionFilter||collectionSets.get(collectionFilter)?.has(i.id))&&(!sourceFilter||i.source===sourceFilter)&&(!seriesFilter||i.series===seriesFilter)&&(!tagFilter||(i.tags||[]).includes(tagFilter))&&(!category||i.category===category)&&terms.every(term=>(i.title+' '+i.series+' '+dateLabel(i)+' '+i.issueDate+' '+i.category+' '+(i.tags||[]).join(' ')).toLowerCase().includes(term))).filter(i=>filter==='all'||filter==='favorites'&&saved[i.id]?.favorite||filter==='reading'&&started(i)&&!finished(i)||filter==='unread'&&!started(i)&&!finished(i)||filter==='completed'&&finished(i));
  const order=filter==='reading'?'recent':$('sort').value;items.sort((a,b)=>order==='title'?a.title.localeCompare(b.title):order==='recent'?(saved[b.id]?.lastRead||0)-(saved[a.id]?.lastRead||0):order==='size'?b.size-a.size:order==='issue'?(b.issueDate||'').localeCompare(a.issueDate||'')||b.modified-a.modified:b.modified-a.modified);
- items.slice(0,visibleLimit).forEach(i=>cardFor(i,$('grid')));$('load-more').hidden=items.length<=visibleLimit;$('active-filters').textContent=[collections.find(c=>c.id===collectionFilter)?.name,sourceFilter,seriesFilter,tagFilter&&'#'+tagFilter,category,`${items.length} issues`].filter(Boolean).join(' · ');
- const recent=library.filter(i=>saved[i.id]?.page&&!finished(i)).sort((a,b)=>(saved[b.id].lastRead||0)-(saved[a.id].lastRead||0)).slice(0,6);
+ items.slice(0,visibleLimit).forEach(i=>cardFor(i,$('grid')));$('load-more').hidden=items.length<=visibleLimit;$('active-filters').textContent=[collections.find(c=>c.id===collectionFilter)?.name,sourceFilter,seriesFilter,tagFilter&&'#'+tagFilter,category,`${items.length} items`].filter(Boolean).join(' · ');
+ const recent=library.filter(i=>started(i)&&!finished(i)).sort((a,b)=>(saved[b.id].lastRead||0)-(saved[a.id].lastRead||0)).slice(0,6);
  $('resume-section').hidden=filter!=='all'||!!category||!!q||!!sourceFilter||!!seriesFilter||!!tagFilter||!!collectionFilter||!recent.length;if(!$('resume-section').hidden)recent.forEach(i=>cardFor(i,$('resume-grid')));
- if(!items.length){const empty=el('div','empty');empty.append(el('h2','',library.length?'No matching issues.':'Your reading room is ready.'),el('p','',library.length?'Try another category, search or filter.':'Copy PDFs into your magazine folder. They appear automatically, with subfolders as categories.'));$('grid').append(empty);}
+ if(!items.length){const empty=el('div','empty');empty.append(el('h2','',library.length?'No matching items.':'Your reading room is ready.'),el('p','',library.length?'Try another category, search or filter.':'Copy PDFs or EPUB books into your configured library folders. Subfolders become categories.'));$('grid').append(empty);}
 }
 /** refresh: Support the PiShelf reader or library interface. */
 // === Library refresh =======================================================
 // The explicit refresh=1 query requests a filesystem rescan on page reload.
 // Keep this independent of optional Settings controls (see PR #24).
 async function refresh(quiet=false){
- if(syncing||!$('reader').hidden)return;syncing=true;if(!quiet)$('status').textContent='Scanning your PDF folder…';
+ if(syncing||!$('reader').hidden||!$('epub-reader').hidden)return;syncing=true;if(!quiet)$('status').textContent='Scanning your library folders…';
  try{await saveChain;if(pendingSaves.size){for(const [id,patch] of [...pendingSaves])await persist(id,patch);if(pendingSaves.size)throw Error('Reading progress is waiting to sync.');}
  const [next,state,cats,shelves]=await Promise.all([api('/api/library?refresh=1'),api('/api/progress'),api('/api/categories'),api('/api/collections')]);const collectionsChanged=JSON.stringify(shelves)!==JSON.stringify(collections)||JSON.stringify(cats)!==JSON.stringify(categories);categories=cats;collections=shelves;collectionSets=new Map(collections.map(c=>[c.id,new Set(c.items)]));if(collectionFilter&&!collectionSets.has(collectionFilter))collectionFilter='';const changed=collectionsChanged||JSON.stringify(next)!==JSON.stringify(library)||JSON.stringify(state)!==JSON.stringify(saved);library=next;saved=state;
  if(changed||!quiet){if(category&&!categories.some(c=>c.path===category&&(!sourceFilter||c.source===sourceFilter)))category='';updateFilterOptions();drawLibrary();}$('status').textContent='';
@@ -134,14 +138,14 @@ async function clearProgress(id){await saveChain;if(!await confirmAction(id?'Cle
 /** show Issue: Support the PiShelf reader or library interface. */
 function showIssue(item){issueItem=item;$('issue-title').textContent=item.title;$('issue-info').textContent=item.path+' · '+fileSize(item.size);const box=$('issue-actions');box.replaceChildren();
  function action(label,fn,cls=''){const b=el('button',cls,label);b.onclick=async()=>{try{await fn();}catch(e){toast(e.message);}};box.append(b);}
- action(saved[item.id]?.page?'Continue reading':'Read magazine',()=>{$('issue-dialog').close();openMagazine(item);});
- action('Read from the beginning',()=>{$('issue-dialog').close();openMagazine(item,1);});
- const download=el('a','action-link','Download PDF');download.href=pdfURL(item)+'?download=1';download.download=item.title+'.pdf';box.append(download);
+ action(started(item)?'Continue reading':'Read '+itemKind(item).toLowerCase(),()=>{$('issue-dialog').close();openDocument(item);});
+ action('Read from the beginning',()=>{$('issue-dialog').close();openDocument(item,1);});
+ const download=el('a','action-link','Download '+item.format.toUpperCase());download.href=pdfURL(item)+'?download=1';download.download=item.title+'.'+item.format;box.append(download);
  action('Edit filename, category & tags',()=>{$('issue-dialog').close();openEdit(item);});
  action('Mark as finished',async()=>{await persist(item.id,{completed:true});$('issue-dialog').close();drawLibrary();});
  action('Clear reading progress',async()=>{$('issue-dialog').close();await clearProgress(item.id);});
  action('Delete permanently from storage…',async()=>{if(!await confirmAction('Delete PDF permanently?',`“${item.title}” will be deleted from your storage, along with its reading data and collection memberships. This cannot be undone.`,'Delete permanently'))return;await saveChain;if(pendingSaves.size)throw Error('Sync pending changes before deleting.');await api('/api/delete',{id:item.id,confirm:true});$('issue-dialog').close();await refresh();toast('PDF deleted from storage.');},'danger');
- action('Move to Trash…',async()=>{if(!await confirmAction('Move magazine to Trash?',`“${item.title}” will leave your library. You can restore it in Settings → Trash.`,'Move to Trash'))return;await saveChain;await api('/api/trash',{id:item.id});$('issue-dialog').close();await refresh();toast('Moved to Trash. Restore it from Settings.');},'danger');$('issue-dialog').showModal();
+ action('Move to Trash…',async()=>{if(!await confirmAction('Move document to Trash?',`“${item.title}” will leave your library. You can restore it in Settings → Trash.`,'Move to Trash'))return;await saveChain;await api('/api/trash',{id:item.id});$('issue-dialog').close();await refresh();toast('Moved to Trash. Restore it from Settings.');},'danger');$('issue-dialog').showModal();
 }
 $('issue-close').onclick=()=>$('issue-dialog').close();
 /** load Trash: Support the PiShelf reader or library interface. */
@@ -367,6 +371,92 @@ async function pdfEngine(){
  });
  return pdfjsModulePromise;
 }
+/* EPUB and PDF have separate rendering engines, so PDF pinch zoom and
+ * WebP page caching never interact with an EPUB's reflowable iframe. */
+let epubController=null,epubGeneration=0,epubHistoryActive=false;
+function openDocument(item,start){return isEpub(item)?openEpubBook(item,start):openMagazine(item,start);}
+async function closeEpubBook({fromHistory=false}={}){
+ if($('epub-reader').hidden)return;
+ if(!fromHistory&&epubHistoryActive){epubHistoryActive=false;history.back();}
+ ++epubGeneration;
+ if(epubController){epubController.destroy();epubController=null;}
+ $('epub-page').replaceChildren();
+ $('epub-reader').hidden=true;document.body.classList.remove('epub-open');
+ $('library').hidden=false;drawLibrary();refresh(true);
+}
+window.addEventListener('popstate',()=>{if(!$('epub-reader').hidden){epubHistoryActive=false;closeEpubBook({fromHistory:true});}});
+async function openEpubBook(item,start){
+ if($('epub-reader').hidden){history.pushState({pishelfEpub:true},'',location.href);epubHistoryActive=true;}
+ const g=++epubGeneration;
+ if(epubController){epubController.destroy();epubController=null;}
+ const initial=saved[item.id]||{};
+ $('library').hidden=true;$('epub-reader').hidden=false;document.body.classList.add('epub-open');
+ $('epub-title').textContent=item.title;
+ $('epub-page').replaceChildren();
+ $('epub-chapters').replaceChildren(new Option('Chapters',''));
+ $('epub-position').textContent='Opening…';
+ $('epub-status').textContent='Loading EPUB…';
+ $('epub-slider').disabled=true;
+ $('epub-theme').value=prefs.epubTheme||'light';
+ try{
+  const module=await import('./epub-reader.js');
+  if(g!==epubGeneration)return;
+  const controller=await module.createEpubReader({
+   url:pdfURL(item),container:$('epub-page'),
+   cfi:start===1?'':initial.epubCfi||'',
+   theme:prefs.epubTheme||'light',fontSize:prefs.epubFontSize||100,
+   onLocation:update=>{
+    if(g!==epubGeneration)return;
+    const {percentage,locationsReady,...patch}=update;
+    if(patch.epubCfi&&patch.epubCfi.length<=2048){
+     persist(item.id,patch);
+    }
+    const percent=Math.max(0,Math.min(100,Math.round(percentage*100)));
+    $('epub-position').textContent=locationsReady?percent+'% read':'Reading';
+    $('epub-slider').disabled=!locationsReady;
+    $('epub-slider').value=percent;
+   },
+   onChapters:toc=>{
+    if(g!==epubGeneration)return;
+    function appendChapters(items,level=0){
+     for(const item of items||[]){
+      if(item.href)$('epub-chapters').add(new Option('  '.repeat(level)+(item.label||'Chapter'),item.href));
+      if(item.subitems)appendChapters(item.subitems,level+1);
+     }
+    }
+    appendChapters(toc);
+   },
+   onStatus:message=>{if(g===epubGeneration)$('epub-status').textContent=message;}
+  });
+  if(g!==epubGeneration){controller.destroy();return;}
+  epubController=controller;
+  $('epub-status').textContent='';
+ }catch(error){
+  if(g===epubGeneration)$('epub-status').textContent='Could not open EPUB: '+error.message;
+ }
+}
+$('epub-back').onclick=()=>closeEpubBook();
+$('epub-settings').onclick=openSettings;
+$('epub-prev').onclick=()=>epubController?.prev().catch(error=>toast(error.message));
+$('epub-next').onclick=()=>epubController?.next().catch(error=>toast(error.message));
+$('epub-slider').addEventListener('change',e=>epubController?.goPercent(Number(e.target.value)).catch(error=>toast(error.message)));
+$('epub-chapters').onchange=e=>{
+ if(e.target.value)epubController?.display(e.target.value).catch(error=>toast(error.message));
+ e.target.value='';
+};
+$('epub-font-smaller').onclick=()=>adjustEpubFont(-10);
+$('epub-font-larger').onclick=()=>adjustEpubFont(10);
+function adjustEpubFont(amount){
+ prefs.epubFontSize=Math.max(70,Math.min(190,(prefs.epubFontSize||100)+amount));
+ epubController?.setFontSize(prefs.epubFontSize);storePrefs();
+ toast('Book text size: '+prefs.epubFontSize+'%');
+}
+$('epub-theme').onchange=e=>{
+ prefs.epubTheme=e.target.value;
+ epubController?.setTheme(prefs.epubTheme);
+ storePrefs();
+};
+
 /** open Magazine: Support the PiShelf reader or library interface. */
 // Give the browser a reader history entry so Back returns to the library
 // instead of navigating away from PiShelf. Never create one per page.
@@ -527,19 +617,19 @@ $('series-filter').onchange=e=>selectSeries(e.target.value);$('tag-filter').onch
 $('filters-clear').onclick=()=>{sourceFilter=seriesFilter=tagFilter=category=collectionFilter='';filter='all';$('source-filter').value='';$('search').value='';visibleLimit=60;document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.filter==='all'));updateFilterOptions();drawLibrary();};
 $('load-more').onclick=()=>{visibleLimit+=60;drawLibrary();};
 $('backup-export').onclick=async()=>{try{if(documentPDF)remember();await saveChain;if(pendingSaves.size)throw Error('Reconnect and sync your reading progress before backing up.');const data=await api('/api/backup');data.preferences={...prefs};const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const link=el('a');link.href=url;link.download='pishelf-backup-'+new Date().toISOString().slice(0,10)+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('Reading backup downloaded. Back up PDF folders separately.');}catch(error){toast(error.message);}};
-$('backup-import').onclick=()=>{if(documentPDF){toast('Return to the library before restoring a backup.');return;}$('backup-file').click();};
+$('backup-import').onclick=()=>{if(documentPDF||!$('epub-reader').hidden){toast('Return to the library before restoring a backup.');return;}$('backup-file').click();};
 $('backup-file').onchange=async e=>{const file=e.target.files[0];e.target.value='';if(!file)return;try{if(file.size>5*1024*1024)throw Error('Backup must be under 5 MB.');const data=JSON.parse(await file.text());if(data.format!=='pishelf-backup'||data.version!==1)throw Error('Select a PiShelf reading backup.');if(!await confirmAction('Restore reading backup?','Matching reading records and metadata will be replaced. Other records and your PDFs are kept.','Restore backup'))return;await saveChain;if(pendingSaves.size)throw Error('Sync pending reading progress before restoring.');await api('/api/backup/restore',data);if(data.preferences){for(const key in defaults){const value=data.preferences[key];if(key==='motion'||key==='gestures'){if(typeof value==='boolean')prefs[key]=value;}else if(key==='sort'){if([...$('sort').options].some(o=>o.value===value))prefs.sort=value;}else if($('pref-'+key)&&[...$('pref-'+key).options].some(o=>o.value===value))prefs[key]=value;}storePrefs();}await refresh();toast('Backup restored.');}catch(error){toast(error.message);}};
 // Uploads stream one File at a time; the browser never reads the entire file into JS memory.
 let uploadXHR=null,uploading=false,uploadCancelled=false;
 /** populate Upload Sources: Support the PiShelf reader or library interface. */
-function populateUploadSources(){const selected=$('upload-source').value;const sources=[...new Set(categories.map(c=>c.source))];$('upload-source').replaceChildren(...sources.map(s=>new Option(s==='newspapers'?'Newspapers':'Magazines',s)));if(sources.includes(selected))$('upload-source').value=selected;populateUploadCategories();}
+function populateUploadSources(){const selected=$('upload-source').value;const sources=[...new Set(categories.map(c=>c.source))];$('upload-source').replaceChildren(...sources.map(s=>new Option(s==='newspapers'?'Newspapers':s==='books'?'Books':'Magazines',s)));if(sources.includes(selected))$('upload-source').value=selected;populateUploadCategories();}
 /** populate Upload Categories: Support the PiShelf reader or library interface. */
 function populateUploadCategories(){const source=$('upload-source').value;$('upload-category').replaceChildren(...categories.filter(c=>c.source===source).map(c=>new Option(c.path==='.'?'Uncategorised':c.path,c.path)));}
 $('upload-source').onchange=populateUploadCategories;
 /** upload File: Support the PiShelf reader or library interface. */
-function uploadFile(file,source,category){return new Promise((resolve,reject)=>{const xhr=uploadXHR=new XMLHttpRequest();xhr.open('POST','/api/upload?'+new URLSearchParams({source,category,filename:file.name}));xhr.setRequestHeader('Content-Type','application/pdf');xhr.upload.onprogress=e=>{if(e.lengthComputable)$('upload-progress').value=Math.round(e.loaded/e.total*100);};xhr.onload=()=>{let result;try{result=JSON.parse(xhr.responseText);}catch{}if(xhr.status>=200&&xhr.status<300)resolve(result);else reject(Error(result?.error||'Upload failed. Check the server or proxy upload limit.'));};xhr.onerror=()=>reject(Error('Upload connection failed.'));xhr.onabort=()=>reject(Error('Upload cancelled.'));xhr.send(file);});}
+function uploadFile(file,source,category){return new Promise((resolve,reject)=>{const xhr=uploadXHR=new XMLHttpRequest();xhr.open('POST','/api/upload?'+new URLSearchParams({source,category,filename:file.name}));xhr.setRequestHeader('Content-Type',file.name.toLowerCase().endsWith('.epub')?'application/epub+zip':'application/pdf');xhr.upload.onprogress=e=>{if(e.lengthComputable)$('upload-progress').value=Math.round(e.loaded/e.total*100);};xhr.onload=()=>{let result;try{result=JSON.parse(xhr.responseText);}catch{}if(xhr.status>=200&&xhr.status<300)resolve(result);else reject(Error(result?.error||'Upload failed. Check the server or proxy upload limit.'));};xhr.onerror=()=>reject(Error('Upload connection failed.'));xhr.onabort=()=>reject(Error('Upload cancelled.'));xhr.send(file);});}
 $('upload-cancel').onclick=()=>{uploadCancelled=true;uploadXHR?.abort();};
-$('upload-start').onclick=async()=>{if(uploading)return;if(documentPDF){toast('Return to the library before uploading PDFs.');return;}const files=[...$('upload-files').files];if(!files.length){toast('Choose one or more PDFs first.');return;}if(files.some(f=>!f.name.toLowerCase().endsWith('.pdf')||f.size===0||f.size>512*1024*1024)){toast('Choose PDF files up to 512 MiB each.');return;}uploading=true;uploadCancelled=false;$('upload-start').disabled=true;$('upload-files').disabled=true;$('upload-source').disabled=true;$('upload-category').disabled=true;$('upload-cancel').hidden=false;$('upload-progress').hidden=false;const source=$('upload-source').value,category=$('upload-category').value;let completed=0;try{for(const file of files){if(uploadCancelled)break;$('upload-status').textContent=`Uploading ${completed+1}/${files.length}: ${file.name}`;$('upload-progress').value=0;await uploadFile(file,source,category);completed++;}$('upload-status').textContent=`${completed} PDF${completed===1?'':'s'} uploaded.`;}catch(error){$('upload-status').textContent=`${completed} uploaded. ${error.message}`;}finally{uploading=false;uploadXHR=null;$('upload-start').disabled=false;$('upload-files').disabled=false;$('upload-source').disabled=false;$('upload-category').disabled=false;$('upload-cancel').hidden=true;$('upload-progress').hidden=true;if(completed===files.length)$('upload-files').value='';await refresh();}};
+$('upload-start').onclick=async()=>{if(uploading)return;if(documentPDF||!$('epub-reader').hidden){toast('Return to the library before uploading.');return;}const files=[...$('upload-files').files];if(!files.length){toast('Choose PDF files or EPUB books first.');return;}if(files.some(f=>{const ext=f.name.toLowerCase().split('.').pop();return (ext!=='pdf'&&!(ext==='epub'&&$('upload-source').value==='books'))||f.size===0||f.size>(ext==='epub'?100:512)*1024*1024;})){toast('Choose PDFs (max 512 MiB) or EPUB books (max 100 MiB, Books only).');return;}uploading=true;uploadCancelled=false;$('upload-start').disabled=true;$('upload-files').disabled=true;$('upload-source').disabled=true;$('upload-category').disabled=true;$('upload-cancel').hidden=false;$('upload-progress').hidden=false;const source=$('upload-source').value,category=$('upload-category').value;let completed=0;try{for(const file of files){if(uploadCancelled)break;$('upload-status').textContent=`Uploading ${completed+1}/${files.length}: ${file.name}`;$('upload-progress').value=0;await uploadFile(file,source,category);completed++;}$('upload-status').textContent=`${completed} file${completed===1?'':'s'} uploaded.`;}catch(error){$('upload-status').textContent=`${completed} uploaded. ${error.message}`;}finally{uploading=false;uploadXHR=null;$('upload-start').disabled=false;$('upload-files').disabled=false;$('upload-source').disabled=false;$('upload-category').disabled=false;$('upload-cancel').hidden=true;$('upload-progress').hidden=true;if(completed===files.length)$('upload-files').value='';await refresh();}};
 $('collection-create').onclick=()=>{$('collection-name').value='';$('collection-error').textContent='';$('collection-dialog').showModal();};
 $('collection-close').onclick=()=>$('collection-dialog').close();
 $('collection-form').onsubmit=async e=>{e.preventDefault();e.submitter.disabled=true;try{await api('/api/collections',{name:$('collection-name').value});$('collection-dialog').close();await refresh();toast('Collection created. Add issues through their Edit options.');}catch(error){$('collection-error').textContent=error.message;}finally{e.submitter.disabled=false;}};

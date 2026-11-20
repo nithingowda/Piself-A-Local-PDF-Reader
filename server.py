@@ -17,6 +17,7 @@ import threading
 import time
 import uuid
 import datetime
+import zipfile
 import auth
 import secrets
 
@@ -75,7 +76,9 @@ class Handler(BaseHTTPRequestHandler):
                     categories.append(dict(source=source,path=Path(folder).relative_to(root).as_posix()))
                     for name in files:
                         path = Path(folder)/name
-                        if name.startswith('.') or path.suffix.lower() != '.pdf' or path.is_symlink(): continue
+                        if name.startswith('.') or path.is_symlink(): continue
+                        fmt=path.suffix.lower().lstrip('.')
+                        if fmt not in ('pdf','epub') or (fmt=='epub' and source!='books'): continue
                         try:
                             if not path.resolve().is_relative_to(root): continue
                             info = path.stat()
@@ -87,7 +90,7 @@ class Handler(BaseHTTPRequestHandler):
                         cover_key = hashlib.sha256(f'{key}:{info.st_mtime_ns}:{info.st_size}'.encode()).hexdigest()
                         items.append(dict(id=key, path=relative, title=path.stem.replace('_',' '), source=source,
                             category=path.parent.relative_to(root).as_posix(), size=info.st_size,
-                            modified=info.st_mtime, coverKey=cover_key, **inferred))
+                            modified=info.st_mtime, coverKey=cover_key, format=fmt, **inferred))
             self.server.scan_items = sorted(items, key=lambda i:(i['source'],i['path']))
             self.server.scan_categories = categories
             self.server.scan_time = time.monotonic()
@@ -106,17 +109,19 @@ class Handler(BaseHTTPRequestHandler):
         filename=params.get('filename',[''])[0]
         root=self.server.roots.get(source)
         if root is None: raise APIError(400,'Unknown library source.')
-        if not filename.lower().endswith('.pdf') or '/' in filename or '\\' in filename:
-            raise APIError(400,'Choose a PDF filename without slashes.')
+        fmt=Path(filename).suffix.lower()
+        if fmt not in ('.pdf','.epub') or (fmt=='.epub' and source!='books') or '/' in filename or '\\' in filename:
+            raise APIError(400,'Choose a PDF, or an EPUB for Books, without slashes.')
         safe_relative(filename)
         if category != '.': safe_relative(category)
         destination=checked_path(root,(Path(category)/filename).as_posix())
         length=int(self.headers.get('Content-Length','0'))
-        if not 0 < length <= 512*1024*1024: raise APIError(413,'Upload one PDF up to 512 MiB.')
-        if self.headers.get_content_type() != 'application/pdf': raise APIError(400,'Expected a PDF upload.')
+        if not 0 < length <= (100 if fmt=='.epub' else 512)*1024*1024: raise APIError(413,'PDF limit is 512 MiB; EPUB book limit is 100 MiB.')
+        expected='application/epub+zip' if fmt=='.epub' else 'application/pdf'
+        if self.headers.get_content_type() != expected: raise APIError(400,'Unexpected file content type.')
         # A dedicated upload lock serializes large writes without blocking reading-state saves.
         with self.server.upload_lock:
-            if destination.exists(): raise APIError(409,'A PDF with this filename already exists. Rename it before uploading.')
+            if destination.exists(): raise APIError(409,'A document with this filename already exists. Rename it before uploading.')
             destination.parent.mkdir(parents=True,exist_ok=True)
             temporary=destination.parent/('.pishelf-upload-'+uuid.uuid4().hex)
             old_timeout=self.connection.gettimeout()
@@ -128,9 +133,11 @@ class Handler(BaseHTTPRequestHandler):
                     while remaining:
                         chunk=self.rfile.read(min(256*1024,remaining))
                         if not chunk: raise APIError(400,'Upload interrupted. No PDF was added.')
-                        if first and b'%PDF-' not in chunk[:1024]: raise APIError(400,'This file does not have a PDF header.')
+                        if first and fmt=='.pdf' and b'%PDF-' not in chunk[:1024]: raise APIError(400,'This file does not have a PDF header.')
+                        if first and fmt=='.epub' and not chunk.startswith(b'PK\x03\x04'): raise APIError(400,'This EPUB is not a ZIP archive.')
                         first=False
                         output.write(chunk);remaining-=len(chunk)
+                if fmt=='.epub': validate_epub(temporary)
                 with self.server.mutation_lock:
                     # Exclusive move refuses to replace a file created during the upload.
                     try: move_exclusive(temporary,destination)
@@ -375,7 +382,7 @@ class Handler(BaseHTTPRequestHandler):
             if not row: raise APIError(404,'Trash item not found.')
             root=self.server.roots.get(row[1])
             if root is None: raise APIError(409,'Library source is not configured.')
-            file=root/'.pishelf-trash'/(token+'.pdf')
+            file=root/'.pishelf-trash'/(token+Path(row[0]).suffix.lower())
             if file.parent.is_symlink() or file.is_symlink() or not file.resolve().is_relative_to(root): raise APIError(403,'Invalid trash path.')
             file.unlink(missing_ok=True)
             db.execute('DELETE FROM trash WHERE token=?',(token,))
@@ -399,8 +406,8 @@ class Handler(BaseHTTPRequestHandler):
                 allowed={r[0] for r in db.execute('SELECT id FROM collections')}
                 if set(collection_ids)-allowed: raise APIError(400,'A selected collection no longer exists.')
             filename = data.get('filename',Path(item['path']).name)
-            if not isinstance(filename,str) or '/' in filename or '\\' in filename or not filename.lower().endswith('.pdf'):
-                raise APIError(400,'Use a PDF filename without slashes.')
+            if not isinstance(filename,str) or '/' in filename or '\\' in filename or Path(filename).suffix.lower()!=Path(item['path']).suffix.lower():
+                raise APIError(400,'Keep the original PDF or EPUB extension and remove slashes.')
             safe_relative(filename)
             category = data.get('category',item['category'])
             if category != '.': safe_relative(category)
@@ -481,7 +488,8 @@ class Handler(BaseHTTPRequestHandler):
         if route == '/api/progress':
             key=data.pop('id')
             if not isinstance(key,str) or not re.fullmatch('[a-f0-9]{20}',key): raise ValueError()
-            if not data or set(data)-{'page','total','favorite','bookmarks','completed','zoom','rotation','mode'}: raise ValueError()
+            if not data or set(data)-{'page','total','favorite','bookmarks','completed','zoom','rotation','mode','epubCfi'}: raise ValueError()
+            if 'epubCfi' in data and (not isinstance(data['epubCfi'],str) or len(data['epubCfi'])>2048 or (data['epubCfi'] and not data['epubCfi'].startswith('epubcfi('))): raise ValueError()
             validate_reader_options(data)
             for field in ('page','total'):
                 if field in data and (type(data[field]) is not int or not 1 <= data[field] <= 100000): raise ValueError()
@@ -495,7 +503,7 @@ class Handler(BaseHTTPRequestHandler):
             row=db.execute('SELECT value FROM progress WHERE id=?',(key,)).fetchone()
             value=json.loads(row[0]) if row else {}
             value.update(data)
-            if 'page' in data: value['lastRead']=time.time()
+            if 'page' in data or 'epubCfi' in data: value['lastRead']=time.time()
             db.execute('INSERT OR REPLACE INTO progress VALUES (?,?)',(key,json.dumps(value)))
             return value
         if route == '/api/trash':
@@ -508,7 +516,7 @@ class Handler(BaseHTTPRequestHandler):
             trash=root/'.pishelf-trash'
             if trash.is_symlink(): raise APIError(409,'Trash folder cannot be a symlink.')
             trash.mkdir(exist_ok=True)
-            destination=trash/(token+'.pdf')
+            destination=trash/(token+Path(item['path']).suffix.lower())
             source.rename(destination)
             try:
                 db.execute('INSERT INTO trash (token,path,title,deleted,source) VALUES (?,?,?,?,?)',(token,item['path'],item['title'],time.time(),item['source']))
@@ -527,7 +535,7 @@ class Handler(BaseHTTPRequestHandler):
             destination=checked_path(root,row[0])
             if destination.exists(): raise APIError(409,'A file already exists at the original location. Rename it first.')
             destination.parent.mkdir(parents=True,exist_ok=True)
-            source=root/'.pishelf-trash'/(token+'.pdf')
+            source=root/'.pishelf-trash'/(token+Path(row[0]).suffix.lower())
             if source.is_symlink() or not source.resolve().is_relative_to(root): raise APIError(403,'Invalid trash path.')
             if not source.is_file(): raise APIError(404,'The trashed PDF is missing from disk.')
             # Hard-link creation refuses to overwrite a file created by another process.
@@ -595,7 +603,8 @@ class Handler(BaseHTTPRequestHandler):
                 if len(parts)!=5 or not re.fullmatch('[a-f0-9]{20}',parts[3]) or not parts[4].isdigit():
                     raise APIError(404,'Page not found.')
                 item=next((i for i in self.library_items() if i['id']==parts[3]),None)
-                if not item: raise APIError(404,'Magazine not found.')
+                if not item: raise APIError(404,'Document not found.')
+                if item['format']!='pdf': raise APIError(415,'Only PDF pages can be rendered as WebP.')
                 n=int(parts[4]);params=parse_qs(urlsplit(self.path).query)
                 width=int(params.get('width',['1600'])[0])
                 if not 1<=n<=5000 or width not in (960,1600,2800):
@@ -695,6 +704,10 @@ class Handler(BaseHTTPRequestHandler):
                 key=path.rsplit('/',1)[-1]
                 if not re.fullmatch('[a-f0-9]{64}',key): self.send_error(404); return
                 root,relative=self.server.cover_dir,key+'.jpg'
+            elif path.startswith('/books/'):
+                root,relative=self.server.roots.get('books'),path[len('/books/'):]
+                if root is None or Path(relative).suffix.lower() not in ('.pdf','.epub') or any(p.startswith('.') for p in Path(relative).parts):
+                    self.send_error(404); return
             elif path.startswith('/newspapers/'):
                 root,relative=self.server.roots.get('newspapers'),path[len('/newspapers/'):]
                 if root is None or Path(relative).suffix.lower()!='.pdf' or any(p.startswith('.') for p in Path(relative).parts):
@@ -727,7 +740,7 @@ class Handler(BaseHTTPRequestHandler):
                 except ValueError:
                     self.send_response(416);self.send_header('Content-Range',f'bytes */{size}');self.end_headers();return
             self.send_response(status)
-            self.send_header('Content-Type','text/javascript' if target.suffix=='.mjs' else mimetypes.guess_type(target.name)[0] or 'application/octet-stream')
+            self.send_header('Content-Type','application/epub+zip' if target.suffix.lower()=='.epub' else 'text/javascript' if target.suffix=='.mjs' else mimetypes.guess_type(target.name)[0] or 'application/octet-stream')
             self.send_header('Content-Length',str(end-start+1))
             self.send_header('Accept-Ranges','bytes')
             self.send_header('ETag',etag)
@@ -748,6 +761,33 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError,KeyError,TypeError): self.json_response({'error':'Invalid request.'},400,head=head)
         except (BrokenPipeError,ConnectionResetError): pass
         except (OSError,sqlite3.Error): self.send_error(500,'Unable to read library storage.')
+
+# EPUB is a ZIP container; reject malformed and unusually expansive archives
+# before allowing epub.js to handle it in the browser.
+def validate_epub(path):
+    try:
+        with zipfile.ZipFile(path) as archive:
+            files=archive.infolist()
+            if not files or len(files)>4000: raise APIError(400,'EPUB contains too many files.')
+            entry=archive.getinfo('mimetype')
+            if entry.file_size>64 or archive.read('mimetype')!=b'application/epub+zip':
+                raise APIError(400,'Invalid EPUB mimetype.')
+            if 'META-INF/container.xml' not in archive.namelist():
+                raise APIError(400,'EPUB is missing its package container.')
+            total=0
+            seen=set()
+            for member in files:
+                name=member.filename
+                parts=name.split('/')
+                if name.startswith('/') or '\\' in name or '..' in parts or any(part.startswith('.') for part in parts if part not in ('','META-INF')) or name in seen:
+                    raise APIError(400,'EPUB contains unsafe archive names.')
+                seen.add(name)
+                if member.flag_bits & 1: raise APIError(400,'Encrypted EPUB archives are not supported.')
+                if member.file_size>256*1024*1024: raise APIError(413,'An EPUB resource is too large.')
+                total+=member.file_size
+                if total>1024*1024*1024: raise APIError(413,'EPUB expands beyond the safety limit.')
+    except (zipfile.BadZipFile,KeyError,RuntimeError):
+        raise APIError(400,'Invalid or damaged EPUB archive.')
 
 # item id: handle this step of the server request or library workflow.
 def item_id(source,relative):
@@ -862,7 +902,8 @@ def remove_reading_state(db,key):
 
 # validate progress: handle this step of the server request or library workflow.
 def validate_progress(value):
-    if not isinstance(value,dict) or set(value)-{'page','total','favorite','bookmarks','completed','lastRead','zoom','rotation','mode'}: raise ValueError()
+    if not isinstance(value,dict) or set(value)-{'page','total','favorite','bookmarks','completed','lastRead','zoom','rotation','mode','epubCfi'}: raise ValueError()
+    if 'epubCfi' in value and (not isinstance(value['epubCfi'],str) or len(value['epubCfi'])>2048 or (value['epubCfi'] and not value['epubCfi'].startswith('epubcfi('))): raise ValueError()
     validate_reader_options(value)
     for field in ('page','total'):
         if field in value and (type(value[field]) is not int or not 1<=value[field]<=100000): raise ValueError()
@@ -875,7 +916,7 @@ def validate_progress(value):
 
 
 # make server: handle this step of the server request or library workflow.
-def make_server(host,port,library,data,newspapers=None):
+def make_server(host,port,library,data,newspapers=None,books=None):
     library=Path(library).expanduser().resolve();library.mkdir(parents=True,exist_ok=True)
     data=Path(data).expanduser().resolve();data.mkdir(parents=True,exist_ok=True)
     server=ThreadingHTTPServer((host,port),Handler)
@@ -887,6 +928,12 @@ def make_server(host,port,library,data,newspapers=None):
         if newspaper_root==library or newspaper_root.is_relative_to(library) or library.is_relative_to(newspaper_root):
             server.server_close(); raise ValueError('Magazine and newspaper folders must be separate, non-overlapping directories.')
         server.roots['newspapers']=newspaper_root
+    if books:
+        book_root=Path(books).expanduser().resolve()
+        book_root.mkdir(parents=True,exist_ok=True)
+        if any(book_root==existing or book_root.is_relative_to(existing) or existing.is_relative_to(book_root) for existing in server.roots.values()):
+            server.server_close(); raise ValueError('Book folder must be separate from the other libraries.')
+        server.roots['books']=book_root
     server.cover_dir=data/'covers'
     if server.cover_dir.is_symlink(): raise ValueError('Cover cache cannot be a symlink.')
     server.cover_dir.mkdir(exist_ok=True)
@@ -910,7 +957,8 @@ if __name__=='__main__':
     parser.add_argument('--host',default='0.0.0.0');parser.add_argument('--port',type=int,default=8080)
     parser.add_argument('--library',type=Path,default=BASE/'magazines');parser.add_argument('--data',type=Path,default=BASE/'data')
     parser.add_argument('--newspapers',type=Path,default=None)
-    args=parser.parse_args();server=make_server(args.host,args.port,args.library,args.data,args.newspapers)
+    parser.add_argument('--books',type=Path,default=None)
+    args=parser.parse_args();server=make_server(args.host,args.port,args.library,args.data,args.newspapers,args.books)
     print(f'PiShelf is running on port {args.port}. Library: {server.library}',flush=True)
     try: server.serve_forever()
     except KeyboardInterrupt: server.server_close()
