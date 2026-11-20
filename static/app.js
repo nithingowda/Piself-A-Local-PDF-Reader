@@ -613,34 +613,45 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{if(pre
 (async()=>{
  try{
   signedInUser=await api('/api/auth/me');
-  const controls=document.createElement('div');
-  controls.style.cssText='position:fixed;bottom:12px;right:12px;z-index:1000;display:flex;gap:8px';
-  if(signedInUser.role==='admin'){
-   const admin=document.createElement('a');admin.href='/admin.html';admin.textContent='Manage users';
-   admin.style.cssText='background:#263b52;color:white;padding:9px;border-radius:8px';controls.append(admin);
-  }
-  const changePassword=document.createElement('button');changePassword.textContent='Change password';
-  changePassword.onclick=()=>{
+  // Account controls belong in the existing Settings dialog, not in a
+  // floating overlay that obscures the PDF reader on small screens.
+  $('account-identity').textContent='Signed in as '+signedInUser.username;
+  $('account-role').textContent=signedInUser.role==='admin'?'Administrator':'Reader';
+  $('account-manage-users').hidden=signedInUser.role!=='admin';
+  $('account-logout').onclick=async()=>{
+   try{await api('/api/auth/logout',{});}finally{location.replace('/login.html');}
+  };
+  $('account-change-password').onclick=()=>{
    const dialog=document.createElement('dialog');
-   const form=document.createElement('form');form.method='dialog';
+   dialog.setAttribute('aria-label','Change password');
+   dialog.className='account-password-dialog';
+   const form=document.createElement('form');
    const title=document.createElement('h2');title.textContent='Change password';
-   const current=document.createElement('input');current.type='password';current.placeholder='Current password';current.autocomplete='current-password';current.required=true;
-   const next=document.createElement('input');next.type='password';next.placeholder='New password (12+ characters)';next.autocomplete='new-password';next.minLength=12;next.required=true;
-   const submit=document.createElement('button');submit.textContent='Update password';submit.type='submit';
+   const currentLabel=document.createElement('label');currentLabel.textContent='Current password';
+   const current=document.createElement('input');current.type='password';current.autocomplete='current-password';current.required=true;currentLabel.append(current);
+   const nextLabel=document.createElement('label');nextLabel.textContent='New password (12+ characters)';
+   const next=document.createElement('input');next.type='password';next.autocomplete='new-password';next.minLength=12;next.required=true;nextLabel.append(next);
+   const confirmLabel=document.createElement('label');confirmLabel.textContent='Confirm new password';
+   const confirm=document.createElement('input');confirm.type='password';confirm.autocomplete='new-password';confirm.minLength=12;confirm.required=true;confirmLabel.append(confirm);
+   const error=document.createElement('p');error.setAttribute('role','alert');
+   const actions=document.createElement('div');actions.className='confirm-buttons';
+   const submit=document.createElement('button');submit.textContent='Update password';submit.type='submit';submit.className='primary';
    const cancel=document.createElement('button');cancel.textContent='Cancel';cancel.type='button';cancel.onclick=()=>dialog.close();
-   form.append(title,current,next,submit,cancel);dialog.append(form);document.body.append(dialog);
+   actions.append(cancel,submit);form.append(title,currentLabel,nextLabel,confirmLabel,error,actions);
+   dialog.append(form);document.body.append(dialog);
    dialog.addEventListener('close',()=>dialog.remove(),{once:true});
    form.onsubmit=async event=>{
     event.preventDefault();
+    if(next.value!==confirm.value){error.textContent='New passwords do not match.';return;}
+    submit.disabled=true;error.textContent='';
     try{await api('/api/auth/change-password',{current_password:current.value,new_password:next.value});location.replace('/login.html');}
-    catch(e){toast(e.message);current.value='';next.value='';}
+    catch(e){error.textContent=e.message;current.value='';next.value='';confirm.value='';submit.disabled=false;}
    };
+   // Close Settings before opening the password modal so mobile Safari does
+   // not stack two modal dialogs on top of one another.
+   $('settings').close();
    dialog.showModal();
   };
-  controls.append(changePassword);
-  const logout=document.createElement('button');logout.textContent='Log out';
-  logout.onclick=async()=>{try{await api('/api/auth/logout',{});}finally{location.replace('/login.html');}};
-  controls.append(logout);document.body.append(controls);
   applyPrefs();await refresh();
  }catch(e){console.error('PiShelf startup:',e);}
 })();
