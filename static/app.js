@@ -127,7 +127,7 @@ function drawLibrary(){
 // The explicit refresh=1 query requests a filesystem rescan on page reload.
 // Keep this independent of optional Settings controls (see PR #24).
 async function refresh(quiet=false){
- if(syncing||!$('reader').hidden)return;syncing=true;if(!quiet)$('status').textContent='Scanning your library folders…';
+ if(syncing||!$('reader').hidden||!$('epub-reader').hidden)return;syncing=true;if(!quiet)$('status').textContent='Scanning your library folders…';
  try{await saveChain;if(pendingSaves.size){for(const [id,patch] of [...pendingSaves])await persist(id,patch);if(pendingSaves.size)throw Error('Reading progress is waiting to sync.');}
  const [next,state,cats,shelves]=await Promise.all([api('/api/library?refresh=1'),api('/api/progress'),api('/api/categories'),api('/api/collections')]);const collectionsChanged=JSON.stringify(shelves)!==JSON.stringify(collections)||JSON.stringify(cats)!==JSON.stringify(categories);categories=cats;collections=shelves;collectionSets=new Map(collections.map(c=>[c.id,new Set(c.items)]));if(collectionFilter&&!collectionSets.has(collectionFilter))collectionFilter='';const changed=collectionsChanged||JSON.stringify(next)!==JSON.stringify(library)||JSON.stringify(state)!==JSON.stringify(saved);library=next;saved=state;
  if(changed||!quiet){if(category&&!categories.some(c=>c.path===category&&(!sourceFilter||c.source===sourceFilter)))category='';updateFilterOptions();drawLibrary();}$('status').textContent='';
@@ -348,6 +348,92 @@ async function pdfEngine(){
  });
  return pdfjsModulePromise;
 }
+/* EPUB and PDF have separate rendering engines, so PDF pinch zoom and
+ * WebP page caching never interact with an EPUB's reflowable iframe. */
+let epubController=null,epubGeneration=0,epubHistoryActive=false;
+function openDocument(item,start){return isEpub(item)?openEpubBook(item,start):openMagazine(item,start);}
+async function closeEpubBook({fromHistory=false}={}){
+ if($('epub-reader').hidden)return;
+ if(!fromHistory&&epubHistoryActive){epubHistoryActive=false;history.back();}
+ ++epubGeneration;
+ if(epubController){epubController.destroy();epubController=null;}
+ $('epub-page').replaceChildren();
+ $('epub-reader').hidden=true;document.body.classList.remove('epub-open');
+ $('library').hidden=false;drawLibrary();refresh(true);
+}
+window.addEventListener('popstate',()=>{if(!$('epub-reader').hidden){epubHistoryActive=false;closeEpubBook({fromHistory:true});}});
+async function openEpubBook(item,start){
+ if($('epub-reader').hidden){history.pushState({pishelfEpub:true},'',location.href);epubHistoryActive=true;}
+ const g=++epubGeneration;
+ if(epubController){epubController.destroy();epubController=null;}
+ const initial=saved[item.id]||{};
+ $('library').hidden=true;$('epub-reader').hidden=false;document.body.classList.add('epub-open');
+ $('epub-title').textContent=item.title;
+ $('epub-page').replaceChildren();
+ $('epub-chapters').replaceChildren(new Option('Chapters',''));
+ $('epub-position').textContent='Opening…';
+ $('epub-status').textContent='Loading EPUB…';
+ $('epub-slider').disabled=true;
+ $('epub-theme').value=prefs.epubTheme||'light';
+ try{
+  const module=await import('./epub-reader.js');
+  if(g!==epubGeneration)return;
+  const controller=await module.createEpubReader({
+   url:pdfURL(item),container:$('epub-page'),
+   cfi:start===1?'':initial.epubCfi||'',
+   theme:prefs.epubTheme||'light',fontSize:prefs.epubFontSize||100,
+   onLocation:update=>{
+    if(g!==epubGeneration)return;
+    const {percentage,locationsReady,...patch}=update;
+    if(patch.epubCfi&&patch.epubCfi.length<=2048){
+     persist(item.id,patch);
+    }
+    const percent=Math.max(0,Math.min(100,Math.round(percentage*100)));
+    $('epub-position').textContent=locationsReady?percent+'% read':'Reading';
+    $('epub-slider').disabled=!locationsReady;
+    $('epub-slider').value=percent;
+   },
+   onChapters:toc=>{
+    if(g!==epubGeneration)return;
+    function appendChapters(items,level=0){
+     for(const item of items||[]){
+      if(item.href)$('epub-chapters').add(new Option('  '.repeat(level)+(item.label||'Chapter'),item.href));
+      if(item.subitems)appendChapters(item.subitems,level+1);
+     }
+    }
+    appendChapters(toc);
+   },
+   onStatus:message=>{if(g===epubGeneration)$('epub-status').textContent=message;}
+  });
+  if(g!==epubGeneration){controller.destroy();return;}
+  epubController=controller;
+  $('epub-status').textContent='';
+ }catch(error){
+  if(g===epubGeneration)$('epub-status').textContent='Could not open EPUB: '+error.message;
+ }
+}
+$('epub-back').onclick=()=>closeEpubBook();
+$('epub-settings').onclick=openSettings;
+$('epub-prev').onclick=()=>epubController?.prev().catch(error=>toast(error.message));
+$('epub-next').onclick=()=>epubController?.next().catch(error=>toast(error.message));
+$('epub-slider').addEventListener('change',e=>epubController?.goPercent(Number(e.target.value)).catch(error=>toast(error.message)));
+$('epub-chapters').onchange=e=>{
+ if(e.target.value)epubController?.display(e.target.value).catch(error=>toast(error.message));
+ e.target.value='';
+};
+$('epub-font-smaller').onclick=()=>adjustEpubFont(-10);
+$('epub-font-larger').onclick=()=>adjustEpubFont(10);
+function adjustEpubFont(amount){
+ prefs.epubFontSize=Math.max(70,Math.min(190,(prefs.epubFontSize||100)+amount));
+ epubController?.setFontSize(prefs.epubFontSize);storePrefs();
+ toast('Book text size: '+prefs.epubFontSize+'%');
+}
+$('epub-theme').onchange=e=>{
+ prefs.epubTheme=e.target.value;
+ epubController?.setTheme(prefs.epubTheme);
+ storePrefs();
+};
+
 /** open Magazine: Support the PiShelf reader or library interface. */
 // Give the browser a reader history entry so Back returns to the library
 // instead of navigating away from PiShelf. Never create one per page.
@@ -508,7 +594,7 @@ $('series-filter').onchange=e=>selectSeries(e.target.value);$('tag-filter').onch
 $('filters-clear').onclick=()=>{sourceFilter=seriesFilter=tagFilter=category=collectionFilter='';filter='all';$('source-filter').value='';$('search').value='';visibleLimit=60;document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.filter==='all'));updateFilterOptions();drawLibrary();};
 $('load-more').onclick=()=>{visibleLimit+=60;drawLibrary();};
 $('backup-export').onclick=async()=>{try{if(documentPDF)remember();await saveChain;if(pendingSaves.size)throw Error('Reconnect and sync your reading progress before backing up.');const data=await api('/api/backup');data.preferences={...prefs};const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const link=el('a');link.href=url;link.download='pishelf-backup-'+new Date().toISOString().slice(0,10)+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('Reading backup downloaded. Back up PDF folders separately.');}catch(error){toast(error.message);}};
-$('backup-import').onclick=()=>{if(documentPDF){toast('Return to the library before restoring a backup.');return;}$('backup-file').click();};
+$('backup-import').onclick=()=>{if(documentPDF||!$('epub-reader').hidden){toast('Return to the library before restoring a backup.');return;}$('backup-file').click();};
 $('backup-file').onchange=async e=>{const file=e.target.files[0];e.target.value='';if(!file)return;try{if(file.size>5*1024*1024)throw Error('Backup must be under 5 MB.');const data=JSON.parse(await file.text());if(data.format!=='pishelf-backup'||data.version!==1)throw Error('Select a PiShelf reading backup.');if(!await confirmAction('Restore reading backup?','Matching reading records and metadata will be replaced. Other records and your PDFs are kept.','Restore backup'))return;await saveChain;if(pendingSaves.size)throw Error('Sync pending reading progress before restoring.');await api('/api/backup/restore',data);if(data.preferences){for(const key in defaults){const value=data.preferences[key];if(key==='motion'||key==='gestures'){if(typeof value==='boolean')prefs[key]=value;}else if(key==='sort'){if([...$('sort').options].some(o=>o.value===value))prefs.sort=value;}else if($('pref-'+key)&&[...$('pref-'+key).options].some(o=>o.value===value))prefs[key]=value;}storePrefs();}await refresh();toast('Backup restored.');}catch(error){toast(error.message);}};
 // Uploads stream one File at a time; the browser never reads the entire file into JS memory.
 let uploadXHR=null,uploading=false,uploadCancelled=false;
