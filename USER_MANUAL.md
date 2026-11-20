@@ -115,10 +115,10 @@ For large PDFs, copy to a temporary filename first and rename to `.pdf` only aft
 Open a magazine cover. PiShelf resumes at the last saved page, if available.
 
 - **Pages:** open the thumbnail navigator; move between 60-page ranges and choose a page.
-- **Page number / arrows:** jump to a page or go backward/forward.
-- **Continuous / Single page:** choose the reading layout.
+- **Page number / arrows:** jump to a page or go backward/forward. In Book mode, arrows and swipes turn a two-page spread; entering a page number opens the spread containing that page.
+- **Continuous / Single page / Two-page book:** choose the PDF reading layout. Book mode shows cover page 1 alone and pairs pages 2–3, 4–5, etc.; select it on a tablet/desktop for comfortable side-by-side reading, or opt in on a phone.
 - **Fit page / zoom / rotate:** adjust how pages display.
-- **Pinch:** zoom with two fingers on iPhone/iPad.
+- **Pinch:** zoom with two fingers on iPhone/iPad; the separate EPUB reader and existing WebP reader remain unchanged.
 - **Bookmark:** save a page for later.
 - **Library:** return to the library; the browser Back button also returns to the library.
 

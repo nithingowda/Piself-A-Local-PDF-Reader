@@ -125,3 +125,24 @@ body.epub-open{overflow:hidden}
  #epub-chapters{max-width:112px}
  #epub-page{padding:3px}
 }
+
+
+/* Optional PDF book spread. Two page slots remain ordinary WebP/PDF.js pages:
+   layout and lightweight turning only, no replacement of Safari pinch logic. */
+#pages.book-layout{min-width:100%;width:max-content}
+#pages.book-layout .book-spread{display:flex;flex-direction:row;align-items:flex-start;justify-content:center;gap:8px;min-width:100%;width:max-content;margin:0 auto;padding:12px 16px 24px;perspective:1100px}
+#pages.book-layout .book-spread .pdf-slot{flex:none;margin:0;box-shadow:0 4px 18px #0003;border-radius:1px}
+#pages.book-layout .book-spread .pdf-slot:first-child:not(:last-child){box-shadow:inset -4px 0 8px #0003,0 4px 18px #0003}
+#pages.book-layout .book-spread .pdf-slot:last-child:not(:first-child){box-shadow:inset 4px 0 8px #0003,0 4px 18px #0003}
+.book-turn-controls{position:absolute;z-index:5;inset:0;display:none;align-items:center;justify-content:space-between;pointer-events:none;padding:0 9px}
+#reader.book-mode .book-turn-controls{display:flex}
+.book-turn-controls button{pointer-events:auto;min-width:38px;min-height:56px;border:1px solid #ffffff55;border-radius:10px;background:#171b20d9;color:#fff;font-size:32px;line-height:1;cursor:pointer;box-shadow:0 2px 12px #0005}
+.book-turn-controls button:disabled{opacity:.2;pointer-events:none}
+#reader.focused .book-turn-controls{opacity:0;pointer-events:none}
+#reader.focused .book-turn-controls button{pointer-events:none}
+@keyframes pishelf-leaf-forward{from{opacity:.55;transform:perspective(1100px) rotateY(-6deg) translateX(14px)}to{opacity:1;transform:none}}
+@keyframes pishelf-leaf-backward{from{opacity:.55;transform:perspective(1100px) rotateY(6deg) translateX(-14px)}to{opacity:1;transform:none}}
+#pages.book-layout .book-spread.turn-forward{animation:pishelf-leaf-forward .24s ease-out both}
+#pages.book-layout .book-spread.turn-backward{animation:pishelf-leaf-backward .24s ease-out both}
+@media(prefers-reduced-motion:reduce){#pages.book-layout .book-spread.turn-forward,#pages.book-layout .book-spread.turn-backward{animation:none}}
+@media(max-width:600px){#pages.book-layout .book-spread{gap:4px;padding:6px 5px 16px}.book-turn-controls{padding:0 3px}.book-turn-controls button{min-width:28px;min-height:46px;font-size:25px;opacity:.8}}
