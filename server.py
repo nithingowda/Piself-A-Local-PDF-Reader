@@ -16,6 +16,8 @@ import threading
 import time
 import uuid
 import datetime
+import auth
+import secrets
 
 # Optional raster engine is installed in Docker; errors are reported per request.
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -160,10 +162,90 @@ class Handler(BaseHTTPRequestHandler):
                     old.unlink(missing_ok=True)
         self.json_response({'ok':True})
 
+
+    # === Authentication / role permissions ===================================
+    def require_session(self, admin=False, mutation=False):
+        with sqlite3.connect(self.server.state_db) as db:
+            user=auth.session(db,self.headers)
+        if not user: raise APIError(401,'Login required.')
+        if admin and user['role']!='admin': raise APIError(403,'Administrator permission required.')
+        if mutation and not secrets.compare_digest(self.headers.get('X-PiShelf-CSRF',''),user['csrf']):
+            raise APIError(403,'Invalid security token.')
+        return user
+
+    def auth_post(self,route):
+        length=int(self.headers.get('Content-Length','0'))
+        if self.headers.get('Transfer-Encoding') or not 0<length<=4096 or self.headers.get_content_type()!='application/json':
+            raise APIError(400,'Invalid authentication request.')
+        data=json.loads(self.rfile.read(length))
+        if not isinstance(data,dict): raise APIError(400,'Invalid request.')
+        if route=='/api/auth/login':
+            ip=self.client_address[0]
+            with self.server.auth_lock:
+                attempts=[t for t in self.server.auth_attempts.get(ip,[]) if t>time.time()-900]
+                if len(attempts)>=8: raise APIError(429,'Too many login attempts. Try again later.')
+                self.server.auth_attempts[ip]=attempts
+            with sqlite3.connect(self.server.state_db) as db:
+                user=auth.authenticate(db,data.get('username'),data.get('password'))
+                if not user:
+                    with self.server.auth_lock: self.server.auth_attempts[ip].append(time.time())
+                    raise APIError(401,'Invalid username or password.')
+                token,csrf=auth.new_session(db,user['id'])
+            self.send_response(200)
+            self.send_header('Content-Type','application/json')
+            self.send_header('Cache-Control','no-store')
+            cookie='pishelf_session='+token+'; HttpOnly; SameSite=Strict; Path=/; Max-Age='+str(auth.SESSION_SECONDS)
+            if os.environ.get('PISHELF_COOKIE_SECURE')=='1': cookie+='; Secure'
+            self.send_header('Set-Cookie',cookie)
+            self.end_headers()
+            self.wfile.write(json.dumps({'ok':True,'role':user['role'],'csrf':csrf}).encode())
+            return
+        user=self.require_session(admin=route.startswith('/api/admin/'),mutation=True)
+        if route=='/api/auth/logout':
+            with sqlite3.connect(self.server.state_db) as db:
+                db.execute('DELETE FROM auth_sessions WHERE token_hash=?',(user['token_hash'],))
+            self.send_response(200)
+            self.send_header('Set-Cookie','pishelf_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0')
+            self.send_header('Content-Length','2')
+            self.end_headers()
+            self.wfile.write(b'{}')
+            return
+        if route=='/api/admin/users':
+            action=data.get('action')
+            with sqlite3.connect(self.server.state_db) as db:
+                if action=='create':
+                    auth.create_user(db,data.get('username'),data.get('password'),data.get('role','reader'))
+                elif action in ('disable','enable','reset-password','delete'):
+                    uid=data.get('id')
+                    if type(uid) is not int: raise APIError(400,'Invalid user ID.')
+                    row=db.execute('SELECT role,enabled FROM auth_users WHERE id=?',(uid,)).fetchone()
+                    if not row: raise APIError(404,'User not found.')
+                    if uid==user['id']: raise APIError(403,'You cannot modify your own account here.')
+                    if row[0]=='admin' and action in ('disable','delete'):
+                        count=db.execute("SELECT COUNT(*) FROM auth_users WHERE role='admin' AND enabled=1").fetchone()[0]
+                        if count<=1: raise APIError(403,'Cannot remove the last enabled administrator.')
+                    if action=='reset-password':
+                        auth.validate_password(data.get('password'))
+                        salt=secrets.token_bytes(24)
+                        db.execute('UPDATE auth_users SET salt=?,password_hash=? WHERE id=?',(salt,auth.password_hash(data['password'],salt),uid))
+                    elif action=='delete':
+                        db.execute('DELETE FROM auth_users WHERE id=?',(uid,))
+                    else:
+                        db.execute('UPDATE auth_users SET enabled=? WHERE id=?',(1 if action=='enable' else 0,uid))
+                    auth.revoke_user(db,uid)
+                else: raise APIError(400,'Invalid action.')
+            self.json_response({'ok':True})
+            return
+        raise APIError(404,'Unknown authentication route.')
+
     # do POST: handle this step of the server request or library workflow.
     def do_POST(self):
         try:
             self.accept_origin()
+            route=urlsplit(self.path).path
+            if route.startswith('/api/auth/') or route.startswith('/api/admin/'):
+                self.auth_post(route);return
+            self.require_session(admin=route!='/api/progress',mutation=True)
             if urlsplit(self.path).path == '/api/webp-cache/clear':
                 with WEBP_CACHE_LOCK:
                     cache=self.server.state_db.parent/'page-images'
@@ -424,6 +506,15 @@ class Handler(BaseHTTPRequestHandler):
         path=unquote(urlsplit(self.path).path)
         try:
             if path == '/api/health': self.json_response({'status':'ok'},head=head); return
+            if path not in ('/login.html','/login.js'):
+                user=self.require_session(admin=path in ('/admin.html','/admin.js'))
+                if path == '/api/auth/me':
+                    self.json_response({'username':user['username'],'role':user['role'],'csrf':user['csrf']},head=head);return
+                if path == '/api/admin/users':
+                    self.require_session(admin=True)
+                    with sqlite3.connect(self.server.state_db) as db:
+                        users=[dict(id=r[0],username=r[1],role=r[2],enabled=bool(r[3])) for r in db.execute('SELECT id,username,role,enabled FROM auth_users ORDER BY username')]
+                    self.json_response(users,head=head);return
             if path == '/api/webp-cache':
                 cache=self.server.state_db.parent/'page-images'
                 with WEBP_CACHE_LOCK:
@@ -715,8 +806,9 @@ def make_server(host,port,library,data,newspapers=None):
     if server.cover_dir.is_symlink(): raise ValueError('Cover cache cannot be a symlink.')
     server.cover_dir.mkdir(exist_ok=True)
     server.cover_bytes=sum(p.stat().st_size for p in server.cover_dir.glob('*.jpg'))
-    server.scan_lock=threading.Lock();server.cover_lock=threading.Lock();server.scan_time=float('-inf');server.scan_items=[];server.scan_categories=[];server.upload_lock=threading.Lock()
+    server.scan_lock=threading.Lock();server.cover_lock=threading.Lock();server.scan_time=float('-inf');server.scan_items=[];server.scan_categories=[];server.upload_lock=threading.Lock();server.auth_lock=threading.Lock();server.auth_attempts={}
     with sqlite3.connect(server.state_db) as db:
+        auth.initialize(db)
         db.execute('CREATE TABLE IF NOT EXISTS collections (id TEXT PRIMARY KEY,name TEXT NOT NULL COLLATE NOCASE UNIQUE)')
         db.execute('CREATE TABLE IF NOT EXISTS collection_items (collection_id TEXT NOT NULL,item_id TEXT NOT NULL,PRIMARY KEY(collection_id,item_id))')
         db.execute('CREATE INDEX IF NOT EXISTS collection_item_lookup ON collection_items(item_id)')
