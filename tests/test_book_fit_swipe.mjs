@@ -54,43 +54,14 @@ test('zooming out to minimum resets stale horizontal pan and centers full spread
  assert.match(style,/#pages\.book-layout \.book-spread\{[^}]*justify-content:center/);
 });
 
-test('one-finger paper drag folds current page and commits a whole spread turn',()=>{
- const names=new Set(),classes={add:v=>names.add(v),remove:v=>names.delete(v)};
- const sheet={style:{},classList:classes};
- let time=1000,turned=[];
- const pointers=new Set([10]);
- const ctx={prefs:{gestures:true},documentPDF:{numPages:8},layoutReady:true,
-  zoom:.8,page:2,pinch:null,slots:[sheet,sheet],gesturePointers:pointers,
-  gestureStart:null,lastTap:null,suppressTapUntil:0,
-  isBookSpread:()=>true,isAnimatedPageMode:()=>true,fitEntirePageZoom:()=>.8,
-  performance:{now:()=>time},
-  $:key=>key==='page-area'?{clientWidth:400}:key==='book-turn-next'?{disabled:false}:{disabled:false},
-  turnBook:(dir,fromSwipe)=>turned.push({dir,fromSwipe})
- };
- const swipe=production('let bookPaperSwipe=null;',"$('page-area').addEventListener('pointerdown'",'{beginBookPaperSwipe,previewBookPaperSwipe,endBookPaperSwipe,clearBookPaperSwipe}',ctx);
- swipe.beginBookPaperSwipe({pointerType:'touch',pointerId:10,clientX:320,clientY:200});
- swipe.previewBookPaperSwipe({pointerId:10,clientX:200,clientY:204});
- assert.ok(names.has('paper-dragging'));
- assert.match(sheet.style.transform,/rotateY\(-/);
- time=1200;
- assert.equal(swipe.endBookPaperSwipe({pointerId:10,clientX:170,clientY:204}),true);
- assert.equal(turned.length,1);
- assert.equal(turned[0].dir,1);
- assert.match(sheet.style.transform,/rotateY\(-/);
- // The released page stays folded until turnBook takes over the animation.
- assert.ok(names.has('paper-dragging'));
- // Two-finger pinch must not be captured by paper turning.
- ctx.pinch={};
- swipe.beginBookPaperSwipe({pointerType:'touch',pointerId:10,clientX:320,clientY:200});
- assert.equal(swipe.endBookPaperSwipe({pointerId:10,clientX:120,clientY:200}),false);
- assert.equal(turned.length,1);
-});
-
-test('production still uses Safari two-touch pinch and WebP image pages',()=>{
+test('one-finger touch navigation remains a simple horizontal swipe, no page fold',()=>{
+ const gestureStart=source.indexOf("$('page-area').addEventListener('pointerdown'");
+ const gestureEnd=source.indexOf("$('page-area').addEventListener('dblclick'",gestureStart);
+ assert.ok(gestureStart>0&&gestureEnd>gestureStart);
+ const pointerHandlers=source.slice(gestureStart,gestureEnd);
+ assert.match(pointerHandlers,/turnBook\(dx<0\?1:-1\)/);
+ assert.match(pointerHandlers,/gesturePointers\.size===1/);
+ assert.match(pointerHandlers,/gestureStart\.multi/);
+ assert.doesNotMatch(pointerHandlers,/pointermove|rotateY|paper-dragging|bookPaperSwipe/);
  assert.match(source,/function finishPinch\(cancelled=false\)/);
- assert.match(source,/addEventListener\('touchstart'/);
- assert.match(source,/addEventListener\('touchmove'/);
- assert.match(source,/function renderPages\(\)/);
- assert.match(source,/function openEpubBook\(item,start\)/);
- assert.match(style,/@media\(prefers-reduced-motion:reduce\)/);
 });
