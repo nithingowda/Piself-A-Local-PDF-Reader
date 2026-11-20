@@ -65,7 +65,7 @@ test('reduced-motion preference avoids all page flip animations',async()=>{
  const f=fixture({reduced:true});
  await f.turnBook(-1);
  assert.equal(f.events.some(e=>e.type==='animate'),false);
- assert.deepEqual(f.events.filter(e=>e.type==='move'),[{type:'move',page:1,direction:undefined}]);
+ assert.deepEqual(f.events.filter(e=>e.type==='move'),[{type:'move',page:1,direction:-1}]);
 });
 
 test('canceled animation does not navigate to a new spread',async()=>{
