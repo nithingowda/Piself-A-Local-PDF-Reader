@@ -201,6 +201,17 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps({'ok':True,'role':user['role'],'csrf':csrf}).encode())
             return
         user=self.require_session(admin=route.startswith('/api/admin/'),mutation=True)
+        if route=='/api/auth/change-password':
+            with sqlite3.connect(self.server.state_db) as db:
+                verified=auth.authenticate(db,user['username'],data.get('current_password'))
+                if not verified: raise APIError(403,'Current password is incorrect.')
+                auth.validate_password(data.get('new_password'))
+                salt=secrets.token_bytes(24)
+                db.execute('UPDATE auth_users SET salt=?,password_hash=? WHERE id=?',
+                           (salt,auth.password_hash(data['new_password'],salt),user['id']))
+                auth.revoke_user(db,user['id'])
+            self.json_response({'ok':True,'login_required':True})
+            return
         if route=='/api/auth/logout':
             with sqlite3.connect(self.server.state_db) as db:
                 db.execute('DELETE FROM auth_sessions WHERE token_hash=?',(user['token_hash'],))
