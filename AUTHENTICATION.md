@@ -11,21 +11,31 @@ PiShelf requires a login for all PDFs, WebP images, the library and API endpoint
 
 ## First-time setup / migration
 
-**Back up your `piself` Docker volume before upgrading.** Existing PDFs and library metadata are not deleted.
+**No Docker command is required to create the first administrator.** On a fresh install, PiShelf automatically displays its browser setup page.
 
-1. Deploy the new version with your existing `.env` and PDF folder paths:
+1. Keep PiShelf on your **trusted private LAN**, not exposed to the internet. Back up the `piself` Docker volume when upgrading an existing installation.
+2. Start PiShelf with your existing PDF folder paths:
    ```sh
    docker compose up -d --build --remove-orphans
    ```
-2. Create the first administrator **on the Raspberry Pi**, not through a public registration page:
-   ```sh
-   docker compose exec --user 1000:1000 -it pishelf python auth.py create-admin /data/progress.sqlite3
-   ```
-   Replace `1000:1000` with the `PISHELF_UID:PISHELF_GID` configured in your `.env` file, if different. Enter an admin username and a unique password of at least 12 characters. Password input is hidden. Only the first administrator can be created with this command.
-3. Open `http://YOUR_PI_IP:8098/login.html` and sign in.
-4. Click **Manage users** (administrator only), or open `/admin.html`.
+3. Open `http://YOUR_PI_IP:8098`. When no users exist, PiShelf automatically redirects to **First-time Setup**.
+4. Enter an administrator username, a unique password of at least 12 characters, and confirm the password.
+5. Click **Create administrator**, then sign in at the login page.
+6. Use **Manage users** or `/admin.html` to add normal readers or other administrators.
 
-If you restart before creating an admin, the library will show the login screen and remain locked until you run the command. There is no default password or public self-registration.
+**Security note:** The first administrator can be created only once, from a private-network client. Whoever completes first-time setup becomes the administrator. **Do this immediately before allowing other people onto the PiShelf network.** Do not expose PiShelf via an internet-facing reverse proxy before setup; proxies can mask the original client address.
+
+After any user account exists, browser setup is permanently disabled for that database. A fresh database or deleted Docker data volume is considered a new installation.
+
+## Optional emergency bootstrap
+
+The original terminal bootstrap command remains available for an empty database if the browser setup page cannot be reached:
+
+```sh
+docker compose exec --user 1000:1000 -it pishelf python auth.py create-admin /data/progress.sqlite3
+```
+
+Adjust UID:GID to match your `.env` if different. **This command is not part of normal installation.**
 
 ## Manage users
 
