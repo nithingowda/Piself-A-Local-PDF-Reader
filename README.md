@@ -202,6 +202,7 @@ The reader toolbar provides:
 
 - Previous/next page and direct page-number entry.
 - Continuous scrolling, single-page mode, or a **Two-page book** spread (cover alone, then pages 2–3, 4–5, etc.).
+- Realistic preloaded paper-turn animation **only in Two-page book mode**. Single-page mode changes one page instantly without a folding animation.
 - Zoom in, zoom out, and fit width.
 - Clockwise page rotation and fullscreen.
 - Page bookmarks and a bookmark jump menu.

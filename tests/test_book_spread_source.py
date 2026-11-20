@@ -24,6 +24,8 @@ class BookSpreadTests(unittest.TestCase):
   self.assertIn("if(isBookSpread())for(const slot of slots)enqueue(slot)",JS)
  def test_navigation_and_transitions(self):
   self.assertIn('async function turnBook(direction,fromSwipe=null)',JS)
+  self.assertIn('function isAnimatedPageMode(){return isBookSpread();}',JS)
+  self.assertNotIn('prepareSinglePageUnderlay',JS)
   self.assertIn("$('book-turn-prev').onclick=()=>turnBook(-1)",JS)
   self.assertIn("$('book-turn-next').onclick=()=>turnBook(1)",JS)
   self.assertIn("turnBook(dx<0?1:-1)",JS)
