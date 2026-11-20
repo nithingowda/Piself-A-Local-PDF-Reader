@@ -12,7 +12,8 @@ class AuthenticationSourceTests(unittest.TestCase):
         self.assertIn("user=self.require_session(admin=path in ('/admin.html','/admin.js'))",SERVER)
         self.assertIn("if path not in ('/login.html','/login.js'):",SERVER)
     def test_all_non_auth_mutations_admin_only(self):
-        self.assertIn('self.require_session(admin=True,mutation=True)',SERVER)
+        self.assertIn("self.require_session(admin=route!='/api/progress',mutation=True)",SERVER)
+        self.assertNotIn("if(signedInUser?.role!=='admin')",JS)
     def test_passwords_hashed_and_sessions_expire(self):
         self.assertIn('hashlib.pbkdf2_hmac',AUTH)
         self.assertIn('ITERATIONS = 600_000',AUTH)
