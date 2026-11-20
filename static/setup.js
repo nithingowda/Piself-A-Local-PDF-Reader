@@ -13,7 +13,7 @@ document.getElementById('setup').addEventListener('submit',async event=>{
  if(password!==confirm){error.textContent='Passwords do not match.';return;}
  button.disabled=true;error.textContent='';
  try{
-  const r=await fetch('/api/auth/setup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,password})});
+  const r=await fetch('/api/auth/setup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,password,paths:Object.fromEntries([...new FormData(event.target)].filter(([key,value])=>['magazines','newspapers','books'].includes(key)&&value.trim()))})});
   const result=await r.json();
   if(!r.ok)throw Error(result.error||'Setup failed.');
   location.replace('/login.html');
