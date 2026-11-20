@@ -27,6 +27,16 @@ class EpubClientChecks(unittest.TestCase):
   self.assertIn("book.locations.generate(1600)",EPUB)
   self.assertIn("async function openEpubBook(item,start)",JS)
   self.assertIn("function closeEpubBook(",JS)
+ def test_upload_xhr_sends_csrf(self):
+  # Ensure the header is attached to the actual XMLHttpRequest upload,
+  # rather than existing only in the JSON API helper.
+  start=JS.index('function uploadFile(')
+  end=JS.index("$('upload-cancel').onclick",start)
+  upload=JS[start:end]
+  self.assertIn("xhr.setRequestHeader('X-PiShelf-CSRF',signedInUser?.csrf||'')",upload)
+  self.assertIn("xhr.setRequestHeader('Content-Type'",upload)
+  self.assertIn("location.replace('/login.html')",upload)
+
  def test_drmless_and_formats(self):
   self.assertIn("validate_epub(temporary)",SERVER)
   self.assertIn("fmt=='epub' and source!='books'",SERVER)

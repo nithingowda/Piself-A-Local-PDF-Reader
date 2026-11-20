@@ -99,6 +99,28 @@ class BookEpubTests(unittest.TestCase):
         status,_,_=self.request('POST','/api/upload?source=books&filename=Book.epub',body,'application/epub+zip',csrf=True)
         self.assertEqual(status,409)
 
+    def test_pdf_upload_requires_csrf_and_accepts_valid_token(self):
+        # The browser upload XHR must send the session-specific security token.
+        payload=b'%PDF-1.4\\n1 0 obj\\n<<>>\\nendobj\\n%%EOF'
+        path='/api/upload?source=books&filename=SecurityTest.pdf'
+        status,data,_=self.request('POST',path,payload,'application/pdf')
+        self.assertEqual(status,403)
+        self.assertEqual(data.get('error'),'Invalid security token.')
+        self.assertFalse((self.books/'SecurityTest.pdf').exists())
+
+        status,data,_=self.request('POST',path,payload,'application/pdf',csrf=True)
+        self.assertEqual(status,201,data)
+        self.assertTrue((self.books/'SecurityTest.pdf').exists())
+
+    def test_pdf_upload_rejects_invalid_csrf_token(self):
+        payload=b'%PDF-1.4\\n%%EOF'
+        path='/api/upload?source=magazines&filename=WrongToken.pdf'
+        status,data,_=self.request('POST',path,payload,'application/pdf',
+                                   headers={'X-PiShelf-CSRF':'not-the-session-token'})
+        self.assertEqual(status,403)
+        self.assertEqual(data.get('error'),'Invalid security token.')
+        self.assertFalse((self.magazines/'WrongToken.pdf').exists())
+
     def test_invalid_epub_archive_rejected(self):
         (self.books/'bad.epub').write_bytes(example_epub(bad_name=True))
         with self.assertRaises(APIError):
