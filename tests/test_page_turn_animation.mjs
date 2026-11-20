@@ -4,7 +4,7 @@ import test from 'node:test';
 
 const js=readFileSync(new URL('../static/app.js',import.meta.url),'utf8');
 const css=readFileSync(new URL('../static/style.css',import.meta.url),'utf8');
-const start=js.indexOf('let activePageTurn=null;');
+const start=js.indexOf('const PAPER_TURN_DURATION_MS=');
 const end=js.indexOf('/** close Reader:',start);
 assert.ok(start>=0&&end>start,'Expected page-turn animation implementation');
 
