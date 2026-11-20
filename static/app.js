@@ -833,6 +833,11 @@ function finishPinch(cancelled=false){
  const after=slot.getBoundingClientRect();
  area.scrollLeft+=after.left+fx*after.width-state.x;
  area.scrollTop+=after.top+fy*after.height-state.y;
+ // At the minimum pinch scale the entire book spread fits. Let CSS center
+ // both pages instead of keeping stale one-page horizontal scroll offsets.
+ if(isBookSpread()&&zoom<=minimum+.01){
+  area.scrollLeft=0;area.scrollTop=0;
+ }
  // Keep the zoomed page covering the viewport when it is wider than it.
  const view=area.getBoundingClientRect(),rect=slot.getBoundingClientRect();
  if(rect.width>=view.width){
