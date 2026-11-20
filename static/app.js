@@ -279,7 +279,8 @@ async function renderPages(){
   try{
    // Prefer cached magazine images; retain PDF.js rendering as a fallback.
    if(current?.id){
-    const img=document.createElement('img');
+    const prefetched=takeDecodedPreview(n);
+    const img=prefetched||document.createElement('img');
     img.alt='Magazine page '+n;
     img.decoding='async';
     img.style.cssText='display:block;width:100%;height:100%;object-fit:contain';
@@ -287,9 +288,11 @@ async function renderPages(){
     const url='/api/page-image/'+encodeURIComponent(current.id)+'/'+n+'?width='+width;
     const previewUrl='/api/page-image/'+encodeURIComponent(current.id)+'/'+n+'?width=960';
     try{
-     await new Promise((resolve,reject)=>{
-      img.onload=resolve;img.onerror=reject;img.src=width>960?previewUrl:url;
-     });
+     if(!prefetched){
+      await new Promise((resolve,reject)=>{
+       img.onload=resolve;img.onerror=reject;img.src=width>960?previewUrl:url;
+      });
+     }
      if(g!==generation||epoch!==layoutEpoch||!slot.isConnected)continue;
      slot.replaceChildren(img);slot.dataset.ready='yes';slot.dataset.queued='no';
      if(width>960){
@@ -342,11 +345,9 @@ async function renderPages(){
 /** trim Canvases: Manage PDF page rendering and canvas lifecycle. */
 // Keep only nearby magazine images decoded in Safari; page navigation preloads
 // the next two pages and the previous page without allocating large canvases.
+// Decoded 960px previews for adjacent pages. Each cache entry owns a
+// settleable promise, so navigating away cannot leave a page turn hanging.
 let imagePrefetches=new Map();
-// === Reader image lifecycle =================================================
-// Sharp WebP upgrades are temporary network/decoded-image allocations.
-// Cancel them when a page leaves the viewport, the layout changes or the
-// reader closes. This avoids Safari retaining offscreen full-resolution images.
 const pendingSharpImages=new Map();
 function cancelSharpImage(slot){
  const image=pendingSharpImages.get(slot);
@@ -357,29 +358,67 @@ function cancelSharpImage(slot){
 function cancelAllSharpImages(){
  for(const slot of pendingSharpImages.keys())cancelSharpImage(slot);
 }
-// === Neighbor prefetch ======================================================
-// Keep only nearby images. Avoid 2800px speculative requests on mobile.
+function discardDecodedPreview(n,entry){
+ if(imagePrefetches.get(n)===entry)imagePrefetches.delete(n);
+ entry.cancelled=true;entry.img.onload=null;entry.img.onerror=null;
+ if(!entry.transferred)entry.img.src='';
+ entry.finish(false);
+}
+function ensureDecodedPreview(n){
+ if(!documentPDF||!current?.id||n<1||n>documentPDF.numPages)return Promise.resolve(false);
+ const existing=imagePrefetches.get(n);
+ if(existing?.id===current.id&&!existing.cancelled)return existing.promise;
+ if(existing)discardDecodedPreview(n,existing);
+ const img=new Image();img.decoding='async';
+ let resolvePromise;
+ const entry={id:current.id,img,ready:false,cancelled:false,transferred:false,settled:false,finish:null,promise:null};
+ entry.promise=new Promise(resolve=>{resolvePromise=resolve;});
+ entry.finish=ok=>{if(!entry.settled){entry.settled=true;resolvePromise(ok);}};
+ imagePrefetches.set(n,entry);
+ img.onload=async()=>{
+  try{if(typeof img.decode==='function')await img.decode();}catch{}
+  if(entry.cancelled)return;
+  entry.ready=img.naturalWidth>0&&img.naturalHeight>0;
+  entry.finish(entry.ready);
+ };
+ img.onerror=()=>{
+  if(entry.cancelled)return;
+  entry.finish(false);
+  if(imagePrefetches.get(n)===entry)imagePrefetches.delete(n);
+ };
+ img.src='/api/page-image/'+encodeURIComponent(entry.id)+'/'+n+'?width=960';
+ return entry.promise;
+}
+// Transfer the decoded original, instead of creating another image whose
+// onload would delay the newly turned page.
+function takeDecodedPreview(n){
+ const entry=imagePrefetches.get(n);
+ if(!entry||!entry.ready||entry.id!==current?.id)return null;
+ imagePrefetches.delete(n);
+ entry.transferred=true;entry.img.onload=null;entry.img.onerror=null;
+ return entry.img;
+}
+function neighborPreviewPages(){
+ if(!documentPDF)return [];
+ const count=documentPDF.numPages;
+ if(isBookSpread()){
+  const start=spreadStart(page),previous=start<=2?1:start-2;
+  const next=start===1?2:start+2;
+  return [...new Set([
+   ...(previous<start?spreadPages(previous):[]),
+   ...(next<=count?spreadPages(next):[])
+  ].filter(n=>n>=1&&n<=count))];
+ }
+ return [page-2,page-1,page+1,page+2].filter(n=>n>=1&&n<=count);
+}
 function preloadMagazineNeighbors(){
  if(!documentPDF||!current?.id)return;
- // Never prefetch 2800px zoom images; they are expensive on iPhone Safari.
- const width=zoom>0.85?1600:960;
- const wanted=new Set([page-1,page+1,page+2].filter(n=>n>=1&&n<=documentPDF.numPages));
- for(const [n,img] of imagePrefetches){
-  if(!wanted.has(n)){img.onload=null;img.onerror=null;img.src='';imagePrefetches.delete(n);}
- }
- for(const n of wanted){
-  if(imagePrefetches.has(n))continue;
-  // The current page is rendered by renderPages; prefetch neighbors only.
-  const img=new Image();
-  img.decoding='async';
-  img.onload=()=>{if(imagePrefetches.get(n)===img){img.onload=null;img.onerror=null;}};
-  img.onerror=()=>{if(imagePrefetches.get(n)===img)imagePrefetches.delete(n);};
-  imagePrefetches.set(n,img);
-  img.src='/api/page-image/'+encodeURIComponent(current.id)+'/'+n+'?width='+width;
- }
+ const wanted=new Set(neighborPreviewPages());
+ for(const [n,entry] of imagePrefetches)if(!wanted.has(n))discardDecodedPreview(n,entry);
+ for(const n of wanted)void ensureDecodedPreview(n);
 }
 function clearMagazinePrefetches(){
- for(const img of imagePrefetches.values()){img.onload=null;img.onerror=null;img.src='';}
+ for(const [n,entry] of imagePrefetches)discardDecodedPreview(n,entry);
  imagePrefetches.clear();
 }
 function trimCanvases(){if(pinch||Math.abs(zoom-cssZoomBase)>.01)return;const area=$('page-area').getBoundingClientRect();for(const slot of renderedSlots){const rect=slot.getBoundingClientRect();if(Math.abs(+slot.dataset.page-page)>2&&(rect.bottom<area.top||rect.top>area.bottom)){cancelSharpImage(slot);for(const c of slot.querySelectorAll('canvas')){c.width=0;c.height=0;}for(const img of slot.querySelectorAll('img')){img.src='';}slot.replaceChildren(el('span','page-placeholder','Page '+slot.dataset.page));slot.dataset.ready='no';renderedSlots.delete(slot);}}}
