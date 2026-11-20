@@ -41,7 +41,6 @@ async function api(path,data){
 }
 /** persist: Support the PiShelf reader or library interface. */
 function persist(id,patch){
- if(signedInUser?.role!=='admin')return Promise.resolve();
  saved[id]={...saved[id],...patch};if('page' in patch)saved[id].lastRead=Date.now()/1000;
  pendingSaves.set(id,{...pendingSaves.get(id),...patch});
  saveChain=saveChain.catch(()=>{}).then(async()=>{
