@@ -47,7 +47,7 @@ test('button page turn finishes paper fold before loading next two-page spread',
  assert.equal(f.events[0].type,'animate');
  assert.equal(f.events[0].options.fill,'forwards');
  assert.equal(f.events.some(e=>e.type==='move'),false,'must not swap PDF pages mid animation');
- assert.equal(f.events[0].frames.at(-1).transform.includes('-175deg'),true);
+ assert.equal(f.events[0].frames.at(-1).transform.includes('-178deg'),true);
  assert.ok(f.classes.has('paper-turning'));
  f.finish();await pending;
  assert.ok(!f.classes.has('paper-turning'));
@@ -59,7 +59,7 @@ test('swipe release continues from dragged paper angle without snapping back',as
  f.sheet.style.transform='perspective(1000px) rotateY(-65deg)';
  const p=f.turnBook(1,{sheet:f.sheet,degrees:-65});
  assert.equal(f.events[0].frames[0].transform.includes('-65deg'),true);
- assert.equal(f.events[0].frames.at(-1).transform.includes('-175deg'),true);
+ assert.equal(f.events[0].frames.at(-1).transform.includes('-178deg'),true);
  f.finish();await p;
  assert.deepEqual(f.events.filter(e=>e.type==='move').map(e=>e.page),[4]);
 });
