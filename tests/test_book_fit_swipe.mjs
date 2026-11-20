@@ -54,7 +54,7 @@ test('zooming out to minimum resets stale horizontal pan and centers full spread
  assert.match(style,/#pages\.book-layout \.book-spread\{[^}]*justify-content:center/);
 });
 
-test('one-finger touch navigation remains a simple horizontal swipe, no page fold',()=>{
+test('one-finger touch navigation tracks the fold and retains fallback navigation',()=>{
  const gestureStart=source.indexOf("$('page-area').addEventListener('pointerdown'");
  const gestureEnd=source.indexOf("$('page-area').addEventListener('dblclick'",gestureStart);
  assert.ok(gestureStart>0&&gestureEnd>gestureStart);
@@ -62,6 +62,7 @@ test('one-finger touch navigation remains a simple horizontal swipe, no page fol
  assert.match(pointerHandlers,/turnBook\(dx<0\?1:-1\)/);
  assert.match(pointerHandlers,/gesturePointers\.size===1/);
  assert.match(pointerHandlers,/gestureStart\.multi/);
- assert.doesNotMatch(pointerHandlers,/pointermove|rotateY|paper-dragging|bookPaperSwipe/);
+ assert.match(pointerHandlers,/pointermove/);
+ assert.match(pointerHandlers,/settleCurl\(curl.progress/);
  assert.match(source,/function finishPinch\(cancelled=false\)/);
 });
