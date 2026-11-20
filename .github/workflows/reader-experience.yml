@@ -21,6 +21,8 @@ jobs:
         run: node --test tests/test_zoom_center.mjs
       - name: Two-page book spread logic
         run: node --test tests/test_book_spread.mjs
+      - name: Book fit and swipe interaction tests
+        run: node --test tests/test_book_fit_swipe.mjs
       - name: Book spread source checks
         run: python -m unittest discover -s tests -p 'test_book_spread_source.py' -v
       - name: Reader regression tests

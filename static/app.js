@@ -218,21 +218,42 @@ function isBookSpread(){return $('view-mode').value==='book';}
 /** A book's first PDF page is its cover; subsequent spreads are 2–3, 4–5, etc. */
 function spreadStart(n){const clamped=Math.max(1,Math.min(documentPDF?.numPages||1,Math.floor(n)||1));return clamped===1?1:2+2*Math.floor((clamped-2)/2);}
 function spreadPages(n){const first=spreadStart(n),last=documentPDF?.numPages||1;return first===1?[1]:[first,first+1].filter(p=>p<=last);}
+function bookPageBaseWidth(){
+ const available=Math.max(200,$('page-area').clientWidth-40);
+ return Math.max(90,Math.min(550,(available-12)/2));
+}
 function pageWidth(){
  const available=Math.max(200,$('page-area').clientWidth-40);
- const base=isBookSpread()?Math.max(90,Math.min(550,(available-12)/2)):Math.min(available,1100);
- return base*zoom;
+ return (isBookSpread()?bookPageBaseWidth():Math.min(available,1100))*zoom;
 }
-/** Initial zoom that fits the complete PDF page inside the reader viewport. */
+/** Fit the *entire* current book spread rather than measuring only one page.
+ * Width includes the gutter and padding. Height accounts for both aspect ratios.
+ * Page 1 is a single cover; later spreads contain at most two PDF pages.
+ */
 function fitEntirePageZoom(n){
+ const area=$('page-area'),swapped=rotation%180!==0;
+ if(isBookSpread()){
+  const pages=spreadPages(n),base=bookPageBaseWidth();
+  const compact=matchMedia('(max-width:600px)').matches;
+  const gap=compact?4:8,paddingX=compact?10:32,paddingY=compact?16:36;
+  const maxHeight=Math.max(...pages.map(p=>{
+   const d=dimensions.get(p)||dimensions.get(1)||{width:420,height:580};
+   const w=swapped?d.height:d.width,h=swapped?d.width:d.height;
+   return base*h/Math.max(1,w);
+  }));
+  const availableWidth=Math.max(80,area.clientWidth-12);
+  const availableHeight=Math.max(80,area.clientHeight-12);
+  const widthScale=(availableWidth-paddingX-gap*(pages.length-1))/(base*pages.length);
+  const heightScale=(availableHeight-paddingY)/maxHeight;
+  return Math.max(.1,Math.min(widthScale,heightScale));
+ }
  const d=dimensions.get(n)||dimensions.get(1);
  if(!d)return 1;
- const area=$('page-area'),swapped=rotation%180!==0;
  const width=swapped?d.height:d.width,height=swapped?d.width:d.height;
  const availableWidth=Math.max(100,area.clientWidth-32);
  const availableHeight=Math.max(100,area.clientHeight-32);
- const baseWidth=isBookSpread()?Math.max(90,Math.min(550,(Math.max(200,area.clientWidth-40)-12)/2)):Math.min(Math.max(200,area.clientWidth-40),1100);
- return Math.max(.1,Math.min(availableWidth/(baseWidth*(isBookSpread()?2:1)),availableHeight*width/(baseWidth*height)));
+ const baseWidth=Math.min(Math.max(200,area.clientWidth-40),1100);
+ return Math.max(.1,Math.min(availableWidth/baseWidth,availableHeight*width/(baseWidth*height)));
 }
 /** size Slot: Support the PiShelf reader or library interface. */
 function sizeSlot(slot,n){const d=dimensions.get(n)||dimensions.get(1)||{width:420,height:580};const swapped=rotation%180!==0;const w=swapped?d.height:d.width,h=swapped?d.width:d.height;slot.style.width=pageWidth()+'px';slot.style.height=pageWidth()*h/w+'px';}
@@ -568,12 +589,17 @@ async function openMagazine(item,start){
 function move(n,turn=0){
  if(!documentPDF)return;
  const oldPage=page;
+ const wasAtFit=isBookSpread()&&Math.abs(zoom-fitEntirePageZoom(oldPage))<.04;
  const target=Math.max(1,Math.min(documentPDF.numPages,Number(n)||1));
  page=isBookSpread()?spreadStart(target):target;
  if(page===oldPage)return;
+ // Each spread can have different page dimensions. Maintain full-spread fit
+ // when navigating from the cover or another fitted pair.
+ if(wasAtFit)zoom=fitEntirePageZoom(page);
  remember();updatePageUI();preloadMagazineNeighbors();
  if(isBookSpread()){
   rebuild().then(()=>{
+   if(wasAtFit){$('page-area').scrollLeft=0;$('page-area').scrollTop=0;}
    if(!documentPDF||!isBookSpread()||!turn||!prefs.motion||matchMedia('(prefers-reduced-motion: reduce)').matches)return;
    const sheet=$('pages').querySelector('.book-spread');
    sheet?.classList.add(turn>0?'turn-forward':'turn-backward');
@@ -600,7 +626,7 @@ async function closeReader({fromHistory=false}={}){
   // Back triggers popstate and returns to the existing library history entry.
   history.back();
  }
- clearMagazinePrefetches();cancelAllSharpImages();resetPinch();clearTimeout(scrollTimer);clearTimeout(immersiveTimer);remember();++generation;++layoutEpoch;layoutReady=false;pageObserver?.disconnect();renderQueue=[];const oldDoc=documentPDF;documentPDF=null;if(oldDoc?.destroy)oldDoc.destroy().catch(()=>{});$('reader').hidden=true;document.body.classList.remove('reader-open');$('library').hidden=false;$('pages').replaceChildren();slots=[];renderedSlots.clear();if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});drawLibrary();refresh(true);}
+ clearMagazinePrefetches();cancelAllSharpImages();clearBookPaperSwipe();resetPinch();clearTimeout(scrollTimer);clearTimeout(immersiveTimer);remember();++generation;++layoutEpoch;layoutReady=false;pageObserver?.disconnect();renderQueue=[];const oldDoc=documentPDF;documentPDF=null;if(oldDoc?.destroy)oldDoc.destroy().catch(()=>{});$('reader').hidden=true;document.body.classList.remove('reader-open');$('library').hidden=false;$('pages').replaceChildren();slots=[];renderedSlots.clear();if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});drawLibrary();refresh(true);}
 // Thumbnail browser: load only the visible part of a bounded thumbnail list.
 // === Thumbnail navigator ====================================================
 // 60 pages per batch; IntersectionObserver loads only visible thumbnails.
@@ -673,33 +699,44 @@ async function zoomWithControls(targetZoom){
  if(!documentPDF||pinch||!layoutReady)return;
  const area=$('page-area'),view=area.getBoundingClientRect();
  const centerX=view.left+view.width/2,centerY=view.top+view.height/2;
- const slot=slots.find(candidate=>{
-  const rect=candidate.getBoundingClientRect();
-  return rect.top<=centerY&&rect.bottom>=centerY;
- })||slots.find(candidate=>Number(candidate.dataset.page)===page);
- if(!slot)return;
- const rect=slot.getBoundingClientRect();
+ const spreadMode=isBookSpread();
+ const anchorElement=spreadMode
+  ?$('pages').querySelector('.book-spread')
+  :slots.find(candidate=>{
+    const rect=candidate.getBoundingClientRect();
+    return rect.top<=centerY&&rect.bottom>=centerY;
+   })||slots.find(candidate=>Number(candidate.dataset.page)===page);
+ if(!anchorElement)return;
+ const rect=anchorElement.getBoundingClientRect();
  const anchor={
-  number:Number(slot.dataset.page),
+  number:spreadMode?spreadStart(page):Number(anchorElement.dataset.page),
   x:Math.max(0,Math.min(1,(centerX-rect.left)/Math.max(1,rect.width))),
   y:Math.max(0,Math.min(1,(centerY-rect.top)/Math.max(1,rect.height)))
  };
- const next=Math.max(fitEntirePageZoom(anchor.number),Math.min(3,Number(targetZoom)));
- if(!Number.isFinite(next)||Math.abs(next-zoom)<0.001)return;
+ const minimum=fitEntirePageZoom(anchor.number);
+ const next=Math.max(minimum,Math.min(3,Number(targetZoom)));
+ if(!Number.isFinite(next))return;
+ const fits=spreadMode&&next<=minimum+0.001;
+ // Re-center even when the user is already at minimum and has panned sideways.
+ if(Math.abs(next-zoom)<0.001&&!fits)return;
  const original=documentPDF,g=generation;
- page=anchor.number;
- zoom=next;
- // Ignore scroll notifications while the page layout is replaced.
+ page=anchor.number;zoom=next;
  pinchScrollLockUntil=performance.now()+500;
  await rebuild();
  if(g!==generation||documentPDF!==original)return;
- const updated=slots.find(candidate=>Number(candidate.dataset.page)===anchor.number);
- if(!updated)return;
- const changed=updated.getBoundingClientRect();
- area.scrollLeft+=changed.left+changed.width*anchor.x-centerX;
- area.scrollTop+=changed.top+changed.height*anchor.y-centerY;
- updatePageUI();
- remember();
+ if(fits){
+  // The spread is CSS-centered when it fits; scroll offsets must not override it.
+  area.scrollLeft=0;area.scrollTop=0;
+ }else{
+  const updated=spreadMode?$('pages').querySelector('.book-spread')
+   :slots.find(candidate=>Number(candidate.dataset.page)===anchor.number);
+  if(updated){
+   const changed=updated.getBoundingClientRect();
+   area.scrollLeft+=changed.left+changed.width*anchor.x-centerX;
+   area.scrollTop+=changed.top+changed.height*anchor.y-centerY;
+  }
+ }
+ updatePageUI();remember();
 }
 $('minus').onclick=()=>zoomWithControls(zoom-.25);
 $('plus').onclick=()=>zoomWithControls(zoom+.25);
@@ -796,6 +833,11 @@ function finishPinch(cancelled=false){
  const after=slot.getBoundingClientRect();
  area.scrollLeft+=after.left+fx*after.width-state.x;
  area.scrollTop+=after.top+fy*after.height-state.y;
+ // At the minimum pinch scale the entire book spread fits. Let CSS center
+ // both pages instead of keeping stale one-page horizontal scroll offsets.
+ if(isBookSpread()&&zoom<=minimum+.01){
+  area.scrollLeft=0;area.scrollTop=0;
+ }
  // Keep the zoomed page covering the viewport when it is wider than it.
  const view=area.getBoundingClientRect(),rect=slot.getBoundingClientRect();
  if(rect.width>=view.width){
@@ -813,6 +855,7 @@ function finishPinch(cancelled=false){
 }
 $('page-area').addEventListener('touchstart',e=>{
  if(e.touches.length!==2||!prefs.gestures||!documentPDF||!layoutReady)return;
+ clearBookPaperSwipe();
  e.preventDefault();lastTap=null;gestureStart=null;clearTimeout(scrollTimer);
  const point=touchPair(e.touches),area=$('page-area'),rect=area.getBoundingClientRect();
  const slot=slots.find(s=>{const r=s.getBoundingClientRect();return point.x>=r.left&&point.x<=r.right&&point.y>=r.top&&point.y<=r.bottom;})||slots.find(s=>+s.dataset.page===page);
@@ -840,13 +883,86 @@ $('page-area').addEventListener('touchmove',e=>{
 },{passive:false});
 $('page-area').addEventListener('touchend',e=>{if(pinch&&e.touches.length<2){e.preventDefault();finishPinch();}},{passive:false});
 $('page-area').addEventListener('touchcancel',()=>finishPinch(true),{passive:true});
-$('page-area').addEventListener('pointerdown',e=>{if(e.pointerType!=='touch')return;lastTouchTime=performance.now();gesturePointers.add(e.pointerId);if(gesturePointers.size===1)gestureStart={x:e.clientX,y:e.clientY,time:performance.now(),multi:false};else if(gestureStart)gestureStart.multi=true;},{passive:true});
-$('page-area').addEventListener('pointercancel',e=>{gesturePointers.delete(e.pointerId);gestureStart=null;lastTap=null;},{passive:true});
+// The paper turn preview uses an existing displayed WebP page, not a third
+// render. Keep it separate from iOS Safari's two-touch pinch state machine.
+let bookPaperSwipe=null;
+function clearBookPaperSwipe(){
+ if(!bookPaperSwipe)return;
+ const sheet=bookPaperSwipe.sheet;
+ if(sheet){
+  sheet.classList.remove('paper-dragging');
+  sheet.style.transform='';sheet.style.transformOrigin='';sheet.style.willChange='';
+ }
+ bookPaperSwipe=null;
+}
+function beginBookPaperSwipe(e){
+ if(e.pointerType!=='touch'||!prefs.gestures||!documentPDF||!isBookSpread()||pinch||!layoutReady)return;
+ if(gesturePointers.size!==1||Math.abs(zoom-fitEntirePageZoom(page))>.04)return;
+ bookPaperSwipe={id:e.pointerId,x:e.clientX,y:e.clientY,time:performance.now(),direction:0,sheet:null,dragging:false};
+}
+function previewBookPaperSwipe(e){
+ const state=bookPaperSwipe;
+ if(!state||state.id!==e.pointerId||pinch||gesturePointers.size!==1)return;
+ const dx=e.clientX-state.x,dy=e.clientY-state.y;
+ if(!state.dragging&&(Math.abs(dx)<14||Math.abs(dx)<Math.abs(dy)*1.35))return;
+ const direction=dx<0?1:-1;
+ if((direction>0&&$('book-turn-next').disabled)||(direction<0&&$('book-turn-prev').disabled)){
+  clearBookPaperSwipe();return;
+ }
+ if(direction!==state.direction){
+  if(state.sheet){state.sheet.classList.remove('paper-dragging');state.sheet.style.transform='';}
+  state.direction=direction;
+  state.sheet=direction>0?slots[slots.length-1]:slots[0];
+ }
+ const sheet=state.sheet;
+ if(!sheet)return;
+ state.dragging=true;
+ const travel=Math.min(1,Math.abs(dx)/Math.max(100,$('page-area').clientWidth*.55));
+ const degrees=Math.round(travel*135);
+ sheet.classList.add('paper-dragging');
+ sheet.style.transformOrigin=direction>0?'left center':'right center';
+ sheet.style.transform='perspective(1000px) rotateY('+(direction>0?-degrees:degrees)+'deg)';
+}
+function endBookPaperSwipe(e){
+ const state=bookPaperSwipe;
+ if(!state||state.id!==e.pointerId)return false;
+ const dx=e.clientX-state.x,dy=e.clientY-state.y;
+ const turn=state.dragging&&Math.abs(dx)>Math.max(60,$('page-area').clientWidth*.16)
+  &&Math.abs(dx)>Math.abs(dy)*1.35&&performance.now()-state.time<1600;
+ const direction=state.direction;
+ clearBookPaperSwipe();
+ if(!state.dragging)return false;
+ gestureStart=null;lastTap=null;suppressTapUntil=performance.now()+450;
+ if(turn)turnBook(direction);
+ return true;
+}
+$('page-area').addEventListener('pointerdown',e=>{
+ if(e.pointerType!=='touch')return;
+ lastTouchTime=performance.now();gesturePointers.add(e.pointerId);
+ if(gesturePointers.size===1){
+  gestureStart={x:e.clientX,y:e.clientY,time:performance.now(),multi:false};
+  beginBookPaperSwipe(e);
+ }else{
+  clearBookPaperSwipe();
+  if(gestureStart)gestureStart.multi=true;
+ }
+},{passive:true});
+$('page-area').addEventListener('pointermove',previewBookPaperSwipe,{passive:true});
+$('page-area').addEventListener('pointercancel',e=>{
+ gesturePointers.delete(e.pointerId);clearBookPaperSwipe();gestureStart=null;lastTap=null;
+},{passive:true});
 $('page-area').addEventListener('pointerup',e=>{
- gesturePointers.delete(e.pointerId);if(e.pointerType!=='touch'||pinch||performance.now()<suppressTapUntil||!gestureStart||gestureStart.multi||gesturePointers.size)return;
- const start=gestureStart;gestureStart=null;const dx=e.clientX-start.x,dy=e.clientY-start.y,elapsed=performance.now()-start.time;
- if(prefs.gestures&&documentPDF&&zoom<=1&&Math.abs(dx)>70&&Math.abs(dx)>Math.abs(dy)*2&&elapsed<700){turnBook(dx<0?1:-1);lastTap=null;return;}
- if(Math.hypot(dx,dy)<18&&elapsed<300){const now=performance.now();if(lastTap&&now-lastTap.time<320&&Math.hypot(e.clientX-lastTap.x,e.clientY-lastTap.y)<35){toggleReaderControls();lastTap=null;}else lastTap={time:now,x:e.clientX,y:e.clientY};}else lastTap=null;
+ gesturePointers.delete(e.pointerId);
+ if(e.pointerType==='touch'&&endBookPaperSwipe(e))return;
+ if(e.pointerType!=='touch'||pinch||performance.now()<suppressTapUntil||!gestureStart||gestureStart.multi||gesturePointers.size)return;
+ const start=gestureStart;gestureStart=null;
+ const dx=e.clientX-start.x,dy=e.clientY-start.y,elapsed=performance.now()-start.time;
+ if(prefs.gestures&&documentPDF&&zoom<=fitEntirePageZoom(page)+.04&&Math.abs(dx)>70&&Math.abs(dx)>Math.abs(dy)*2&&elapsed<700){turnBook(dx<0?1:-1);lastTap=null;return;}
+ if(Math.hypot(dx,dy)<18&&elapsed<300){
+  const now=performance.now();
+  if(lastTap&&now-lastTap.time<320&&Math.hypot(e.clientX-lastTap.x,e.clientY-lastTap.y)<35){toggleReaderControls();lastTap=null;}
+  else lastTap={time:now,x:e.clientX,y:e.clientY};
+ }else lastTap=null;
 },{passive:true});
 $('page-area').addEventListener('dblclick',e=>{if(performance.now()-lastTouchTime>600){e.preventDefault();toggleReaderControls();}});
 $('reader-accessibility-controls').onclick=toggleReaderControls;
