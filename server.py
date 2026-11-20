@@ -713,6 +713,8 @@ class Handler(BaseHTTPRequestHandler):
                         chunk=f.read(min(65536,remaining))
                         if not chunk: break
                         self.wfile.write(chunk);remaining-=len(chunk)
+        except APIError as error: self.json_response({'error':error.message},error.status,head=head)
+        except (ValueError,KeyError,TypeError): self.json_response({'error':'Invalid request.'},400,head=head)
         except (BrokenPipeError,ConnectionResetError): pass
         except (OSError,sqlite3.Error): self.send_error(500,'Unable to read library storage.')
 
