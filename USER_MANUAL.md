@@ -117,7 +117,7 @@ Open a magazine cover. PiShelf resumes at the last saved page, if available.
 - **Pages:** open the thumbnail navigator; move between 60-page ranges and choose a page.
 - **Page number / arrows:** jump to a page or go backward/forward. In Book mode, arrows and swipes turn a two-page spread; entering a page number opens the spread containing that page.
 - **Continuous / Single page / Two-page book:** choose the PDF reading layout.
-  Single page has normal instant page changes; only Two-page Book mode animates the preloaded paper turning. Book mode shows cover page 1 alone and pairs pages 2–3, 4–5, etc.; select it on a tablet/desktop for comfortable side-by-side reading, or opt in on a phone.
+  Single Page and Two-page Book both change pages immediately without paper-turn animation. Two-page mode still preloads nearby WebP pages and navigates a complete spread per step. Book mode shows cover page 1 alone and pairs pages 2–3, 4–5, etc.; select it on a tablet/desktop for comfortable side-by-side reading, or opt in on a phone.
 - **Fit page / zoom / rotate:** adjust how pages display.
 - **Pinch:** zoom with two fingers on iPhone/iPad; the separate EPUB reader and existing WebP reader remain unchanged.
 - **Bookmark:** save a page for later.
