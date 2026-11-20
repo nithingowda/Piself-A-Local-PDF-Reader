@@ -627,6 +627,8 @@ async function openMagazine(item,start){
 /** move: Support the PiShelf reader or library interface. */
 function move(n,turn=0){
  if(!documentPDF)return;
+ // A direct page-number/slider jump interrupts any pending WebP predecode.
+ if(activePageTurn&&!activePageTurn.animation)cancelPageTurn();
  const oldPage=page;
  const wasAtFit=isBookSpread()&&Math.abs(zoom-fitEntirePageZoom(oldPage))<.04;
  const target=Math.max(1,Math.min(documentPDF.numPages,Number(n)||1));
@@ -692,6 +694,7 @@ function cancelPageTurn(){
  if(!activePageTurn)return;
  const turn=activePageTurn;
  activePageTurn=null;
+ if($('reader-status').textContent==='Preparing next page…')$('reader-status').textContent='';
  turn.animation?.cancel();
  turn.underlay?.remove();
  turn.sheet?.classList.remove('paper-turning','paper-dragging');
@@ -740,8 +743,11 @@ async function turnBook(direction,fromSwipe=null){
    move(target,direction);return; // PDF.js fallback handles unreadable WebP
   }
  }
- if(activePageTurn!==turn||documentPDF!==turn.document||generation!==turn.generation
-    ||$('view-mode').value!==turn.mode||(bookMode?spreadStart(page):page)!==start)return;
+ if(activePageTurn!==turn)return;
+ if(documentPDF!==turn.document||generation!==turn.generation
+    ||$('view-mode').value!==turn.mode||(bookMode?spreadStart(page):page)!==start){
+  cancelPageTurn();return;
+ }
  const fromDegrees=Math.max(-160,Math.min(160,fromSwipe?.degrees||0));
  const endDegrees=direction>0?-178:178;
  turn.underlay=bookMode
