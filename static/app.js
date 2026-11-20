@@ -635,7 +635,8 @@ function move(n,turn=0){
  // Each spread can have different page dimensions. Maintain full-spread fit
  // when navigating from the cover or another fitted pair.
  if(wasAtFit)zoom=fitEntirePageZoom(page);
- remember();updatePageUI();preloadMagazineNeighbors();
+ remember();updatePageUI();
+ // Do not evict decoded incoming previews before rebuild() has consumed them.
  if(isBookSpread()){
   rebuild().then(()=>{
    if(wasAtFit){$('page-area').scrollLeft=0;$('page-area').scrollTop=0;}
@@ -645,6 +646,7 @@ function move(n,turn=0){
   });
  }else if($('view-mode').value==='single')rebuild();
  else{
+  preloadMagazineNeighbors();
   const slot=slots[page-1];enqueue(slot);
   $('page-area').scrollTo({top:slot.offsetTop-20,behavior:prefs.motion&&!matchMedia('(prefers-reduced-motion: reduce)').matches?'smooth':'auto'});
   clearTimeout(scrollTimer);scrollTimer=setTimeout(remember,500);
@@ -659,21 +661,32 @@ function move(n,turn=0){
 const PAPER_TURN_DURATION_MS=1050;
 let activePageTurn=null;
 function isAnimatedPageMode(){return isBookSpread()||$('view-mode').value==='single';}
-function prepareSinglePageUnderlay(sheet,target){
+// The underlay uses a CLONE of an already-decoded neighbor image. Never
+// start a new image request while the paper is turning.
+function prepareTurnUnderlay(sheet,pageNumber,kind){
  if(!current?.id||!sheet?.isConnected)return null;
+ const cached=imagePrefetches.get(pageNumber);
+ if(!cached?.ready||cached.id!==current.id)return null;
  const root=$('pages'),pageRect=sheet.getBoundingClientRect(),rootRect=root.getBoundingClientRect();
  const underlay=el('div','paper-turn-underlay');
+ underlay.classList.add(kind==='book'?'paper-underlay-book':'paper-underlay-single');
  underlay.setAttribute('aria-hidden','true');
  underlay.style.left=(pageRect.left-rootRect.left)+'px';
  underlay.style.top=(pageRect.top-rootRect.top)+'px';
  underlay.style.width=pageRect.width+'px';
  underlay.style.height=pageRect.height+'px';
- const image=document.createElement('img');
- image.alt='';image.decoding='async';
- // 960px is already used by the reader's WebP preview/prefetch pipeline.
- image.src='/api/page-image/'+encodeURIComponent(current.id)+'/'+target+'?width=960';
+ const image=cached.img.cloneNode(false);
+ image.alt='';image.decoding='sync';
  underlay.append(image);root.append(underlay);
  return underlay;
+}
+function prepareSinglePageUnderlay(sheet,target){
+ return prepareTurnUnderlay(sheet,target,'single');
+}
+function prepareBookPageUnderlay(sheet,target,direction){
+ const pages=spreadPages(target);
+ const nextVisible=direction>0?pages[pages.length-1]:pages[0];
+ return prepareTurnUnderlay(sheet,nextVisible,'book');
 }
 function cancelPageTurn(){
  if(!activePageTurn)return;
@@ -707,14 +720,33 @@ async function turnBook(direction,fromSwipe=null){
   move(target,direction);
   return;
  }
- const fromDegrees=Math.max(-160,Math.min(160,fromSwipe?.degrees||0));
- const endDegrees=direction>0?-178:178;
+ // The current WebP page remains visible while missing target pages download
+ // and decode. This prevents an empty flash after a 1-second paper flip.
+ const incoming=bookMode?spreadPages(target):[target];
  const turn={
   sheet,animation:null,underlay:null,document:documentPDF,
   generation,source:start,mode:$('view-mode').value
  };
  activePageTurn=turn;
- if(!bookMode)turn.underlay=prepareSinglePageUnderlay(sheet,target);
+ const alreadyDecoded=incoming.every(n=>imagePrefetches.get(n)?.ready);
+ if(!alreadyDecoded){
+  $('reader-status').textContent='Preparing next page…';
+  const ready=await Promise.all(incoming.map(ensureDecodedPreview));
+  if(activePageTurn!==turn)return;
+  $('reader-status').textContent='';
+  if(!ready.every(Boolean)){
+   activePageTurn=null;
+   if(fromSwipe?.sheet){sheet.style.transform='';sheet.classList.remove('paper-dragging');}
+   move(target,direction);return; // PDF.js fallback handles unreadable WebP
+  }
+ }
+ if(activePageTurn!==turn||documentPDF!==turn.document||generation!==turn.generation
+    ||$('view-mode').value!==turn.mode||(bookMode?spreadStart(page):page)!==start)return;
+ const fromDegrees=Math.max(-160,Math.min(160,fromSwipe?.degrees||0));
+ const endDegrees=direction>0?-178:178;
+ turn.underlay=bookMode
+  ?prepareBookPageUnderlay(sheet,target,direction)
+  :prepareSinglePageUnderlay(sheet,target);
  sheet.classList.remove('paper-dragging');
  sheet.classList.add('paper-turning');
  sheet.style.transformOrigin=direction>0?'left center':'right center';
