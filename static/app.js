@@ -664,21 +664,21 @@ function move(n,turn=0){
 /** Next/previous page in book mode moves a whole spread, not just one page. */
 // Animate the existing WebP page to the opposite side, then replace the
 // spread only when its flip has finished. No extra PDF render during a turn.
-// A paper leaf should turn at reading speed, not instantly. The outgoing
-// WebP is flipped in place; single-page mode reveals the next cached preview
-// underneath it. Neither action changes Safari's two-finger pinch handler.
+// In Two-page Book mode only, a paper leaf turns at reading speed.
+// Single Page and Continuous modes navigate without a page-fold animation.
+// Neither action changes Safari's two-finger pinch handler.
 const PAPER_TURN_DURATION_MS=1050;
 let activePageTurn=null;
-function isAnimatedPageMode(){return isBookSpread()||$('view-mode').value==='single';}
+function isAnimatedPageMode(){return isBookSpread();}
 // The underlay uses a CLONE of an already-decoded neighbor image. Never
 // start a new image request while the paper is turning.
-function prepareTurnUnderlay(sheet,pageNumber,kind){
+function prepareTurnUnderlay(sheet,pageNumber){
  if(!current?.id||!sheet?.isConnected)return null;
  const cached=imagePrefetches.get(pageNumber);
  if(!cached?.ready||cached.id!==current.id)return null;
  const root=$('pages'),pageRect=sheet.getBoundingClientRect(),rootRect=root.getBoundingClientRect();
  const underlay=el('div','paper-turn-underlay');
- underlay.classList.add(kind==='book'?'paper-underlay-book':'paper-underlay-single');
+ underlay.classList.add('paper-underlay-book');
  underlay.setAttribute('aria-hidden','true');
  underlay.style.left=(pageRect.left-rootRect.left)+'px';
  underlay.style.top=(pageRect.top-rootRect.top)+'px';
@@ -689,13 +689,10 @@ function prepareTurnUnderlay(sheet,pageNumber,kind){
  underlay.append(image);root.append(underlay);
  return underlay;
 }
-function prepareSinglePageUnderlay(sheet,target){
- return prepareTurnUnderlay(sheet,target,'single');
-}
 function prepareBookPageUnderlay(sheet,target,direction){
  const pages=spreadPages(target);
  const nextVisible=direction>0?pages[pages.length-1]:pages[0];
- return prepareTurnUnderlay(sheet,nextVisible,'book');
+ return prepareTurnUnderlay(sheet,nextVisible);
 }
 function cancelPageTurn(){
  if(!activePageTurn)return;
@@ -757,9 +754,7 @@ async function turnBook(direction,fromSwipe=null){
  }
  const fromDegrees=Math.max(-160,Math.min(160,fromSwipe?.degrees||0));
  const endDegrees=direction>0?-178:178;
- turn.underlay=bookMode
-  ?prepareBookPageUnderlay(sheet,target,direction)
-  :prepareSinglePageUnderlay(sheet,target);
+ turn.underlay=prepareBookPageUnderlay(sheet,target,direction);
  sheet.classList.remove('paper-dragging');
  sheet.classList.add('paper-turning');
  sheet.style.transformOrigin=direction>0?'left center':'right center';
@@ -1084,7 +1079,7 @@ function clearBookPaperSwipe(){
 }
 function beginBookPaperSwipe(e){
  if(e.pointerType!=='touch'||!prefs.gestures||!documentPDF||!isAnimatedPageMode()||pinch||!layoutReady)return;
- if(gesturePointers.size!==1||(isBookSpread()?Math.abs(zoom-fitEntirePageZoom(page))>.04:zoom>1.05))return;
+ if(gesturePointers.size!==1||Math.abs(zoom-fitEntirePageZoom(page))>.04)return;
  bookPaperSwipe={id:e.pointerId,x:e.clientX,y:e.clientY,time:performance.now(),direction:0,sheet:null,dragging:false};
 }
 function previewBookPaperSwipe(e){
