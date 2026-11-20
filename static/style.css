@@ -53,3 +53,31 @@ dialog{border:1px solid var(--line);border-radius:16px;background:var(--card);co
 .account-password-dialog label{display:grid;gap:6px}
 .account-password-dialog input{width:100%;box-sizing:border-box;padding:11px;border-radius:8px}
 .account-password-dialog [role=alert]{color:#d35d5d;min-height:1em;margin:0}
+
+
+/* Display-only PDF night themes. Apply filters to WebP IMG and PDF.js canvas
+   alike so Safari's fast WebP reader is not left with bright white pages. */
+#reader[data-page-theme=night] #pages img,
+#reader[data-page-theme=night] #pages canvas{
+ filter:brightness(var(--reader-brightness,.75)) sepia(.20);
+}
+#reader[data-page-theme=amoled] #pages img,
+#reader[data-page-theme=amoled] #pages canvas{
+ filter:invert(1) hue-rotate(180deg) brightness(var(--reader-brightness,.75));
+}
+#reader[data-page-theme=amoled],
+#reader[data-page-theme=amoled] #page-area,
+#reader[data-page-theme=night],
+#reader[data-page-theme=night] #page-area{background:#000}
+#reader[data-page-theme=amoled] .reader-bar,
+#reader[data-page-theme=amoled] .controls,
+#reader[data-page-theme=night] .reader-bar,
+#reader[data-page-theme=night] .controls{background:#090909;color:#f4f4f4}
+#reader[data-page-theme=amoled] .reader-bar button,
+#reader[data-page-theme=amoled] .controls button,
+#reader[data-page-theme=night] .reader-bar button,
+#reader[data-page-theme=night] .controls button{background:#111;color:#f4f4f4;border-color:#333}
+#reader-night-toggle[aria-pressed=true]{border-color:#91caff}
+#pref-readerBrightness{width:100%;accent-color:var(--accent)}
+#reader-brightness-value{float:right;font-variant-numeric:tabular-nums}
+@media(max-width:600px){#reader-night-toggle{white-space:nowrap;padding:8px}}
