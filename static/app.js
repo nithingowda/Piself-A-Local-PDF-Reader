@@ -67,12 +67,20 @@ async function covers(){
  try{while(coverQueue.length){
   if(!$('reader').hidden)break;
   const {item,button}=coverQueue.shift();if(!button.isConnected)continue;
-   if(isEpub(item))continue; // EPUB book covers use a clean typography placeholder.
+   // EPUB falls back to its title placeholder when no cover is embedded.
   try{
    const key=item.coverKey;let data=thumbs.get(key);
    if(!data){
     let response=await fetch(coverURL(item));
-    if(response.status===404)response=await fetch('/api/render-page?source='+encodeURIComponent(pdfURL(item))+'&page=1&width=400');
+    if(response.status===404){
+     // The old /api/render-page route does not exist. Use the supported
+     // WebP first-page renderer for every PDF source (including newspapers
+     // and PDF books), and the embedded-cover endpoint for EPUB books.
+     const fallback=isEpub(item)
+      ?'/api/epub-cover/'+encodeURIComponent(item.id)
+      :'/api/page-image/'+encodeURIComponent(item.id)+'/1?width=400';
+     response=await fetch(fallback);
+    }
     if(!response.ok)throw Error('Cover unavailable: HTTP '+response.status);
     data=URL.createObjectURL(await response.blob());cacheThumb(key,data);
    }
