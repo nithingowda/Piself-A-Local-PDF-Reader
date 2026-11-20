@@ -20,6 +20,12 @@ PiShelf uses WebP previews and sharper images on demand. The reader cancels stal
 
 See [the library and reader guide](FEATURES.md) for persistent covers, reading collections, gestures, PDF uploads, permanent deletion, publication/month grouping, tags, category creation, renaming, focused reading, AMOLED/night themes, backups, and separate source paths.
 
+## Login, user roles and admin panel
+
+**Login is required** to access the library and PDFs. Admins can manage users and files; reader accounts can browse PDFs and save reading progress, but cannot manage files or users. On first launch, PiShelf **automatically opens a first-time administrator setup page**. Choose an admin username and password in your browser—no Docker command needed. Complete setup immediately on a trusted LAN before exposing the app to other users.
+
+See [Authentication and administrator guide](AUTHENTICATION.md) for first-time setup, role permissions, account management, password security, and HTTPS reverse-proxy configuration. **There is no default password.**
+
 ## Features
 
 - **A visual library** — PDF covers, search, category folders, favourites, and sorting.

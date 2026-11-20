@@ -29,7 +29,16 @@ function el(tag,cls,text){const n=document.createElement(tag);if(cls)n.className
 /** toast: Support the PiShelf reader or library interface. */
 function toast(message){$('toast').textContent=message;$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,5000);}
 /** api: Support the PiShelf reader or library interface. */
-async function api(path,data){const r=await fetch(path,data===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data),keepalive:JSON.stringify(data).length<60000});let value;try{value=await r.json();}catch{throw Error('Could not reach PiShelf. Check the connection.');}if(!r.ok)throw Error(value.error||'Request failed.');return value;}
+let signedInUser=null;
+async function api(path,data){
+ const body=data===undefined?null:JSON.stringify(data);
+ const options=body===null?{}:{method:'POST',headers:{'Content-Type':'application/json','X-PiShelf-CSRF':signedInUser?.csrf||''},body,keepalive:body.length<60000};
+ const r=await fetch(path,options);
+ if(r.status===401){location.replace('/login.html');throw Error('Session expired. Sign in again.');}
+ let value;try{value=await r.json();}catch{throw Error('Could not reach PiShelf. Check the connection.');}
+ if(!r.ok)throw Error(value.error||'Request failed.');
+ return value;
+}
 /** persist: Support the PiShelf reader or library interface. */
 function persist(id,patch){
  saved[id]={...saved[id],...patch};if('page' in patch)saved[id].lastRead=Date.now()/1000;
@@ -598,4 +607,40 @@ $('reader-accessibility-controls').onclick=toggleReaderControls;
 function setReaderFocus(focused){$('reader').classList.toggle('focused',focused);$('reader-accessibility-controls').setAttribute('aria-expanded',String(!focused));if(focused&&$('reader').contains(document.activeElement))$('page-area').focus({preventScroll:true});}
 $('reader-focus').onclick=()=>setReaderFocus(true);
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{if(prefs.siteTheme==='system')applyPrefs();});
-applyPrefs();refresh();
+// === Session bootstrap ======================================================
+// The server is authoritative: hiding controls is only a UX improvement;
+// every mutation and PDF request is checked again on the backend.
+(async()=>{
+ try{
+  signedInUser=await api('/api/auth/me');
+  const controls=document.createElement('div');
+  controls.style.cssText='position:fixed;bottom:12px;right:12px;z-index:1000;display:flex;gap:8px';
+  if(signedInUser.role==='admin'){
+   const admin=document.createElement('a');admin.href='/admin.html';admin.textContent='Manage users';
+   admin.style.cssText='background:#263b52;color:white;padding:9px;border-radius:8px';controls.append(admin);
+  }
+  const changePassword=document.createElement('button');changePassword.textContent='Change password';
+  changePassword.onclick=()=>{
+   const dialog=document.createElement('dialog');
+   const form=document.createElement('form');form.method='dialog';
+   const title=document.createElement('h2');title.textContent='Change password';
+   const current=document.createElement('input');current.type='password';current.placeholder='Current password';current.autocomplete='current-password';current.required=true;
+   const next=document.createElement('input');next.type='password';next.placeholder='New password (12+ characters)';next.autocomplete='new-password';next.minLength=12;next.required=true;
+   const submit=document.createElement('button');submit.textContent='Update password';submit.type='submit';
+   const cancel=document.createElement('button');cancel.textContent='Cancel';cancel.type='button';cancel.onclick=()=>dialog.close();
+   form.append(title,current,next,submit,cancel);dialog.append(form);document.body.append(dialog);
+   dialog.addEventListener('close',()=>dialog.remove(),{once:true});
+   form.onsubmit=async event=>{
+    event.preventDefault();
+    try{await api('/api/auth/change-password',{current_password:current.value,new_password:next.value});location.replace('/login.html');}
+    catch(e){toast(e.message);current.value='';next.value='';}
+   };
+   dialog.showModal();
+  };
+  controls.append(changePassword);
+  const logout=document.createElement('button');logout.textContent='Log out';
+  logout.onclick=async()=>{try{await api('/api/auth/logout',{});}finally{location.replace('/login.html');}};
+  controls.append(logout);document.body.append(controls);
+  applyPrefs();await refresh();
+ }catch(e){console.error('PiShelf startup:',e);}
+})();

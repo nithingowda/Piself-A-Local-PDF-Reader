@@ -10,6 +10,7 @@ services:
     environment:
       PISHELF_UID: "${PISHELF_UID:-1000}"
       PISHELF_GID: "${PISHELF_GID:-1000}"
+      PISHELF_COOKIE_SECURE: "${PISHELF_COOKIE_SECURE:-0}"
     ports:
       - "${PISHELF_PORT:-8098}:8080"
     volumes:
