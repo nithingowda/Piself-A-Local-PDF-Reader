@@ -28,7 +28,7 @@ test('zoom buttons keep the visible PDF paragraph centered horizontally and vert
  const doc={id:1};
  const ctx={
   documentPDF:doc,pinch:null,layoutReady:true,zoom:1,page:1,
-  generation:4,slots:[compact],pinchScrollLockUntil:0,
+  generation:4,slots:[compact],pinchScrollLockUntil:0,isBookSpread:()=>false,
   performance:{now:()=>1000},
   $:name=>{assert.equal(name,'page-area');return area;},
   fitEntirePageZoom:()=>0.5,
