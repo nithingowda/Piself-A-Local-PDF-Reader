@@ -245,7 +245,7 @@ class Handler(BaseHTTPRequestHandler):
             route=urlsplit(self.path).path
             if route.startswith('/api/auth/') or route.startswith('/api/admin/'):
                 self.auth_post(route);return
-            self.require_session(admin=route!='/api/progress',mutation=True)
+            self.require_session(admin=True,mutation=True)
             if urlsplit(self.path).path == '/api/webp-cache/clear':
                 with WEBP_CACHE_LOCK:
                     cache=self.server.state_db.parent/'page-images'
@@ -507,7 +507,16 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if path == '/api/health': self.json_response({'status':'ok'},head=head); return
             if path not in ('/login.html','/login.js'):
-                user=self.require_session(admin=path in ('/admin.html','/admin.js'))
+                try:
+                    user=self.require_session(admin=path in ('/admin.html','/admin.js'))
+                except APIError as error:
+                    if error.status==401 and path in ('/','/index.html','/admin.html'):
+                        self.send_response(302)
+                        self.send_header('Location','/login.html')
+                        self.send_header('Cache-Control','no-store')
+                        self.end_headers()
+                        return
+                    raise
                 if path == '/api/auth/me':
                     self.json_response({'username':user['username'],'role':user['role'],'csrf':user['csrf']},head=head);return
                 if path == '/api/admin/users':
