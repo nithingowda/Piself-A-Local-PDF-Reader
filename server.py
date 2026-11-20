@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import mimetypes
+import logging
 import os
 import re
 import shutil
@@ -26,6 +27,10 @@ BASE = Path(__file__).resolve().parent
 # Serialize WebP conversions, cache eviction and clearing across HTTP threads.
 WEBP_CACHE_LOCK = threading.RLock()
 WEBP_CACHE_LIMIT = 512*1024*1024
+# Keep malicious or malformed PDF dimensions from exhausting Raspberry Pi RAM.
+MAX_RENDER_PIXELS = 16_000_000
+MAX_PDF_PAGE_DIMENSION = 20_000
+MAX_WEBP_SOURCE_BYTES = 512*1024*1024
 
 class APIError(Exception):
     #   init  : handle this step of the server request or library workflow.
@@ -41,8 +46,17 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Content-Length', str(len(body)))
         self.send_header('Cache-Control', 'no-store')
         self.send_header('X-Content-Type-Options', 'nosniff')
+        self.security_headers()
         self.end_headers()
         if not head: self.wfile.write(body)
+
+    # Browser hardening shared by JSON, WebP and static/PDF responses.
+    # CSP is intentionally conservative but permits the current inline app UI.
+    def security_headers(self):
+        self.send_header('X-Frame-Options','DENY')
+        self.send_header('Referrer-Policy','no-referrer')
+        self.send_header('X-Content-Type-Options','nosniff')
+        self.send_header('Content-Security-Policy',"default-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data: blob:; connect-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'")
 
     # library items: handle this step of the server request or library workflow.
     def library_items(self):
@@ -165,6 +179,9 @@ class Handler(BaseHTTPRequestHandler):
         try:
             self.accept_origin()
             if urlsplit(self.path).path == '/api/webp-cache/clear':
+                # No body is required; reject unexpected or oversized requests.
+                if self.headers.get('Transfer-Encoding') or self.headers.get('Content-Length','0') not in ('0','2'):
+                    raise APIError(400,'Cache clear expects an empty JSON object.')
                 with WEBP_CACHE_LOCK:
                     cache=self.server.state_db.parent/'page-images'
                     removed=0
@@ -443,6 +460,7 @@ class Handler(BaseHTTPRequestHandler):
                 source=self.server.roots[item['source']]
                 pdf=checked_path(source,item['path'])
                 stat=pdf.stat()
+                if stat.st_size > MAX_WEBP_SOURCE_BYTES: raise APIError(413,'PDF exceeds conversion size limit.')
                 key=hashlib.sha256(f"{item['id']}:{stat.st_size}:{stat.st_mtime_ns}:{n}:{width}".encode()).hexdigest()
                 cache=self.server.state_db.parent/'page-images'
                 cache.mkdir(parents=True,exist_ok=True)
@@ -454,8 +472,18 @@ class Handler(BaseHTTPRequestHandler):
                             with fitz.open(pdf) as document:
                                 if n>len(document): raise APIError(404,'Page not found.')
                                 p=document[n-1]
-                                scale=width/p.rect.width
+                                rect=p.rect
+                                if not all(0 < v <= MAX_PDF_PAGE_DIMENSION for v in (rect.width,rect.height)):
+                                    raise APIError(413,'PDF page dimensions exceed conversion limits.')
+                                scale=width/rect.width
+                                # The requested width is bounded, but extremely tall pages
+                                # can still allocate gigabytes unless pixels are capped.
+                                target_height=rect.height*scale
+                                if width*target_height > MAX_RENDER_PIXELS:
+                                    raise APIError(413,'PDF page exceeds the image memory limit.')
                                 pix=p.get_pixmap(matrix=fitz.Matrix(scale,scale),alpha=False)
+                                if pix.width*pix.height > MAX_RENDER_PIXELS:
+                                    raise APIError(413,'Rendered page exceeds the image memory limit.')
                                 # Pillow writes WebP, with a predictable file size and quality.
                                 from PIL import Image
                                 import io
@@ -487,9 +515,11 @@ class Handler(BaseHTTPRequestHandler):
                         pass  # A cache maintenance error must not interrupt reading.
                 self.send_response(200)
                 self.send_header('Content-Type','image/webp')
+                self.security_headers()
                 self.send_header('Content-Length',str(len(data)))
                 self.send_header('Cache-Control','private, max-age=86400')
                 self.send_header('X-Content-Type-Options','nosniff')
+            self.security_headers()
                 self.end_headers()
                 if not head: self.wfile.write(data)
                 return
