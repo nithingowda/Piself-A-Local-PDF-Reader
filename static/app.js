@@ -621,11 +621,22 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{if(pre
    admin.style.cssText='background:#263b52;color:white;padding:9px;border-radius:8px';controls.append(admin);
   }
   const changePassword=document.createElement('button');changePassword.textContent='Change password';
-  changePassword.onclick=async()=>{
-   const current_password=prompt('Current password:');if(current_password===null)return;
-   const new_password=prompt('New password (12+ characters):');if(new_password===null)return;
-   try{await api('/api/auth/change-password',{current_password,new_password});location.replace('/login.html');}
-   catch(e){toast(e.message);}
+  changePassword.onclick=()=>{
+   const dialog=document.createElement('dialog');
+   const form=document.createElement('form');form.method='dialog';
+   const title=document.createElement('h2');title.textContent='Change password';
+   const current=document.createElement('input');current.type='password';current.placeholder='Current password';current.autocomplete='current-password';current.required=true;
+   const next=document.createElement('input');next.type='password';next.placeholder='New password (12+ characters)';next.autocomplete='new-password';next.minLength=12;next.required=true;
+   const submit=document.createElement('button');submit.textContent='Update password';submit.type='submit';
+   const cancel=document.createElement('button');cancel.textContent='Cancel';cancel.type='button';cancel.onclick=()=>dialog.close();
+   form.append(title,current,next,submit,cancel);dialog.append(form);document.body.append(dialog);
+   dialog.addEventListener('close',()=>dialog.remove(),{once:true});
+   form.onsubmit=async event=>{
+    event.preventDefault();
+    try{await api('/api/auth/change-password',{current_password:current.value,new_password:next.value});location.replace('/login.html');}
+    catch(e){toast(e.message);current.value='';next.value='';}
+   };
+   dialog.showModal();
   };
   controls.append(changePassword);
   const logout=document.createElement('button');logout.textContent='Log out';
