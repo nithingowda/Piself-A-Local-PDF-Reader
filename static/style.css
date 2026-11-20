@@ -81,3 +81,13 @@ dialog{border:1px solid var(--line);border-radius:16px;background:var(--card);co
 #pref-readerBrightness{width:100%;accent-color:var(--accent)}
 #reader-brightness-value{float:right;font-variant-numeric:tabular-nums}
 @media(max-width:600px){#reader-night-toggle{white-space:nowrap;padding:8px}}
+
+/* Reader scrubber: compact on desktop, full-width touch target on phones. */
+.reader-scrubber{display:flex;align-items:center;gap:10px;flex:1 1 100%;max-width:760px;min-width:0;margin:auto}
+.reader-scrubber label{white-space:nowrap;font-size:12px}
+#reader-page-slider{flex:1;min-width:90px;accent-color:var(--accent);padding:0;height:28px;touch-action:pan-x}
+#reader-page-slider-label{min-width:75px;text-align:right;font-size:12px;font-variant-numeric:tabular-nums}
+#reader.focused .reader-progress{opacity:.25}
+#reader.focused .reader-bar,#reader.focused .controls{visibility:hidden;pointer-events:none}
+#reader.focused #page-area{cursor:default}
+@media(max-width:600px){.reader-scrubber{flex-basis:100%;order:-1;padding:0 4px}.reader-scrubber label{font-size:11px}#reader-page-slider{min-height:30px}}
