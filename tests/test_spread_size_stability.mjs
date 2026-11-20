@@ -46,3 +46,14 @@ test('book spread navigates without a secondary animation',()=>{
  assert.match(source,/if\(isBookSpread\(\)\)await primeSpreadDimensions\(spreadPages\(page\),doc,g\)/);
  assert.match(source,/function finishPinch\(cancelled=false\)/);
 });
+
+test('one failed page lookup leaves the other spread dimensions usable',async()=>{
+ const dimensions=new Map();
+ const doc={getPage:async n=>{
+  if(n===2)throw new Error('Page temporarily unavailable');
+  return {getViewport:()=>({width:610,height:810})};
+ }};
+ await makeGeometry({dimensions,documentPDF:doc,generation:2})([2,3],doc,2);
+ assert.deepEqual(dimensions.get(3),{width:610,height:810});
+ assert.equal(dimensions.has(2),false);
+});
