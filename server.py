@@ -40,6 +40,30 @@ class APIError(Exception):
     def __init__(self, status, message):
         self.status, self.message = status, message
 
+def save_library_paths(db, values, defaults, data_dir):
+    if not isinstance(values, dict) or set(values)-{'magazines','newspapers','books'}:
+        raise APIError(400,'Invalid library paths.')
+    roots = dict(defaults)
+    for source, raw in values.items():
+        if not isinstance(raw,str):
+            raise APIError(400,'Enter a folder path.')
+        if not raw.strip():
+            roots.pop(source,None)
+            continue
+        path = Path(raw.strip())
+        if not path.is_absolute() or not path.is_dir() or not os.access(path,os.R_OK|os.X_OK):
+            raise APIError(400,f'{source}: enter an existing, readable absolute folder path.')
+        roots[source] = path.resolve()
+    if 'magazines' not in roots:
+        raise APIError(400,'A magazine folder is required.')
+    for source,path in roots.items():
+        protected = [data_dir]+[p for key,p in roots.items() if key!=source]
+        if any(path.is_relative_to(p) or p.is_relative_to(path) for p in protected):
+            raise APIError(400,'Library folders and the data folder must be separate.')
+    db.execute('INSERT OR REPLACE INTO library_config VALUES (1,?)',
+               (json.dumps({k:str(v) for k,v in roots.items()}),))
+    return roots
+
 class Handler(BaseHTTPRequestHandler):
     # json response: handle this step of the server request or library workflow.
     def json_response(self, value, status=200, head=False):
@@ -221,6 +245,9 @@ class Handler(BaseHTTPRequestHandler):
                     if not self.is_private_setup_client():
                         raise APIError(403,'Initial setup requires access from your private network.')
                     auth.create_user(db,data.get('username'),data.get('password'),'admin')
+                    roots = save_library_paths(db,data['paths'],self.server.roots,self.server.state_db.parent) if data.get('paths') else self.server.roots
+                self.server.roots=roots
+                self.server.library=roots['magazines']
             self.json_response({'ok':True})
             return
         if route=='/api/auth/login':
@@ -245,6 +272,11 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps({'ok':True,'role':user['role'],'csrf':csrf}).encode())
             return
         user=self.require_session(admin=route.startswith('/api/admin/'),mutation=True)
+        if route=='/api/admin/paths':
+            with sqlite3.connect(self.server.state_db) as db:
+                save_library_paths(db,data,self.server.roots,self.server.state_db.parent)
+            self.json_response({'ok':True})
+            return
         if route=='/api/auth/change-password':
             with sqlite3.connect(self.server.state_db) as db:
                 verified=auth.authenticate(db,user['username'],data.get('current_password'))
@@ -587,6 +619,12 @@ class Handler(BaseHTTPRequestHandler):
                     raise
                 if path == '/api/auth/me':
                     self.json_response({'username':user['username'],'role':user['role'],'csrf':user['csrf']},head=head);return
+                if path == '/api/admin/paths':
+                    self.require_session(admin=True)
+                    with sqlite3.connect(self.server.state_db) as db:
+                        row=db.execute('SELECT paths FROM library_config WHERE id=1').fetchone()
+                    self.json_response(json.loads(row[0]) if row else {k:str(v) for k,v in self.server.roots.items()},head=head)
+                    return
                 if path == '/api/admin/users':
                     self.require_session(admin=True)
                     with sqlite3.connect(self.server.state_db) as db:
@@ -973,6 +1011,11 @@ def make_server(host,port,library,data,newspapers=None,books=None):
     server.scan_lock=threading.Lock();server.cover_lock=threading.Lock();server.scan_time=float('-inf');server.scan_items=[];server.scan_categories=[];server.upload_lock=threading.Lock();server.auth_lock=threading.Lock();server.auth_attempts={}
     with sqlite3.connect(server.state_db) as db:
         auth.initialize(db)
+        db.execute('CREATE TABLE IF NOT EXISTS library_config (id INTEGER PRIMARY KEY, paths TEXT NOT NULL)')
+        row=db.execute('SELECT paths FROM library_config WHERE id=1').fetchone()
+        if row:
+            server.roots={k:Path(v) for k,v in json.loads(row[0]).items()}
+            server.library=server.roots['magazines']
         db.execute('CREATE TABLE IF NOT EXISTS collections (id TEXT PRIMARY KEY,name TEXT NOT NULL COLLATE NOCASE UNIQUE)')
         db.execute('CREATE TABLE IF NOT EXISTS collection_items (collection_id TEXT NOT NULL,item_id TEXT NOT NULL,PRIMARY KEY(collection_id,item_id))')
         db.execute('CREATE INDEX IF NOT EXISTS collection_item_lookup ON collection_items(item_id)')
