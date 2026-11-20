@@ -15,4 +15,4 @@ jobs:
       - name: Python syntax and authentication regression checks
         run: |
           python -m compileall -q server.py auth.py docker-entrypoint.py
-          python -m unittest discover -s tests -p 'test_authentication_source.py' -v
+          python -m unittest discover -s tests -p 'test_authentication_*.py' -v
