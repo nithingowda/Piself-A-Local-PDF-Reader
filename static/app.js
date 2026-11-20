@@ -620,6 +620,14 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{if(pre
    const admin=document.createElement('a');admin.href='/admin.html';admin.textContent='Manage users';
    admin.style.cssText='background:#263b52;color:white;padding:9px;border-radius:8px';controls.append(admin);
   }
+  const changePassword=document.createElement('button');changePassword.textContent='Change password';
+  changePassword.onclick=async()=>{
+   const current_password=prompt('Current password:');if(current_password===null)return;
+   const new_password=prompt('New password (12+ characters):');if(new_password===null)return;
+   try{await api('/api/auth/change-password',{current_password,new_password});location.replace('/login.html');}
+   catch(e){toast(e.message);}
+  };
+  controls.append(changePassword);
   const logout=document.createElement('button');logout.textContent='Log out';
   logout.onclick=async()=>{try{await api('/api/auth/logout',{});}finally{location.replace('/login.html');}};
   controls.append(logout);document.body.append(controls);
