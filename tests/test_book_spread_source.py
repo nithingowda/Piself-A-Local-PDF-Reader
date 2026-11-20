@@ -22,10 +22,10 @@ class BookSpreadTests(unittest.TestCase):
   self.assertIn("for(const n of spreadPages(page))",JS)
   self.assertIn("slots.push(slot);spread.append(slot)",JS)
   self.assertIn("if(isBookSpread())for(const slot of slots)enqueue(slot)",JS)
- def test_instant_navigation_and_preload(self):
+ def test_book_controls_swipe_and_preload(self):
   self.assertIn('function turnBook(direction)',JS)
-  self.assertIn("$('book-turn-prev').onclick=()=>turnBook(-1)",JS)
-  self.assertIn("$('book-turn-next').onclick=()=>turnBook(1)",JS)
+  self.assertIn("$('book-turn-prev').onclick=()=>turnFromControl(-1)",JS)
+  self.assertIn("$('book-turn-next').onclick=()=>turnFromControl(1)",JS)
   self.assertIn("turnBook(dx<0?1:-1)",JS)
   self.assertIn('function preloadMagazineNeighbors()',JS)
   self.assertIn('const prefetched=takeDecodedPreview(n)',JS)
