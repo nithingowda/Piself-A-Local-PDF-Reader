@@ -686,6 +686,7 @@ function turnBook(direction){
 }
 /** close Reader: Support the PiShelf reader or library interface. */
 async function closeReader({fromHistory=false}={}){
+ clearCurl();
  if(!fromHistory&&readerHistoryActive){
   readerHistoryActive=false;
   // Back triggers popstate and returns to the existing library history entry.
@@ -948,17 +949,93 @@ $('page-area').addEventListener('touchmove',e=>{
 },{passive:false});
 $('page-area').addEventListener('touchend',e=>{if(pinch&&e.touches.length<2){e.preventDefault();finishPinch();}},{passive:false});
 $('page-area').addEventListener('touchcancel',()=>finishPinch(true),{passive:true});
-// One-finger swipe navigates immediately; two-finger Safari pinch is
-// handled by the touch events above. Double tap only toggles controls.
+// Draw the peeled sheet over the live slot while the finger moves. The
+// underlying reader retains ownership of decoded previews and sharp images.
+let curl=null;
+function clearCurl(){
+ if(!curl)return;
+ cancelAnimationFrame(curl.frame);
+ curl.canvas.remove();
+ curl=null;
+}
+function beginCurl(direction,start){
+ if(rotation||$('view-mode').value==='scroll'||matchMedia('(prefers-reduced-motion: reduce)').matches)return;
+ const spread=isBookSpread();
+ const target=spread?(direction>0?(page===1?2:page+2):(page<=2?1:page-2)):page+direction;
+ if(target===page||target<1||target>documentPDF.numPages)return;
+ const visible=spread?spreadPages(page):[page],incoming=spread?spreadPages(target):[target];
+ const edge=pages=>direction>0?pages[pages.length-1]:pages[0];
+ const slot=slots.find(item=>Number(item.dataset.page)===edge(visible));
+ const front=slot?.querySelector('img,canvas'),preview=imagePrefetches.get(edge(incoming));
+ if(!front||!preview?.ready)return;
+ const rect=slot.getBoundingClientRect(),canvas=document.createElement('canvas');
+ const scale=Math.min(devicePixelRatio||1,2,1200/Math.max(rect.width,rect.height));
+ canvas.width=Math.max(1,Math.round(rect.width*scale));
+ canvas.height=Math.max(1,Math.round(rect.height*scale));
+ const ctx=canvas.getContext('2d');
+ if(!ctx)return;
+ canvas.setAttribute('aria-hidden','true');
+ Object.assign(canvas.style,{position:'fixed',pointerEvents:'none',left:rect.left+'px',top:rect.top+'px',
+  width:rect.width+'px',height:rect.height+'px',filter:getComputedStyle(front).filter,zIndex:'1'});
+ $('reader').append(canvas);
+ curl={canvas,ctx,front,under:preview.img,rect,direction,progress:0,frame:0,
+  tilt:start.y<rect.top+rect.height/2?1:-1,slot,epoch:layoutEpoch,origin:page};
+}
+function drawCurl(progress){
+ const {ctx,canvas,front,under,direction,tilt}=curl;
+ const w=canvas.width,h=canvas.height;
+ curl.progress=progress;
+ ctx.setTransform(1,0,0,1,0,0);
+ ctx.fillStyle='white';ctx.fillRect(0,0,w,h);
+ ctx.drawImage(under,0,0,w,h);
+ // Reflect the lifted portion across an inclined crease. Flatten the
+ // crease at either endpoint so the first and last frames meet the page.
+ const slope=tilt*.23*Math.sin(Math.PI*progress)*Math.min(1,w/h);
+ const middle=direction>0?w*(1-progress):w*progress;
+ const top=middle-slope*h/2,bottom=middle+slope*h/2;
+ const fixed=direction>0?0:w,loose=w-fixed;
+ function clipSide(edge){
+  ctx.beginPath();ctx.moveTo(edge,0);ctx.lineTo(top,0);
+  ctx.lineTo(bottom,h);ctx.lineTo(edge,h);ctx.closePath();ctx.clip();
+ }
+ ctx.save();clipSide(fixed);ctx.drawImage(front,0,0,w,h);ctx.restore();
+ const k=2/(1+slope*slope);
+ ctx.save();ctx.transform(1-k,k*slope,k*slope,1-k*slope*slope,k*top,-k*slope*top);
+ clipSide(loose);ctx.fillStyle='#f6f3ed';ctx.fillRect(0,0,w,h);
+ ctx.globalAlpha=.16;ctx.drawImage(front,0,0,w,h);ctx.globalAlpha=1;
+ const shade=ctx.createLinearGradient(top,0,top+direction*w*.16,-direction*w*.16*slope);
+ shade.addColorStop(0,'rgba(0,0,0,.28)');shade.addColorStop(.5,'rgba(255,255,255,.5)');
+ shade.addColorStop(1,'rgba(0,0,0,.04)');ctx.fillStyle=shade;ctx.fillRect(0,0,w,h);ctx.restore();
+}
+function settleCurl(commit){
+ const active=curl,initial=active.progress,end=commit?1:0,start=performance.now();
+ function frame(now){
+  if(active!==curl)return;
+  if(!active.slot.isConnected||active.epoch!==layoutEpoch||active.origin!==page||!documentPDF){clearCurl();return;}
+  const t=Math.min(1,(now-start)/220);
+  drawCurl(initial+(end-initial)*(1-(1-t)**3));
+  if(t<1){active.frame=requestAnimationFrame(frame);return;}
+  clearCurl();
+  if(commit)turnBook(active.direction);
+ }
+ active.frame=requestAnimationFrame(frame);
+}
 $('page-area').addEventListener('pointerdown',e=>{
  if(e.pointerType!=='touch')return;
- lastTouchTime=performance.now();gesturePointers.add(e.pointerId);
+ clearCurl();lastTouchTime=performance.now();gesturePointers.add(e.pointerId);
  if(gesturePointers.size===1)
   gestureStart={x:e.clientX,y:e.clientY,time:performance.now(),multi:false};
  else if(gestureStart)gestureStart.multi=true;
 },{passive:true});
+$('page-area').addEventListener('pointermove',e=>{
+ if(!gestureStart||gestureStart.multi||!gesturePointers.has(e.pointerId)||pinch||
+    !documentPDF||!prefs.gestures||zoom>fitEntirePageZoom(page)+.04)return;
+ const dx=e.clientX-gestureStart.x,dy=e.clientY-gestureStart.y;
+ if(!curl&&Math.abs(dx)>10&&Math.abs(dx)>2*Math.abs(dy))beginCurl(dx<0?1:-1,gestureStart);
+ if(curl)drawCurl(Math.max(0,Math.min(1,-curl.direction*dx/curl.rect.width)));
+},{passive:true});
 $('page-area').addEventListener('pointercancel',e=>{
- gesturePointers.delete(e.pointerId);gestureStart=null;lastTap=null;
+ clearCurl();gesturePointers.delete(e.pointerId);gestureStart=null;lastTap=null;
 },{passive:true});
 $('page-area').addEventListener('pointerup',e=>{
  gesturePointers.delete(e.pointerId);
@@ -966,6 +1043,7 @@ $('page-area').addEventListener('pointerup',e=>{
     ||!gestureStart||gestureStart.multi||gesturePointers.size)return;
  const start=gestureStart;gestureStart=null;
  const dx=e.clientX-start.x,dy=e.clientY-start.y,elapsed=performance.now()-start.time;
+ if(curl){settleCurl(curl.progress>=.32||(curl.progress>.08&&elapsed<300));lastTap=null;return;}
  if(prefs.gestures&&documentPDF&&zoom<=fitEntirePageZoom(page)+.04
     &&Math.abs(dx)>70&&Math.abs(dx)>Math.abs(dy)*2&&elapsed<700){
   turnBook(dx<0?1:-1);lastTap=null;return;
