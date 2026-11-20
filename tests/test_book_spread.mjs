@@ -8,7 +8,7 @@ const end=src.indexOf('function pageWidth()',start);
 assert.ok(start>=0&&end>start);
 const definitions=src.slice(start,end);
 const build=new Function('context','with(context){'+definitions+'return {spreadStart,spreadPages};}');
-const navStart=src.indexOf('async function turnBook(direction,fromSwipe=null)');
+const navStart=src.indexOf('function turnBook(direction)');
 const navEnd=src.indexOf('/** close Reader:',navStart);
 assert.ok(navStart>=0&&navEnd>navStart);
 const buildNavigator=new Function('context','with(context){'+src.slice(navStart,navEnd)+'return turnBook;}');
@@ -32,13 +32,22 @@ test('even page count leaves last spread a single right-hand page',()=>{
 });
 
 test('turn controls navigate one spread and respect cover and endpoints',()=>{
- const ctx={documentPDF:{numPages:7},page:1,moves:[],activePageTurn:null,isBookSpread:()=>true,isAnimatedPageMode:()=>true,slots:[]};
+ const ctx={documentPDF:{numPages:7},page:1,moves:[],isBookSpread:()=>true};
  const helpers=build(ctx);ctx.spreadStart=helpers.spreadStart;
- ctx.move=(target,direction)=>{const next=helpers.spreadStart(target);ctx.moves.push([next,direction]);ctx.page=next;};
+ ctx.move=target=>{const next=helpers.spreadStart(target);ctx.moves.push(next);ctx.page=next;};
  const turn=buildNavigator(ctx);
  turn(1);turn(1);turn(-1);turn(-1);
- assert.deepEqual(ctx.moves,[[2,1],[4,1],[2,-1],[1,-1]]);
+ assert.deepEqual(ctx.moves,[2,4,2,1]);
  ctx.page=6;turn(1);assert.equal(ctx.page,6);
+});
+
+test('single-page arrows navigate directly without touching book spread logic',()=>{
+ const ctx={documentPDF:{numPages:8},page:4,moves:[],isBookSpread:()=>false};
+ ctx.move=n=>ctx.moves.push(n);
+ const turn=buildNavigator(ctx);
+ turn(1);turn(-1);
+ assert.deepEqual(ctx.moves,[5,3]);
+ assert.doesNotMatch(src,/paper-turn|paper-dragging|activePageTurn|rotateY\(/);
 });
 
 test('legacy single and continuous readers and pinch handler remain in source',()=>{
