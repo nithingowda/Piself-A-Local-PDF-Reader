@@ -223,3 +223,9 @@ body.epub-open{overflow:hidden}
  #pages .pdf-slot.paper-turning::before,
  #pages .pdf-slot.paper-turning::after{display:none}
 }
+
+/* Reveal the already-decoded upcoming leaf beneath the turning page.
+   In two-page spreads it occupies only the page being flipped. */
+#pages.book-layout .paper-turn-underlay.paper-underlay-book{z-index:4}
+#pages .paper-turn-underlay.paper-underlay-single{z-index:1}
+#pages .paper-turn-underlay img{visibility:visible}
