@@ -16,7 +16,7 @@ services:
     volumes:
       - "${MAGAZINE_DIR:-/mnt/Nithin-Nas/nextcloud/data/nithingowda/files/Magazines}:/magazines"
       - "${NEWSPAPER_DIR:-/mnt/Nithin-Nas/nextcloud/data/nithingowda/files/NewsPapers}:/newspapers"
-      - "${BOOK_DIR:-./books}:/books"
+      - "${BOOK_DIR:-/mnt/Nithin-Nas/nextcloud/data/nithingowda/files/Books}:/books"
       - "piself:/data"
     read_only: true
     tmpfs:
