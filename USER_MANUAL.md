@@ -1,13 +1,13 @@
 # PiShelf — User Manual
 
-PiShelf is a self-hosted PDF magazine and newspaper library for Raspberry Pi and other Docker hosts. It displays PDF covers and offers a browser reader with WebP page images.
+PiShelf is a self-hosted magazine, newspaper and book library for Raspberry Pi and other Docker hosts. It displays PDF covers and offers a browser reader with WebP page images.
 
 ## 1. Features at a glance
 
 | Feature | How to use it |
 | --- | --- |
-| PDF library | Browse PDF files and their first-page covers |
-| Two source folders | Keep magazines and newspapers in separate host directories |
+| PDF and EPUB library | Browse PDF magazines/newspapers and PDF/EPUB books |
+| Three source folders | Keep magazines, newspapers and books in separate host directories |
 | Categories | Organize PDFs in subfolders |
 | Search, sorting, collections and filters | Use the library toolbar and sidebar |
 | Reading progress | PiShelf remembers the page you last read |
@@ -20,7 +20,11 @@ PiShelf is a self-hosted PDF magazine and newspaper library for Raspberry Pi and
 | Cache controls | Settings shows WebP cache usage and allows clearing generated images |
 | Trash and backup | Recover deleted issues and export/restore reading metadata |
 
-PDF files remain in your configured folders. PiShelf stores metadata and WebP cache separately in its Docker data volume.
+PDF and EPUB files remain in your configured folders. PiShelf stores metadata and WebP cache separately in its Docker data volume.
+
+### Books and EPUB
+
+To add books, configure `BOOK_DIR=/path/to/Books` in `.env` and restart PiShelf with `docker compose up -d --build`. PDF and DRM-free EPUB books appear under the **Books** source. EPUB books have adjustable font size, chapters, reading themes and shared last-read positions. EPUB requires internet access to load EPUB.js and JSZip from jsDelivr on first use.
 
 ## 2. Raspberry Pi requirements
 
