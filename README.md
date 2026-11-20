@@ -22,11 +22,7 @@ See [the library and reader guide](FEATURES.md) for persistent covers, reading c
 
 ## Login, user roles and admin panel
 
-**Login is required** to access the library and PDFs. Admins can manage users and files; reader accounts can browse PDFs and save reading progress, but cannot manage files or users. After upgrading, create the first administrator with:
-
-```sh
-docker compose exec --user 1000:1000 -it pishelf python auth.py create-admin /data/progress.sqlite3
-```
+**Login is required** to access the library and PDFs. Admins can manage users and files; reader accounts can browse PDFs and save reading progress, but cannot manage files or users. On first launch, PiShelf **automatically opens a first-time administrator setup page**. Choose an admin username and password in your browser—no Docker command needed. Complete setup immediately on a trusted LAN before exposing the app to other users.
 
 See [Authentication and administrator guide](AUTHENTICATION.md) for first-time setup, role permissions, account management, password security, and HTTPS reverse-proxy configuration. **There is no default password.**
 
