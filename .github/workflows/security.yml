@@ -23,3 +23,24 @@ jobs:
           python -m pip install --upgrade pip pip-audit
           python -m pip install -r requirements.txt
           python -m pip_audit --strict
+      - name: Smoke-test PDF to WebP rendering with Pillow 13
+        run: |
+          python - <<'PY'
+          import io
+          import fitz
+          from PIL import Image, features, __version__
+          assert __version__ == '13.0.0', __version__
+          assert features.check('webp'), 'Pillow WebP encoder unavailable'
+          document = fitz.open()
+          page = document.new_page(width=612, height=792)
+          page.insert_text((72, 72), 'PiShelf WebP rendering test')
+          pix = page.get_pixmap(matrix=fitz.Matrix(960 / page.rect.width, 960 / page.rect.width), alpha=False)
+          image = Image.frombytes('RGB', (pix.width, pix.height), pix.samples)
+          output = io.BytesIO()
+          image.save(output, format='WEBP', quality=85, method=4)
+          output.seek(0)
+          with Image.open(output) as decoded:
+              assert decoded.format == 'WEBP'
+              assert decoded.size == (pix.width, pix.height)
+          print('PDF to WebP smoke test passed')
+          PY
