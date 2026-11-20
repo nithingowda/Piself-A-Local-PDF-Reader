@@ -614,56 +614,110 @@ function move(n,turn=0){
 /** Next/previous page in book mode moves a whole spread, not just one page. */
 // Animate the existing WebP page to the opposite side, then replace the
 // spread only when its flip has finished. No extra PDF render during a turn.
+// A paper leaf should turn at reading speed, not instantly. The outgoing
+// WebP is flipped in place; single-page mode reveals the next cached preview
+// underneath it. Neither action changes Safari's two-finger pinch handler.
+const PAPER_TURN_DURATION_MS=1050;
 let activePageTurn=null;
+function isAnimatedPageMode(){return isBookSpread()||$('view-mode').value==='single';}
+function prepareSinglePageUnderlay(sheet,target){
+ if(!current?.id||!sheet?.isConnected)return null;
+ const root=$('pages'),pageRect=sheet.getBoundingClientRect(),rootRect=root.getBoundingClientRect();
+ const underlay=el('div','paper-turn-underlay');
+ underlay.setAttribute('aria-hidden','true');
+ underlay.style.left=(pageRect.left-rootRect.left)+'px';
+ underlay.style.top=(pageRect.top-rootRect.top)+'px';
+ underlay.style.width=pageRect.width+'px';
+ underlay.style.height=pageRect.height+'px';
+ const image=document.createElement('img');
+ image.alt='';image.decoding='async';
+ // 960px is already used by the reader's WebP preview/prefetch pipeline.
+ image.src='/api/page-image/'+encodeURIComponent(current.id)+'/'+target+'?width=960';
+ underlay.append(image);root.append(underlay);
+ return underlay;
+}
 function cancelPageTurn(){
  if(!activePageTurn)return;
  const turn=activePageTurn;
  activePageTurn=null;
  turn.animation?.cancel();
+ turn.underlay?.remove();
  turn.sheet?.classList.remove('paper-turning','paper-dragging');
- if(turn.sheet){turn.sheet.style.transform='';turn.sheet.style.transformOrigin='';}
+ if(turn.sheet){
+  turn.sheet.style.transform='';
+  turn.sheet.style.transformOrigin='';
+  turn.sheet.style.willChange='';
+ }
 }
 async function turnBook(direction,fromSwipe=null){
  if(!documentPDF)return;
- if(!isBookSpread()){move(page+direction);return;}
+ if(!isAnimatedPageMode()){move(page+direction);return;}
  if(activePageTurn)return;
- const start=spreadStart(page);
- const target=direction>0?(start===1?2:start+2):(start<=2?1:start-2);
- if(spreadStart(target)===start)return;
- const sheet=fromSwipe?.sheet||((direction>0)?slots[slots.length-1]:slots[0]);
+ const bookMode=isBookSpread(),start=bookMode?spreadStart(page):page;
+ const target=bookMode
+  ?direction>0?(start===1?2:start+2):(start<=2?1:start-2)
+  :start+direction;
+ if(target<1||target>documentPDF.numPages||(bookMode&&spreadStart(target)===start))return;
+ const sheet=fromSwipe?.sheet||(bookMode?(direction>0?slots[slots.length-1]:slots[0]):slots[0]);
  const canAnimate=!!sheet?.animate&&prefs.motion&&!matchMedia('(prefers-reduced-motion: reduce)').matches;
- if(!canAnimate){if(fromSwipe?.sheet){fromSwipe.sheet.style.transform='';fromSwipe.sheet.classList.remove('paper-dragging');}move(target,direction);return;}
- const fromDegrees=fromSwipe?.degrees||0;
- const endDegrees=direction>0?-175:175;
- const turn={sheet,animation:null,document:documentPDF,generation,source:start};
+ if(!canAnimate){
+  if(fromSwipe?.sheet){
+   fromSwipe.sheet.style.transform='';
+   fromSwipe.sheet.classList.remove('paper-dragging');
+  }
+  move(target,direction);
+  return;
+ }
+ const fromDegrees=Math.max(-160,Math.min(160,fromSwipe?.degrees||0));
+ const endDegrees=direction>0?-178:178;
+ const turn={
+  sheet,animation:null,underlay:null,document:documentPDF,
+  generation,source:start,mode:$('view-mode').value
+ };
  activePageTurn=turn;
+ if(!bookMode)turn.underlay=prepareSinglePageUnderlay(sheet,target);
  sheet.classList.remove('paper-dragging');
  sheet.classList.add('paper-turning');
  sheet.style.transformOrigin=direction>0?'left center':'right center';
+ // Several keyframes with different shadow intensities suggest a flexible
+ // paper leaf moving slowly through the upright midpoint.
+ const angle=part=>Math.round(fromDegrees+(endDegrees-fromDegrees)*part);
+ const frame=(offset,part,light)=>({
+  offset,transform:'perspective(1100px) rotateY('+angle(part)+'deg)',
+  filter:'brightness('+light+')'
+ });
  const frames=[
-  {transform:'perspective(1100px) rotateY('+fromDegrees+'deg)',opacity:1},
-  {transform:'perspective(1100px) rotateY('+endDegrees+'deg)',opacity:.92}
+  frame(0,0,1),
+  frame(.12,.06,.97),
+  frame(.32,.24,.91),
+  frame(.53,.51,.79),
+  frame(.70,.74,.88),
+  frame(.88,.94,.96),
+  frame(1,1,1)
  ];
- let completed=false;
+ const duration=Math.max(520,Math.round(PAPER_TURN_DURATION_MS*(1-Math.abs(fromDegrees)/185)));
  try{
   turn.animation=sheet.animate(frames,{
-   duration:Math.max(180,Math.min(420,350*(1-Math.abs(fromDegrees)/180))),
-   easing:'cubic-bezier(.2,.65,.2,1)',fill:'forwards'
+   duration,easing:'cubic-bezier(.38,.06,.19,1)',fill:'forwards'
   });
   await turn.animation.finished;
-  completed=activePageTurn===turn;
- }catch{return;}finally{
-  if(activePageTurn===turn){
-   activePageTurn=null;
-   turn.animation?.cancel();
-   sheet.classList.remove('paper-turning','paper-dragging');
-   sheet.style.transform='';sheet.style.transformOrigin='';
-  }
+  // The animation can be canceled by pinch, closing the reader, or switching
+  // modes. Never advance the document after such a cancellation.
+  if(activePageTurn!==turn||documentPDF!==turn.document
+     ||generation!==turn.generation||$('view-mode').value!==turn.mode)return;
+  if((bookMode?spreadStart(page):page)!==start)return;
+  move(target,direction);
+ }catch{
+  // The Web Animations API rejects finished when the gesture is canceled.
+ }finally{
+  if(activePageTurn===turn)activePageTurn=null;
+  turn.animation?.cancel();
+  turn.underlay?.remove();
+  sheet.classList.remove('paper-turning','paper-dragging');
+  sheet.style.transform='';sheet.style.transformOrigin='';sheet.style.willChange='';
  }
- if(!completed||!documentPDF||documentPDF!==turn.document||generation!==turn.generation||!isBookSpread())return;
- if(spreadStart(page)!==start)return;
- move(target,direction);
 }
+
 /** close Reader: Support the PiShelf reader or library interface. */
 async function closeReader({fromHistory=false}={}){
  if(!fromHistory&&readerHistoryActive){
@@ -941,8 +995,8 @@ function clearBookPaperSwipe(){
  bookPaperSwipe=null;
 }
 function beginBookPaperSwipe(e){
- if(e.pointerType!=='touch'||!prefs.gestures||!documentPDF||!isBookSpread()||pinch||!layoutReady)return;
- if(gesturePointers.size!==1||Math.abs(zoom-fitEntirePageZoom(page))>.04)return;
+ if(e.pointerType!=='touch'||!prefs.gestures||!documentPDF||!isAnimatedPageMode()||pinch||!layoutReady)return;
+ if(gesturePointers.size!==1||(isBookSpread()?Math.abs(zoom-fitEntirePageZoom(page))>.04:zoom>1.05))return;
  bookPaperSwipe={id:e.pointerId,x:e.clientX,y:e.clientY,time:performance.now(),direction:0,sheet:null,dragging:false};
 }
 function previewBookPaperSwipe(e){
@@ -957,7 +1011,7 @@ function previewBookPaperSwipe(e){
  if(direction!==state.direction){
   if(state.sheet){state.sheet.classList.remove('paper-dragging');state.sheet.style.transform='';}
   state.direction=direction;
-  state.sheet=direction>0?slots[slots.length-1]:slots[0];
+  state.sheet=isBookSpread()?(direction>0?slots[slots.length-1]:slots[0]):slots[0];
  }
  const sheet=state.sheet;
  if(!sheet)return;
@@ -966,7 +1020,7 @@ function previewBookPaperSwipe(e){
  const degrees=Math.round(travel*135);
  sheet.classList.add('paper-dragging');
  sheet.style.transformOrigin=direction>0?'left center':'right center';
- sheet.style.transform='perspective(1000px) rotateY('+(direction>0?-degrees:degrees)+'deg)';
+ sheet.style.transform='perspective(1100px) rotateY('+(direction>0?-degrees:degrees)+'deg)';
 }
 function endBookPaperSwipe(e){
  const state=bookPaperSwipe;
