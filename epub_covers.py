@@ -40,18 +40,22 @@ def _read_member(archive, name, limit):
     return data
 
 
+def _xml(content):
+    # EPUB manifests must not use DTDs or entity definitions; reject them
+    # before parsing to avoid exponential entity expansion.
+    if b"<!DOCTYPE" in content.upper() or b"<!ENTITY" in content.upper():
+        raise ValueError("Unsafe EPUB XML declarations")
+    return ElementTree.fromstring(content)
+
+
 def _cover_member_name(archive):
     """Resolve EPUB 2 and EPUB 3 declared cover-image metadata."""
-    container = ElementTree.fromstring(
-        _read_member(archive, "META-INF/container.xml", MAX_XML_BYTES)
-    )
+    container = _xml(_read_member(archive, "META-INF/container.xml", MAX_XML_BYTES))
     rootfile = container.find(".//{*}rootfile")
     if rootfile is None:
         return None
     package_path = _archive_path(rootfile.get("full-path", ""))
-    package = ElementTree.fromstring(
-        _read_member(archive, package_path, MAX_XML_BYTES)
-    )
+    package = _xml(_read_member(archive, package_path, MAX_XML_BYTES))
     manifest = package.find(".//{*}manifest")
     if manifest is None:
         return None
@@ -88,7 +92,9 @@ def _cover_member_name(archive):
         return None
 
     href = unquote(cover.get("href", "").split("#", 1)[0])
-    _archive_path(href)
+    if not href or href.startswith('/') or '\\' in href or '\x00' in href:
+        raise ValueError('Unsafe EPUB cover reference')
+    # ../ is legal inside an EPUB package if it resolves within the archive.
     resolved = posixpath.normpath(posixpath.join(posixpath.dirname(package_path), href))
     return _archive_path(resolved)
 
