@@ -140,3 +140,7 @@ body.epub-open{overflow:hidden}
 #reader.focused .book-turn-controls{opacity:0;pointer-events:none}
 #reader.focused .book-turn-controls button{pointer-events:none}
 @media(max-width:600px){#pages.book-layout .book-spread{gap:4px;padding:6px 5px 16px}.book-turn-controls{padding:0 3px}.book-turn-controls button{min-width:28px;min-height:46px;font-size:25px;opacity:.8}}
+
+#pages.paged-layout{min-height:100%;display:flex;flex-direction:column;justify-content:center;box-sizing:border-box}
+#pages.paged-layout>.pdf-slot{flex:none;margin-block:0}
+#pages.book-layout .book-spread{align-items:center;padding-block:8px}
