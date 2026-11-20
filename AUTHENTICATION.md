@@ -19,9 +19,9 @@ PiShelf requires a login for all PDFs, WebP images, the library and API endpoint
    ```
 2. Create the first administrator **on the Raspberry Pi**, not through a public registration page:
    ```sh
-   docker compose exec -it pishelf python auth.py create-admin /data/progress.sqlite3
+   docker compose exec --user 1000:1000 -it pishelf python auth.py create-admin /data/progress.sqlite3
    ```
-   Enter an admin username and a unique password of at least 12 characters. Password input is hidden. Only the first administrator can be created with this command.
+   Replace `1000:1000` with the `PISHELF_UID:PISHELF_GID` configured in your `.env` file, if different. Enter an admin username and a unique password of at least 12 characters. Password input is hidden. Only the first administrator can be created with this command.
 3. Open `http://YOUR_PI_IP:8098/login.html` and sign in.
 4. Click **Manage users** (administrator only), or open `/admin.html`.
 
