@@ -116,7 +116,7 @@ class Handler(BaseHTTPRequestHandler):
         if category != '.': safe_relative(category)
         destination=checked_path(root,(Path(category)/filename).as_posix())
         length=int(self.headers.get('Content-Length','0'))
-        if not 0 < length <= 512*1024*1024: raise APIError(413,'Upload one PDF up to 512 MiB.')
+        if not 0 < length <= (100 if fmt=='.epub' else 512)*1024*1024: raise APIError(413,'PDF limit is 512 MiB; EPUB book limit is 100 MiB.')
         expected='application/epub+zip' if fmt=='.epub' else 'application/pdf'
         if self.headers.get_content_type() != expected: raise APIError(400,'Unexpected file content type.')
         # A dedicated upload lock serializes large writes without blocking reading-state saves.
@@ -134,7 +134,7 @@ class Handler(BaseHTTPRequestHandler):
                         chunk=self.rfile.read(min(256*1024,remaining))
                         if not chunk: raise APIError(400,'Upload interrupted. No PDF was added.')
                         if first and fmt=='.pdf' and b'%PDF-' not in chunk[:1024]: raise APIError(400,'This file does not have a PDF header.')
-                        if first and fmt=='.epub' and not chunk.startswith(b'PK\\x03\\x04'): raise APIError(400,'This EPUB is not a ZIP archive.')
+                        if first and fmt=='.epub' and not chunk.startswith(b'PK\x03\x04'): raise APIError(400,'This EPUB is not a ZIP archive.')
                         first=False
                         output.write(chunk);remaining-=len(chunk)
                 if fmt=='.epub': validate_epub(temporary)
@@ -503,7 +503,7 @@ class Handler(BaseHTTPRequestHandler):
             row=db.execute('SELECT value FROM progress WHERE id=?',(key,)).fetchone()
             value=json.loads(row[0]) if row else {}
             value.update(data)
-            if 'page' in data: value['lastRead']=time.time()
+            if 'page' in data or 'epubCfi' in data: value['lastRead']=time.time()
             db.execute('INSERT OR REPLACE INTO progress VALUES (?,?)',(key,json.dumps(value)))
             return value
         if route == '/api/trash':
