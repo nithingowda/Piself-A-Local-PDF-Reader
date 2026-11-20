@@ -32,7 +32,7 @@ test('even page count leaves last spread a single right-hand page',()=>{
 });
 
 test('turn controls navigate one spread and respect cover and endpoints',()=>{
- const ctx={documentPDF:{numPages:7},page:1,moves:[],activePageTurn:null,isBookSpread:()=>true,slots:[]};
+ const ctx={documentPDF:{numPages:7},page:1,moves:[],activePageTurn:null,isBookSpread:()=>true,isAnimatedPageMode:()=>true,slots:[]};
  const helpers=build(ctx);ctx.spreadStart=helpers.spreadStart;
  ctx.move=(target,direction)=>{const next=helpers.spreadStart(target);ctx.moves.push([next,direction]);ctx.page=next;};
  const turn=buildNavigator(ctx);

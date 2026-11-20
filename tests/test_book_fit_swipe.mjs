@@ -62,7 +62,7 @@ test('one-finger paper drag folds current page and commits a whole spread turn',
  const ctx={prefs:{gestures:true},documentPDF:{numPages:8},layoutReady:true,
   zoom:.8,page:2,pinch:null,slots:[sheet,sheet],gesturePointers:pointers,
   gestureStart:null,lastTap:null,suppressTapUntil:0,
-  isBookSpread:()=>true,fitEntirePageZoom:()=>.8,
+  isBookSpread:()=>true,isAnimatedPageMode:()=>true,fitEntirePageZoom:()=>.8,
   performance:{now:()=>time},
   $:key=>key==='page-area'?{clientWidth:400}:key==='book-turn-next'?{disabled:false}:{disabled:false},
   turnBook:(dir,fromSwipe)=>turned.push({dir,fromSwipe})

@@ -179,3 +179,47 @@ body.epub-open{overflow:hidden}
  #pages.book-layout .pdf-slot.paper-turning{filter:none}
  #pages.book-layout .pdf-slot.paper-turning::after{display:none}
 }
+
+
+/* Reading-speed paper turns, with a preview of the next PDF page under the
+   moving sheet in Single Page mode. The underlay uses a cached 960px WebP. */
+#pages{position:relative}
+#pages .paper-turn-underlay{
+ position:absolute;z-index:0;pointer-events:none;overflow:hidden;
+ background:linear-gradient(115deg,#e1dbce,#fffdf6 25%,#f2ede4);
+ box-shadow:inset 0 0 20px #0002,0 5px 18px #0003;
+}
+#pages .paper-turn-underlay img{
+ display:block;width:100%;height:100%;object-fit:fill;
+}
+#pages .pdf-slot.paper-turning,
+#pages .pdf-slot.paper-dragging{
+ position:relative;z-index:5;transform-style:preserve-3d;
+ backface-visibility:visible;will-change:transform;
+}
+/* The front page vanishes after crossing 90 degrees; its paper backside
+   remains visible. A faint crease moves with the 3D leaf. */
+#pages .pdf-slot.paper-turning>img,
+#pages .pdf-slot.paper-dragging>img,
+#pages .pdf-slot.paper-turning>canvas,
+#pages .pdf-slot.paper-dragging>canvas{
+ backface-visibility:hidden;transform:translateZ(1px);
+}
+#pages .pdf-slot.paper-turning::before,
+#pages .pdf-slot.paper-dragging::before{
+ content:"";position:absolute;inset:0;z-index:2;pointer-events:none;
+ background:linear-gradient(90deg,#0004 0%,#0001 7%,transparent 19%,transparent 78%,#fff3 93%,#0003 100%);
+ transform:translateZ(2px);backface-visibility:hidden;
+}
+#pages .pdf-slot.paper-turning::after,
+#pages .pdf-slot.paper-dragging::after{
+ content:"";position:absolute;inset:0;z-index:1;pointer-events:none;
+ background:linear-gradient(90deg,#bcb4a6 0%,#ece7df 12%,#faf7f0 47%,#e6dfd3 86%,#bcb3a5 100%);
+ transform:rotateY(180deg) translateZ(1px);
+ backface-visibility:hidden;
+ box-shadow:inset 9px 0 16px #0002,inset -7px 0 15px #0002;
+}
+@media(prefers-reduced-motion:reduce){
+ #pages .pdf-slot.paper-turning::before,
+ #pages .pdf-slot.paper-turning::after{display:none}
+}

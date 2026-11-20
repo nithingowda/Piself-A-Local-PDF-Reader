@@ -4,7 +4,7 @@ import test from 'node:test';
 
 const js=readFileSync(new URL('../static/app.js',import.meta.url),'utf8');
 const css=readFileSync(new URL('../static/style.css',import.meta.url),'utf8');
-const start=js.indexOf('let activePageTurn=null;');
+const start=js.indexOf('const PAPER_TURN_DURATION_MS=');
 const end=js.indexOf('/** close Reader:',start);
 assert.ok(start>=0&&end>start,'Expected page-turn animation implementation');
 
@@ -30,6 +30,9 @@ function fixture({motion=true,reduced=false}={}){
   slots:[sheet,sheet],
   prefs:{motion},
   isBookSpread:()=>true,
+  isAnimatedPageMode:()=>true,
+  current:null,
+  $:()=>({value:'book'}),
   spreadStart:n=>n===1?1:2+2*Math.floor((Math.min(8,n)-2)/2),
   matchMedia:()=>({matches:reduced}),
   move:(page,direction)=>events.push({type:'move',page,direction})
@@ -44,7 +47,7 @@ test('button page turn finishes paper fold before loading next two-page spread',
  assert.equal(f.events[0].type,'animate');
  assert.equal(f.events[0].options.fill,'forwards');
  assert.equal(f.events.some(e=>e.type==='move'),false,'must not swap PDF pages mid animation');
- assert.equal(f.events[0].frames.at(-1).transform.includes('-175deg'),true);
+ assert.equal(f.events[0].frames.at(-1).transform.includes('-178deg'),true);
  assert.ok(f.classes.has('paper-turning'));
  f.finish();await pending;
  assert.ok(!f.classes.has('paper-turning'));
@@ -56,7 +59,7 @@ test('swipe release continues from dragged paper angle without snapping back',as
  f.sheet.style.transform='perspective(1000px) rotateY(-65deg)';
  const p=f.turnBook(1,{sheet:f.sheet,degrees:-65});
  assert.equal(f.events[0].frames[0].transform.includes('-65deg'),true);
- assert.equal(f.events[0].frames.at(-1).transform.includes('-175deg'),true);
+ assert.equal(f.events[0].frames.at(-1).transform.includes('-178deg'),true);
  f.finish();await p;
  assert.deepEqual(f.events.filter(e=>e.type==='move').map(e=>e.page),[4]);
 });
