@@ -156,3 +156,26 @@ body.epub-open{overflow:hidden}
  #pages.book-layout .pdf-slot.paper-dragging{transition:none;filter:none}
  #pages.book-layout .pdf-slot.paper-returning{transition:none}
 }
+
+/* Page curl: front is the existing rendered WebP page. As it flips, its
+   lightly shaded paper back becomes visible, without another image decode. */
+#pages.book-layout .pdf-slot.paper-turning{
+ transform-style:preserve-3d;
+ backface-visibility:hidden;
+ will-change:transform;
+ z-index:2;
+ filter:drop-shadow(0 6px 9px #0006);
+}
+#pages.book-layout .pdf-slot.paper-turning::after{
+ content:"";
+ position:absolute;
+ inset:0;
+ pointer-events:none;
+ background:linear-gradient(90deg,#c8c4b6 0%,#eee9df 14%,#f9f6ee 78%,#d0c9b9 100%);
+ backface-visibility:hidden;
+ transform:rotateY(180deg);
+}
+@media(prefers-reduced-motion:reduce){
+ #pages.book-layout .pdf-slot.paper-turning{filter:none}
+ #pages.book-layout .pdf-slot.paper-turning::after{display:none}
+}
