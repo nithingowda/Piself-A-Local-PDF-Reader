@@ -621,7 +621,7 @@ async function closeReader({fromHistory=false}={}){
   // Back triggers popstate and returns to the existing library history entry.
   history.back();
  }
- clearMagazinePrefetches();cancelAllSharpImages();resetPinch();clearTimeout(scrollTimer);clearTimeout(immersiveTimer);remember();++generation;++layoutEpoch;layoutReady=false;pageObserver?.disconnect();renderQueue=[];const oldDoc=documentPDF;documentPDF=null;if(oldDoc?.destroy)oldDoc.destroy().catch(()=>{});$('reader').hidden=true;document.body.classList.remove('reader-open');$('library').hidden=false;$('pages').replaceChildren();slots=[];renderedSlots.clear();if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});drawLibrary();refresh(true);}
+ clearMagazinePrefetches();cancelAllSharpImages();clearBookPaperSwipe();resetPinch();clearTimeout(scrollTimer);clearTimeout(immersiveTimer);remember();++generation;++layoutEpoch;layoutReady=false;pageObserver?.disconnect();renderQueue=[];const oldDoc=documentPDF;documentPDF=null;if(oldDoc?.destroy)oldDoc.destroy().catch(()=>{});$('reader').hidden=true;document.body.classList.remove('reader-open');$('library').hidden=false;$('pages').replaceChildren();slots=[];renderedSlots.clear();if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});drawLibrary();refresh(true);}
 // Thumbnail browser: load only the visible part of a bounded thumbnail list.
 // === Thumbnail navigator ====================================================
 // 60 pages per batch; IntersectionObserver loads only visible thumbnails.
@@ -845,6 +845,7 @@ function finishPinch(cancelled=false){
 }
 $('page-area').addEventListener('touchstart',e=>{
  if(e.touches.length!==2||!prefs.gestures||!documentPDF||!layoutReady)return;
+ clearBookPaperSwipe();
  e.preventDefault();lastTap=null;gestureStart=null;clearTimeout(scrollTimer);
  const point=touchPair(e.touches),area=$('page-area'),rect=area.getBoundingClientRect();
  const slot=slots.find(s=>{const r=s.getBoundingClientRect();return point.x>=r.left&&point.x<=r.right&&point.y>=r.top&&point.y<=r.bottom;})||slots.find(s=>+s.dataset.page===page);
@@ -872,13 +873,86 @@ $('page-area').addEventListener('touchmove',e=>{
 },{passive:false});
 $('page-area').addEventListener('touchend',e=>{if(pinch&&e.touches.length<2){e.preventDefault();finishPinch();}},{passive:false});
 $('page-area').addEventListener('touchcancel',()=>finishPinch(true),{passive:true});
-$('page-area').addEventListener('pointerdown',e=>{if(e.pointerType!=='touch')return;lastTouchTime=performance.now();gesturePointers.add(e.pointerId);if(gesturePointers.size===1)gestureStart={x:e.clientX,y:e.clientY,time:performance.now(),multi:false};else if(gestureStart)gestureStart.multi=true;},{passive:true});
-$('page-area').addEventListener('pointercancel',e=>{gesturePointers.delete(e.pointerId);gestureStart=null;lastTap=null;},{passive:true});
+// The paper turn preview uses an existing displayed WebP page, not a third
+// render. Keep it separate from iOS Safari's two-touch pinch state machine.
+let bookPaperSwipe=null;
+function clearBookPaperSwipe(){
+ if(!bookPaperSwipe)return;
+ const sheet=bookPaperSwipe.sheet;
+ if(sheet){
+  sheet.classList.remove('paper-dragging');
+  sheet.style.transform='';sheet.style.transformOrigin='';sheet.style.willChange='';
+ }
+ bookPaperSwipe=null;
+}
+function beginBookPaperSwipe(e){
+ if(e.pointerType!=='touch'||!prefs.gestures||!documentPDF||!isBookSpread()||pinch||!layoutReady)return;
+ if(gesturePointers.size!==1||Math.abs(zoom-fitEntirePageZoom(page))>.04)return;
+ bookPaperSwipe={id:e.pointerId,x:e.clientX,y:e.clientY,time:performance.now(),direction:0,sheet:null,dragging:false};
+}
+function previewBookPaperSwipe(e){
+ const state=bookPaperSwipe;
+ if(!state||state.id!==e.pointerId||pinch||gesturePointers.size!==1)return;
+ const dx=e.clientX-state.x,dy=e.clientY-state.y;
+ if(!state.dragging&&(Math.abs(dx)<14||Math.abs(dx)<Math.abs(dy)*1.35))return;
+ const direction=dx<0?1:-1;
+ if((direction>0&&$('book-turn-next').disabled)||(direction<0&&$('book-turn-prev').disabled)){
+  clearBookPaperSwipe();return;
+ }
+ if(direction!==state.direction){
+  if(state.sheet){state.sheet.classList.remove('paper-dragging');state.sheet.style.transform='';}
+  state.direction=direction;
+  state.sheet=direction>0?slots[slots.length-1]:slots[0];
+ }
+ const sheet=state.sheet;
+ if(!sheet)return;
+ state.dragging=true;
+ const travel=Math.min(1,Math.abs(dx)/Math.max(100,$('page-area').clientWidth*.55));
+ const degrees=Math.round(travel*135);
+ sheet.classList.add('paper-dragging');
+ sheet.style.transformOrigin=direction>0?'left center':'right center';
+ sheet.style.transform='perspective(1000px) rotateY('+(direction>0?-degrees:degrees)+'deg)';
+}
+function endBookPaperSwipe(e){
+ const state=bookPaperSwipe;
+ if(!state||state.id!==e.pointerId)return false;
+ const dx=e.clientX-state.x,dy=e.clientY-state.y;
+ const turn=state.dragging&&Math.abs(dx)>Math.max(60,$('page-area').clientWidth*.16)
+  &&Math.abs(dx)>Math.abs(dy)*1.35&&performance.now()-state.time<1600;
+ const direction=state.direction;
+ clearBookPaperSwipe();
+ if(!state.dragging)return false;
+ gestureStart=null;lastTap=null;suppressTapUntil=performance.now()+450;
+ if(turn)turnBook(direction);
+ return true;
+}
+$('page-area').addEventListener('pointerdown',e=>{
+ if(e.pointerType!=='touch')return;
+ lastTouchTime=performance.now();gesturePointers.add(e.pointerId);
+ if(gesturePointers.size===1){
+  gestureStart={x:e.clientX,y:e.clientY,time:performance.now(),multi:false};
+  beginBookPaperSwipe(e);
+ }else{
+  clearBookPaperSwipe();
+  if(gestureStart)gestureStart.multi=true;
+ }
+},{passive:true});
+$('page-area').addEventListener('pointermove',previewBookPaperSwipe,{passive:true});
+$('page-area').addEventListener('pointercancel',e=>{
+ gesturePointers.delete(e.pointerId);clearBookPaperSwipe();gestureStart=null;lastTap=null;
+},{passive:true});
 $('page-area').addEventListener('pointerup',e=>{
- gesturePointers.delete(e.pointerId);if(e.pointerType!=='touch'||pinch||performance.now()<suppressTapUntil||!gestureStart||gestureStart.multi||gesturePointers.size)return;
- const start=gestureStart;gestureStart=null;const dx=e.clientX-start.x,dy=e.clientY-start.y,elapsed=performance.now()-start.time;
- if(prefs.gestures&&documentPDF&&zoom<=1&&Math.abs(dx)>70&&Math.abs(dx)>Math.abs(dy)*2&&elapsed<700){turnBook(dx<0?1:-1);lastTap=null;return;}
- if(Math.hypot(dx,dy)<18&&elapsed<300){const now=performance.now();if(lastTap&&now-lastTap.time<320&&Math.hypot(e.clientX-lastTap.x,e.clientY-lastTap.y)<35){toggleReaderControls();lastTap=null;}else lastTap={time:now,x:e.clientX,y:e.clientY};}else lastTap=null;
+ gesturePointers.delete(e.pointerId);
+ if(e.pointerType==='touch'&&endBookPaperSwipe(e))return;
+ if(e.pointerType!=='touch'||pinch||performance.now()<suppressTapUntil||!gestureStart||gestureStart.multi||gesturePointers.size)return;
+ const start=gestureStart;gestureStart=null;
+ const dx=e.clientX-start.x,dy=e.clientY-start.y,elapsed=performance.now()-start.time;
+ if(prefs.gestures&&documentPDF&&zoom<=fitEntirePageZoom(page)+.04&&Math.abs(dx)>70&&Math.abs(dx)>Math.abs(dy)*2&&elapsed<700){turnBook(dx<0?1:-1);lastTap=null;return;}
+ if(Math.hypot(dx,dy)<18&&elapsed<300){
+  const now=performance.now();
+  if(lastTap&&now-lastTap.time<320&&Math.hypot(e.clientX-lastTap.x,e.clientY-lastTap.y)<35){toggleReaderControls();lastTap=null;}
+  else lastTap={time:now,x:e.clientX,y:e.clientY};
+ }else lastTap=null;
 },{passive:true});
 $('page-area').addEventListener('dblclick',e=>{if(performance.now()-lastTouchTime>600){e.preventDefault();toggleReaderControls();}});
 $('reader-accessibility-controls').onclick=toggleReaderControls;
