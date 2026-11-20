@@ -1,4 +1,10 @@
 'use strict';
+(async()=>{
+ try{
+  const response=await fetch('/api/auth/setup-status',{cache:'no-store'});
+  if(response.ok&&(await response.json()).setup_required)location.replace('/setup.html');
+ }catch{ /* Login remains available if setup status cannot be read. */ }
+})();
 document.getElementById('login').addEventListener('submit',async event=>{
  event.preventDefault();
  const error=document.getElementById('error'),button=event.target.querySelector('button');
