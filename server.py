@@ -173,12 +173,35 @@ class Handler(BaseHTTPRequestHandler):
             raise APIError(403,'Invalid security token.')
         return user
 
+    def is_private_setup_client(self):
+        # Private network restriction limits accidental public setup exposure.
+        # Reverse proxies may mask public clients as local: keep PiShelf private.
+        import ipaddress
+        try:
+            address=ipaddress.ip_address(self.client_address[0])
+            return address.is_loopback or (address.is_private and not address.is_link_local)
+        except ValueError:
+            return False
+
     def auth_post(self,route):
         length=int(self.headers.get('Content-Length','0'))
         if self.headers.get('Transfer-Encoding') or not 0<length<=4096 or self.headers.get_content_type()!='application/json':
             raise APIError(400,'Invalid authentication request.')
         data=json.loads(self.rfile.read(length))
         if not isinstance(data,dict): raise APIError(400,'Invalid request.')
+        if route=='/api/auth/setup':
+            # First-run setup is restricted to the host or private LAN.
+            # Serialize setup requests to prevent two simultaneous first admins.
+            with self.server.auth_lock:
+                with sqlite3.connect(self.server.state_db) as db:
+                    db.execute('BEGIN IMMEDIATE')
+                    if db.execute('SELECT 1 FROM auth_users LIMIT 1').fetchone():
+                        raise APIError(409,'Setup is complete. Sign in instead.')
+                    if not self.is_private_setup_client():
+                        raise APIError(403,'Initial setup requires access from your private network.')
+                    auth.create_user(db,data.get('username'),data.get('password'),'admin')
+            self.json_response({'ok':True})
+            return
         if route=='/api/auth/login':
             ip=self.client_address[0]
             with self.server.auth_lock:
@@ -520,13 +543,19 @@ class Handler(BaseHTTPRequestHandler):
         path=unquote(urlsplit(self.path).path)
         try:
             if path == '/api/health': self.json_response({'status':'ok'},head=head); return
-            if path not in ('/login.html','/login.js'):
+            if path == '/api/auth/setup-status':
+                with sqlite3.connect(self.server.state_db) as db:
+                    setup_needed=not bool(db.execute('SELECT 1 FROM auth_users LIMIT 1').fetchone())
+                self.json_response({'setup_required':setup_needed},head=head);return
+            if path not in ('/login.html','/login.js','/setup.html','/setup.js'):
                 try:
                     user=self.require_session(admin=path in ('/admin.html','/admin.js'))
                 except APIError as error:
                     if error.status==401 and path in ('/','/index.html','/admin.html'):
                         self.send_response(302)
-                        self.send_header('Location','/login.html')
+                        with sqlite3.connect(self.server.state_db) as db:
+                            needs_setup=not bool(db.execute('SELECT 1 FROM auth_users LIMIT 1').fetchone())
+                        self.send_header('Location','/setup.html' if needs_setup else '/login.html')
                         self.send_header('Cache-Control','no-store')
                         self.end_headers()
                         return
