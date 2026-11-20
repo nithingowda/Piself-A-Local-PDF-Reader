@@ -31,7 +31,7 @@ class EpubClientChecks(unittest.TestCase):
   # Ensure the header is attached to the actual XMLHttpRequest upload,
   # rather than existing only in the JSON API helper.
   start=JS.index('function uploadFile(')
-  end=JS.index("\\n$('upload-cancel').onclick",start)
+  end=JS.index("$('upload-cancel').onclick",start)
   upload=JS[start:end]
   self.assertIn("xhr.setRequestHeader('X-PiShelf-CSRF',signedInUser?.csrf||'')",upload)
   self.assertIn("xhr.setRequestHeader('Content-Type'",upload)
