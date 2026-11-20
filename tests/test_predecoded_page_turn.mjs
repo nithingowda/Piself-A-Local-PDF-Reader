@@ -58,6 +58,7 @@ test('two-page book mode warms both upcoming pages and prior spread with bounded
  assert.deepEqual([...c.imagePrefetches.keys()].sort(),[1,4,5]);
  assert.ok(c.imagePrefetches.size<=4);
  c.ctx.page=4;
+ c.ctx.slots=[{dataset:{page:'4',ready:'yes'}},{dataset:{page:'5',ready:'yes'}}];
  c.preloadMagazineNeighbors();
  assert.deepEqual([...c.imagePrefetches.keys()].sort(),[2,3,6,7]);
  assert.ok(c.imagePrefetches.size<=4);
