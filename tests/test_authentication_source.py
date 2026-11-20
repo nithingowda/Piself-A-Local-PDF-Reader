@@ -24,6 +24,15 @@ class AuthenticationSourceTests(unittest.TestCase):
         self.assertIn('X-PiShelf-CSRF',SERVER)
         self.assertIn('SameSite=Strict',SERVER)
         self.assertIn('HttpOnly',SERVER)
+    def test_first_run_browser_setup(self):
+        self.assertIn("if route=='/api/auth/setup':",SERVER)
+        self.assertIn("db.execute('BEGIN IMMEDIATE')",SERVER)
+        self.assertIn("if db.execute('SELECT 1 FROM auth_users LIMIT 1').fetchone()",SERVER)
+        self.assertIn("self.is_private_setup_client()",SERVER)
+        self.assertIn("path == '/api/auth/setup-status'",SERVER)
+        self.assertIn("'/setup.html' if needs_setup else '/login.html'",SERVER)
+        self.assertTrue((ROOT/'static/setup.html').is_file())
+        self.assertTrue((ROOT/'static/setup.js').is_file())
     def test_admin_bootstrap_no_default_password(self):
         self.assertIn('getpass.getpass',AUTH)
         self.assertIn('Admin already exists',AUTH)
