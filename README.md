@@ -201,11 +201,12 @@ Click a cover to open an issue. If you have read it before, PiShelf returns to t
 The reader toolbar provides:
 
 - Previous/next page and direct page-number entry.
-- Continuous scrolling or single-page mode.
+- Continuous scrolling, single-page mode, or a **Two-page book** spread (cover alone, then pages 2–3, 4–5, etc.).
 - Zoom in, zoom out, and fit width.
 - Clockwise page rotation and fullscreen.
 - Page bookmarks and a bookmark jump menu.
 - Swipe page navigation, mobile pinch zoom, and double-tap to show or hide controls; reading settings remembered per issue.
+- In Two-page book mode, use the side page-turn buttons, keyboard arrows, or swipe to turn a whole spread. A subtle turning transition is disabled if Reduce Motion is enabled.
 
 Reading position is saved at the **page level**, not the exact scroll position within a page. Nearby pages render on demand, and distant page images are released to reduce memory use.
 
