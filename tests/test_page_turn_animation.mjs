@@ -30,6 +30,8 @@ function fixture({motion=true,reduced=false}={}){
   slots:[sheet,sheet],
   prefs:{motion},
   isBookSpread:()=>true,
+  isAnimatedPageMode:()=>true,
+  current:null,
   spreadStart:n=>n===1?1:2+2*Math.floor((Math.min(8,n)-2)/2),
   matchMedia:()=>({matches:reduced}),
   move:(page,direction)=>events.push({type:'move',page,direction})
