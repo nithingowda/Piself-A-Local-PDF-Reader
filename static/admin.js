@@ -28,7 +28,7 @@ async function load(){
 }
 document.getElementById('create').addEventListener('submit',async event=>{
  event.preventDefault();const form=event.target;
- try{await request('/api/admin/users',{action:'create',username:form.username.value,password:form.password.value,role:form.role.value});form.reset();error.textContent='';await load();}
+ try{await request('/api/admin/users',{action:'create',username:form.elements.namedItem('username').value,password:form.elements.namedItem('password').value,role:form.elements.namedItem('role').value});form.reset();error.textContent='';await load();}
  catch(e){error.textContent=e.message;}
 });
 load().catch(e=>error.textContent=e.message);
