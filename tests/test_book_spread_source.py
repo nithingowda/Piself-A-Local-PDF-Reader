@@ -29,7 +29,9 @@ class BookSpreadTests(unittest.TestCase):
   self.assertIn("$('book-turn-prev').onclick=()=>turnBook(-1)",JS)
   self.assertIn("$('book-turn-next').onclick=()=>turnBook(1)",JS)
   self.assertIn("turnBook(dx<0?1:-1)",JS)
-  self.assertIn("turn>0?'turn-forward':'turn-backward'",JS)
+  self.assertNotIn("sheet?.classList.add(turn>0?'turn-forward':'turn-backward')",JS)
+  self.assertIn('await primeSpreadDimensions(incoming,turn.document,turn.generation)',JS)
+  self.assertIn('if(isBookSpread())await primeSpreadDimensions(spreadPages(page),doc,g)',JS)
   self.assertIn('await turn.animation.finished',JS)
   self.assertIn('@media(prefers-reduced-motion:reduce)',CSS)
  def test_existing_modes_and_webp_safari_pinch_preserved(self):
