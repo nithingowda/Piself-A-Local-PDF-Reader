@@ -222,6 +222,18 @@ function bookPageBaseWidth(){
  const available=Math.max(200,$('page-area').clientWidth-40);
  return Math.max(90,Math.min(550,(available-12)/2));
 }
+let automaticFit=null;
+function defaultPagedFit(){
+ const mode=$('view-mode').value;
+ return mode==='single'?'height':mode==='book'?'page':null;
+}
+function heightFitZoom(n){
+ const d=dimensions.get(n)||dimensions.get(1);
+ if(!d)return fitEntirePageZoom(n);
+ const area=$('page-area'),swapped=rotation%180!==0;
+ const base=Math.min(Math.max(200,area.clientWidth-40),1100);
+ return area.clientHeight*(swapped?d.height:d.width)/(base*(swapped?d.width:d.height));
+}
 function pageWidth(){
  const available=Math.max(200,$('page-area').clientWidth-40);
  return (isBookSpread()?bookPageBaseWidth():Math.min(available,1100))*zoom;
@@ -262,7 +274,7 @@ function fitEntirePageZoom(n){
  */
 async function primeSpreadDimensions(pages,doc=documentPDF,g=generation){
  if(typeof doc?.getPage!=='function')return;
- await Promise.all(pages.filter(n=>!dimensions.has(n)).map(async n=>{
+ await Promise.allSettled(pages.filter(n=>!dimensions.has(n)).map(async n=>{
   const pdfPage=await doc.getPage(n);
   if(g!==generation||documentPDF!==doc)return;
   const view=pdfPage.getViewport({scale:1});
@@ -454,8 +466,16 @@ function trackScroll(){
 }
 $('page-area').addEventListener('scroll',()=>{if(!scrollFrame)scrollFrame=requestAnimationFrame(()=>{scrollFrame=null;trackScroll();});},{passive:true});
 /** rebuild: Manage PDF page rendering and canvas lifecycle. */
-async function rebuild(){if(!documentPDF)return;cancelAllSharpImages();$('pages').style.zoom='';$('pages').style.transform='';$('pages').style.transformOrigin='';cssZoomBase=zoom;updateTouchMode();const g=generation,epoch=++layoutEpoch;layoutReady=false;pageObserver?.disconnect();renderQueue=[];for(const c of $('pages').querySelectorAll('canvas')){c.width=0;c.height=0;}$('pages').replaceChildren();slots=[];renderedSlots.clear();
+async function rebuild(){if(!documentPDF)return;cancelAllSharpImages();$('pages').style.zoom='';$('pages').style.transform='';$('pages').style.transformOrigin='';cssZoomBase=zoom;updateTouchMode();const g=generation,epoch=++layoutEpoch;layoutReady=false;pageObserver?.disconnect();renderQueue=[];clearCurl();
+ if(automaticFit){
+  const fittedPage=page;
+  await primeSpreadDimensions(isBookSpread()?spreadPages(page):[page]);
+  if(g!==generation||epoch!==layoutEpoch||page!==fittedPage)return;
+  zoom=automaticFit==='height'?heightFitZoom(page):fitEntirePageZoom(page);
+  cssZoomBase=zoom;updateTouchMode();
+ }
  if(g!==generation||epoch!==layoutEpoch)return;
+ for(const c of $('pages').querySelectorAll('canvas')){c.width=0;c.height=0;}$('pages').replaceChildren();slots=[];renderedSlots.clear();
  const mode=$('view-mode').value,count=documentPDF.numPages,fragment=document.createDocumentFragment();
  if(mode==='book'){
   page=spreadStart(page);
@@ -476,12 +496,14 @@ async function rebuild(){if(!documentPDF)return;cancelAllSharpImages();$('pages'
    slot.append(el('span','page-placeholder','Page '+n));slots.push(slot);fragment.append(slot);
   }
  }
+ $('pages').classList.toggle('paged-layout',mode!=='scroll');
  $('pages').classList.toggle('book-layout',mode==='book');
  $('reader').classList.toggle('book-mode',mode==='book');
  $('pages').append(fragment);
  pageObserver=new IntersectionObserver(entries=>{for(const e of entries)if(e.isIntersecting)enqueue(e.target);},{root:$('page-area'),rootMargin:'500px'});slots.forEach(s=>pageObserver.observe(s));
  layoutReady=true;const target=slots.find(s=>+s.dataset.page===page);
- if(target){$('page-area').scrollTop=isBookSpread()?0:target.offsetTop-20;enqueue(target);}
+ if(target){$('page-area').scrollTop=mode==='scroll'?target.offsetTop-20:0;enqueue(target);}
+ if(automaticFit){const area=$('page-area');area.scrollLeft=(area.scrollWidth-area.clientWidth)/2;}
  if(isBookSpread())for(const slot of slots)enqueue(slot);
  updatePageUI();updateBookmarks();remember();}
 let pdfjsModulePromise;
@@ -623,7 +645,7 @@ async function openMagazine(item,start){
   if(isBookSpread())await primeSpreadDimensions(spreadPages(page),doc,g);
   if(g!==generation||documentPDF!==doc)return;
   // Start with the entire page visible and a small margin on every side.
-  zoom=fitEntirePageZoom(page);
+  automaticFit=defaultPagedFit();zoom=fitEntirePageZoom(page);
   await rebuild();$('page-area').focus({preventScroll:true});
   // Read remaining dimensions in the background. Adjust slot heights while
   // preserving the reader's current scroll anchor when pages above it change.
@@ -755,13 +777,14 @@ $('cache-clear').onclick=async()=>{
  try{const result=await api('/api/webp-cache/clear',{});toast('Removed '+result.removed+' cached images.');loadWebPCacheStats();}
  catch(e){toast(e.message);}
 };
-$('back').onclick=closeReader;$('prev').onclick=()=>turnBook(-1);$('next').onclick=()=>turnBook(1);$('book-turn-prev').onclick=()=>turnBook(-1);$('book-turn-next').onclick=()=>turnBook(1);$('page-number').onchange=e=>move(parseInt(e.target.value)||1);
+$('back').onclick=closeReader;$('prev').onclick=()=>turnFromControl(-1);$('next').onclick=()=>turnFromControl(1);$('book-turn-prev').onclick=()=>turnFromControl(-1);$('book-turn-next').onclick=()=>turnFromControl(1);$('page-number').onchange=e=>move(parseInt(e.target.value)||1);
 /** Button zoom keeps the page point under the viewport center visible.
  * rebuild() recreates page slots and normally scrolls to the page top; restore
  * a fractional anchor afterwards to avoid jumping left or losing the paragraph.
  * Two-finger pinch geometry is intentionally separate and unchanged.
  */
 async function zoomWithControls(targetZoom){
+ automaticFit=null;
  if(!documentPDF||pinch||!layoutReady)return;
  const area=$('page-area'),view=area.getBoundingClientRect();
  const centerX=view.left+view.width/2,centerY=view.top+view.height/2;
@@ -806,13 +829,27 @@ async function zoomWithControls(targetZoom){
 }
 $('minus').onclick=()=>zoomWithControls(zoom-.25);
 $('plus').onclick=()=>zoomWithControls(zoom+.25);
-$('fit').onclick=()=>zoomWithControls(fitEntirePageZoom(page));
-$('fit-page').onclick=()=>zoomWithControls(fitEntirePageZoom(page));$('rotate').onclick=()=>{rotation=(rotation+90)%360;rebuild();};$('view-mode').onchange=()=>{prefs.mode=$('view-mode').value;storePrefs();if(documentPDF){if(isBookSpread())page=spreadStart(page);zoom=fitEntirePageZoom(page);rebuild();}};
+$('fit-height').onclick=()=>{
+ if(!documentPDF)return;
+ if($('view-mode').value!=='single')$('view-mode').value='single';
+ automaticFit='height';rebuild();
+};
+function fitWidthZoom(){
+ const area=$('page-area');
+ if(!isBookSpread())return area.clientWidth/Math.min(Math.max(200,area.clientWidth-40),1100);
+ const count=spreadPages(page).length,compact=matchMedia('(max-width:600px)').matches;
+ return (area.clientWidth-(compact?10:32)-(count-1)*(compact?4:8))/(count*bookPageBaseWidth());
+}
+$('fit').onclick=()=>zoomWithControls(fitWidthZoom());
+$('fit-page').onclick=()=>zoomWithControls(fitEntirePageZoom(page));$('rotate').onclick=()=>{rotation=(rotation+90)%360;rebuild();};$('view-mode').onchange=()=>{prefs.mode=$('view-mode').value;automaticFit=defaultPagedFit();storePrefs();if(documentPDF){if(isBookSpread())page=spreadStart(page);zoom=fitEntirePageZoom(page);rebuild();}};
 $('bookmark').onclick=()=>{if(!documentPDF)return;const marks=saved[current.id]?.bookmarks||[];persist(current.id,{bookmarks:marks.includes(page)?marks.filter(n=>n!==page):[...marks,page].sort((a,b)=>a-b)});updatePageUI();updateBookmarks();};$('bookmarks').onchange=e=>{if(e.target.value)move(+e.target.value);e.target.value='';};
 $('fullscreen').onclick=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await $('reader').requestFullscreen();}catch{toast('Fullscreen is unavailable in this browser.');}};
 let searchTimer;$('search').oninput=()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>{visibleLimit=60;drawLibrary();},150);};$('sort').onchange=e=>{prefs.sort=e.target.value;storePrefs();drawLibrary();};$('refresh').onclick=()=>refresh();document.querySelectorAll('[data-filter]').forEach(b=>b.onclick=()=>{filter=b.dataset.filter;category=collectionFilter='';visibleLimit=60;document.querySelectorAll('.tab,.category').forEach(t=>t.classList.toggle('active',t===b));drawLibrary();});
-document.addEventListener('keydown',e=>{if($('reader').hidden||document.querySelector('dialog[open]')||/INPUT|SELECT/.test(e.target.tagName))return;if(e.key==='ArrowRight'){e.preventDefault();turnBook(1);}if(e.key==='ArrowLeft'){e.preventDefault();turnBook(-1);}if(e.key==='Escape'&&!document.fullscreenElement)closeReader();if(e.key.toLowerCase()==='b')$('bookmark').click();if(e.key.toLowerCase()==='c'){e.preventDefault();toggleReaderControls();}});
-window.addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>{if(documentPDF){resetPinch();rebuild();}},250);});
+document.addEventListener('keydown',e=>{if($('reader').hidden||document.querySelector('dialog[open]')||/INPUT|SELECT/.test(e.target.tagName))return;if(e.key==='ArrowRight'){e.preventDefault();turnFromControl(1);}if(e.key==='ArrowLeft'){e.preventDefault();turnFromControl(-1);}if(e.key==='Escape'&&!document.fullscreenElement)closeReader();if(e.key.toLowerCase()==='b')$('bookmark').click();if(e.key.toLowerCase()==='c'){e.preventDefault();toggleReaderControls();}});
+new ResizeObserver(()=>{
+ clearTimeout(resizeTimer);
+ resizeTimer=setTimeout(()=>{if(documentPDF&&layoutReady&&!pinch)rebuild();},100);
+}).observe($('page-area'));
 document.addEventListener('visibilitychange',()=>{if(document.hidden)remember();else{for(const [id,patch] of [...pendingSaves])persist(id,patch);refresh(true);}});window.addEventListener('pagehide',remember);
 // Library editing and backup controls.
 let editing=null;
@@ -854,7 +891,7 @@ function drawCollectionManager(){const box=$('collection-manager');box.replaceCh
 // Double-tap controls remain available even when swipe/pinch gestures are disabled.
 const gesturePointers=new Set();let gestureStart=null,lastTap=null,lastTouchTime=-Infinity,pinch=null,pinchFrame=0,suppressTapUntil=0;
 /** update Touch Mode: Handle touch zoom while maintaining the reader position. */
-function updateTouchMode(){const area=$('page-area');area.classList.toggle('gesture-navigation',!!prefs.gestures&&zoom<=1);area.classList.toggle('zoomed-in',!!documentPDF&&zoom>fitEntirePageZoom(page)+.01);}
+function updateTouchMode(){const area=$('page-area');area.classList.toggle('gesture-navigation',!!prefs.gestures&&!!documentPDF&&zoom<=fitEntirePageZoom(page)+.04);area.classList.toggle('zoomed-in',!!documentPDF&&zoom>fitEntirePageZoom(page)+.01);}
 /** toggle Reader Controls: Support the PiShelf reader or library interface. */
 let immersiveTimer=null;
 function scheduleImmersiveHide(){
@@ -889,7 +926,7 @@ function finishPinch(cancelled=false){
  if(!slot)return;
  // Capture the PDF point under the fingers before modifying layout.
  const fx=state.fx,fy=state.fy;
- zoom=next;page=isBookSpread()?spreadStart(state.page):state.page;
+ automaticFit=null;zoom=next;page=isBookSpread()?spreadStart(state.page):state.page;
  // Resize the actual page boxes. CSS zoom on the entire pages wrapper
  // creates a large scrollable gutter in iOS Safari and breaks pinch-out.
  $('pages').style.zoom='';
@@ -969,16 +1006,22 @@ function beginCurl(direction,start){
  const front=slot?.querySelector('img,canvas'),preview=imagePrefetches.get(edge(incoming));
  if(!front||!preview?.ready)return;
  const rect=slot.getBoundingClientRect(),canvas=document.createElement('canvas');
- const scale=Math.min(devicePixelRatio||1,2,1200/Math.max(rect.width,rect.height));
- canvas.width=Math.max(1,Math.round(rect.width*scale));
- canvas.height=Math.max(1,Math.round(rect.height*scale));
+ const opposite=spread&&slots.length===2?slots[direction>0?0:1].getBoundingClientRect():null;
+ const reverse=spread?imagePrefetches.get(direction>0?incoming[0]:incoming[incoming.length-1]):null;
+ const book=opposite&&reverse?.ready&&incoming.length===2;
+ const bounds=book?{left:Math.min(rect.left,opposite.left),top:Math.min(rect.top,opposite.top),
+  width:Math.max(rect.right,opposite.right)-Math.min(rect.left,opposite.left),
+  height:Math.max(rect.bottom,opposite.bottom)-Math.min(rect.top,opposite.top)}:rect;
+ const scale=Math.min(devicePixelRatio||1,2,1200/Math.max(bounds.width,bounds.height));
+ canvas.width=Math.max(1,Math.round(bounds.width*scale));
+ canvas.height=Math.max(1,Math.round(bounds.height*scale));
  const ctx=canvas.getContext('2d');
  if(!ctx)return;
  canvas.setAttribute('aria-hidden','true');
- Object.assign(canvas.style,{position:'fixed',pointerEvents:'none',left:rect.left+'px',top:rect.top+'px',
-  width:rect.width+'px',height:rect.height+'px',filter:getComputedStyle(front).filter,zIndex:'1'});
+ Object.assign(canvas.style,{position:'fixed',pointerEvents:'none',left:bounds.left+'px',top:bounds.top+'px',
+  width:bounds.width+'px',height:bounds.height+'px',filter:getComputedStyle(front).filter,zIndex:'1'});
  $('reader').append(canvas);
- curl={canvas,ctx,front,under:preview.img,rect,direction,progress:0,frame:0,
+ curl={canvas,ctx,book,reverse:reverse?.img,opposite,bounds,front,under:preview.img,rect,direction,progress:0,frame:0,
   tilt:start.y<rect.top+rect.height/2?1:-1,slot,epoch:layoutEpoch,origin:page};
 }
 function drawCurl(progress){
@@ -986,6 +1029,31 @@ function drawCurl(progress){
  const w=canvas.width,h=canvas.height;
  curl.progress=progress;
  ctx.setTransform(1,0,0,1,0,0);
+ if(curl.book){
+  const {rect,opposite,bounds,reverse}=curl;
+  ctx.clearRect(0,0,w,h);
+  ctx.scale(w/bounds.width,h/bounds.height);
+  ctx.translate(-bounds.left,-bounds.top);
+  ctx.drawImage(under,rect.left,rect.top,rect.width,rect.height);
+  const angle=Math.PI*progress,spine=direction>0?(rect.left+opposite.right)/2:(rect.right+opposite.left)/2;
+  const landing=(1-Math.cos(angle))/2;
+  const height=rect.height+(opposite.height-rect.height)*landing;
+  const top=rect.top+(opposite.top-rect.top)*landing;
+  const span=(rect.width+(opposite.width-rect.width)*landing);
+  // Project narrow strips of the leaf so the free edge bows as it crosses the spine.
+  const strips=48;
+  function projected(u){return spine+direction*u*span*Math.cos(angle-.24*Math.sin(angle)*u);}
+  for(let i=0;i<strips;i++){
+   const u=i/strips,v=(i+1)/strips,x=projected(u),next=projected(v);
+   const frontFacing=(next-x)*direction>0,img=frontFacing?front:reverse;
+   const iw=img.naturalWidth||img.width,ih=img.naturalHeight||img.height;
+   const source=(next>x?u:1-v)*iw,lift=16*Math.sin(angle)*u;
+   ctx.drawImage(img,source,0,iw/strips,ih,Math.min(x,next),top-lift,Math.abs(next-x)+.65,height+2*lift);
+   ctx.fillStyle='rgba(0,0,0,'+(.22*Math.sin(angle)*(1-u))+')';
+   ctx.fillRect(Math.min(x,next),top-lift,Math.abs(next-x)+.65,height+2*lift);
+  }
+  return;
+ }
  ctx.fillStyle='white';ctx.fillRect(0,0,w,h);
  ctx.drawImage(under,0,0,w,h);
  // Reflect the lifted portion across an inclined crease. Flatten the
@@ -1007,12 +1075,20 @@ function drawCurl(progress){
  shade.addColorStop(0,'rgba(0,0,0,.28)');shade.addColorStop(.5,'rgba(255,255,255,.5)');
  shade.addColorStop(1,'rgba(0,0,0,.04)');ctx.fillStyle=shade;ctx.fillRect(0,0,w,h);ctx.restore();
 }
+function turnFromControl(direction){
+ if(curl)return;
+ if(documentPDF&&isBookSpread()&&zoom<=fitEntirePageZoom(page)+.04){
+  beginCurl(direction,{y:$('page-area').getBoundingClientRect().bottom});
+  if(curl){drawCurl(0);settleCurl(true);return;}
+ }
+ turnBook(direction);
+}
 function settleCurl(commit){
  const active=curl,initial=active.progress,end=commit?1:0,start=performance.now();
  function frame(now){
   if(active!==curl)return;
   if(!active.slot.isConnected||active.epoch!==layoutEpoch||active.origin!==page||!documentPDF){clearCurl();return;}
-  const t=Math.min(1,(now-start)/220);
+  const t=Math.min(1,(now-start)/(active.book?480:220));
   drawCurl(initial+(end-initial)*(1-(1-t)**3));
   if(t<1){active.frame=requestAnimationFrame(frame);return;}
   clearCurl();
@@ -1032,7 +1108,7 @@ $('page-area').addEventListener('pointermove',e=>{
     !documentPDF||!prefs.gestures||zoom>fitEntirePageZoom(page)+.04)return;
  const dx=e.clientX-gestureStart.x,dy=e.clientY-gestureStart.y;
  if(!curl&&Math.abs(dx)>10&&Math.abs(dx)>2*Math.abs(dy))beginCurl(dx<0?1:-1,gestureStart);
- if(curl)drawCurl(Math.max(0,Math.min(1,-curl.direction*dx/curl.rect.width)));
+ if(curl)drawCurl(Math.max(0,Math.min(1,-curl.direction*dx/curl.bounds.width)));
 },{passive:true});
 $('page-area').addEventListener('pointercancel',e=>{
  clearCurl();gesturePointers.delete(e.pointerId);gestureStart=null;lastTap=null;
