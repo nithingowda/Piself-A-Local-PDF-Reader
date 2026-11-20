@@ -225,7 +225,8 @@ class Handler(BaseHTTPRequestHandler):
             action=data.get('action')
             with sqlite3.connect(self.server.state_db) as db:
                 if action=='create':
-                    auth.create_user(db,data.get('username'),data.get('password'),data.get('role','reader'))
+                    try: auth.create_user(db,data.get('username'),data.get('password'),data.get('role','reader'))
+                    except sqlite3.IntegrityError: raise APIError(409,'Username already exists.')
                 elif action in ('disable','enable','reset-password','delete'):
                     uid=data.get('id')
                     if type(uid) is not int: raise APIError(400,'Invalid user ID.')
