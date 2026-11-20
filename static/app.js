@@ -710,11 +710,15 @@ async function turnBook(direction,fromSwipe=null){
  }catch{
   // The Web Animations API rejects finished when the gesture is canceled.
  }finally{
-  if(activePageTurn===turn)activePageTurn=null;
-  turn.animation?.cancel();
-  turn.underlay?.remove();
-  sheet.classList.remove('paper-turning','paper-dragging');
-  sheet.style.transform='';sheet.style.transformOrigin='';sheet.style.willChange='';
+  const ownsSheet=activePageTurn===turn;
+  if(ownsSheet)activePageTurn=null;
+  turn.animation?.cancel();turn.underlay?.remove();
+  // If a canceled animation was replaced, its late promise rejection must
+  // not reset styling on the new animation of the same page.
+  if(ownsSheet){
+   sheet.classList.remove('paper-turning','paper-dragging');
+   sheet.style.transform='';sheet.style.transformOrigin='';sheet.style.willChange='';
+  }
  }
 }
 
