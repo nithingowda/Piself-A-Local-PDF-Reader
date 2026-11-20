@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PiShelf — First-time Setup</title>
+<style>body{font:16px system-ui;background:#10151f;color:#f5f7fa;min-height:100vh;display:grid;place-items:center;margin:0}main{width:min(400px,90vw);padding:30px;background:#1b2532;border-radius:18px}input,button{box-sizing:border-box;width:100%;padding:13px;margin:8px 0;border-radius:8px;border:1px solid #536176;font:inherit}button{background:#83c5ff;color:#10151f;font-weight:700;cursor:pointer}label{display:block;margin-top:12px}#error{color:#ffb4ab;min-height:1.5em}small{color:#b5c2d2}</style>
+<main><h1>Welcome to PiShelf</h1><p>Create your first administrator account to secure your library.</p>
+<small>First-time setup only. Complete setup on your trusted home network before allowing other devices access.</small>
+<form id="setup"><label>Admin username<input id="username" autocomplete="username" required minlength="3" maxlength="40" pattern="[a-zA-Z0-9_.-]+"></label>
+<label>Password<input id="password" type="password" autocomplete="new-password" required minlength="12" maxlength="256"></label>
+<label>Confirm password<input id="confirm" type="password" autocomplete="new-password" required minlength="12"></label>
+<button>Create administrator</button></form><p id="error" role="alert"></p></main>
+<script src="/setup.js" defer></script></html>
