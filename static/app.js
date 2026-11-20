@@ -222,6 +222,18 @@ function bookPageBaseWidth(){
  const available=Math.max(200,$('page-area').clientWidth-40);
  return Math.max(90,Math.min(550,(available-12)/2));
 }
+let automaticFit=null;
+function defaultPagedFit(){
+ const mode=$('view-mode').value;
+ return mode==='single'?'height':mode==='book'?'page':null;
+}
+function heightFitZoom(n){
+ const d=dimensions.get(n)||dimensions.get(1);
+ if(!d)return fitEntirePageZoom(n);
+ const area=$('page-area'),swapped=rotation%180!==0;
+ const base=Math.min(Math.max(200,area.clientWidth-40),1100);
+ return area.clientHeight*(swapped?d.height:d.width)/(base*(swapped?d.width:d.height));
+}
 function pageWidth(){
  const available=Math.max(200,$('page-area').clientWidth-40);
  return (isBookSpread()?bookPageBaseWidth():Math.min(available,1100))*zoom;
@@ -455,6 +467,13 @@ function trackScroll(){
 $('page-area').addEventListener('scroll',()=>{if(!scrollFrame)scrollFrame=requestAnimationFrame(()=>{scrollFrame=null;trackScroll();});},{passive:true});
 /** rebuild: Manage PDF page rendering and canvas lifecycle. */
 async function rebuild(){if(!documentPDF)return;cancelAllSharpImages();$('pages').style.zoom='';$('pages').style.transform='';$('pages').style.transformOrigin='';cssZoomBase=zoom;updateTouchMode();const g=generation,epoch=++layoutEpoch;layoutReady=false;pageObserver?.disconnect();renderQueue=[];for(const c of $('pages').querySelectorAll('canvas')){c.width=0;c.height=0;}$('pages').replaceChildren();slots=[];renderedSlots.clear();
+ if(automaticFit){
+  const fittedPage=page;
+  await primeSpreadDimensions(isBookSpread()?spreadPages(page):[page]);
+  if(g!==generation||epoch!==layoutEpoch||page!==fittedPage)return;
+  zoom=automaticFit==='height'?heightFitZoom(page):fitEntirePageZoom(page);
+  cssZoomBase=zoom;updateTouchMode();
+ }
  if(g!==generation||epoch!==layoutEpoch)return;
  const mode=$('view-mode').value,count=documentPDF.numPages,fragment=document.createDocumentFragment();
  if(mode==='book'){
@@ -483,6 +502,7 @@ async function rebuild(){if(!documentPDF)return;cancelAllSharpImages();$('pages'
  pageObserver=new IntersectionObserver(entries=>{for(const e of entries)if(e.isIntersecting)enqueue(e.target);},{root:$('page-area'),rootMargin:'500px'});slots.forEach(s=>pageObserver.observe(s));
  layoutReady=true;const target=slots.find(s=>+s.dataset.page===page);
  if(target){$('page-area').scrollTop=mode==='scroll'?target.offsetTop-20:0;enqueue(target);}
+ if(automaticFit){const area=$('page-area');area.scrollLeft=(area.scrollWidth-area.clientWidth)/2;}
  if(isBookSpread())for(const slot of slots)enqueue(slot);
  updatePageUI();updateBookmarks();remember();}
 let pdfjsModulePromise;
@@ -624,7 +644,7 @@ async function openMagazine(item,start){
   if(isBookSpread())await primeSpreadDimensions(spreadPages(page),doc,g);
   if(g!==generation||documentPDF!==doc)return;
   // Start with the entire page visible and a small margin on every side.
-  zoom=fitEntirePageZoom(page);
+  automaticFit=defaultPagedFit();zoom=fitEntirePageZoom(page);
   await rebuild();$('page-area').focus({preventScroll:true});
   // Read remaining dimensions in the background. Adjust slot heights while
   // preserving the reader's current scroll anchor when pages above it change.
@@ -763,6 +783,7 @@ $('back').onclick=closeReader;$('prev').onclick=()=>turnFromControl(-1);$('next'
  * Two-finger pinch geometry is intentionally separate and unchanged.
  */
 async function zoomWithControls(targetZoom){
+ automaticFit=null;
  if(!documentPDF||pinch||!layoutReady)return;
  const area=$('page-area'),view=area.getBoundingClientRect();
  const centerX=view.left+view.width/2,centerY=view.top+view.height/2;
@@ -807,13 +828,21 @@ async function zoomWithControls(targetZoom){
 }
 $('minus').onclick=()=>zoomWithControls(zoom-.25);
 $('plus').onclick=()=>zoomWithControls(zoom+.25);
+$('fit-height').onclick=()=>{
+ if(!documentPDF)return;
+ if($('view-mode').value!=='single')$('view-mode').value='single';
+ automaticFit='height';rebuild();
+};
 $('fit').onclick=()=>zoomWithControls(fitEntirePageZoom(page));
-$('fit-page').onclick=()=>zoomWithControls(fitEntirePageZoom(page));$('rotate').onclick=()=>{rotation=(rotation+90)%360;rebuild();};$('view-mode').onchange=()=>{prefs.mode=$('view-mode').value;storePrefs();if(documentPDF){if(isBookSpread())page=spreadStart(page);zoom=fitEntirePageZoom(page);rebuild();}};
+$('fit-page').onclick=()=>zoomWithControls(fitEntirePageZoom(page));$('rotate').onclick=()=>{rotation=(rotation+90)%360;rebuild();};$('view-mode').onchange=()=>{prefs.mode=$('view-mode').value;automaticFit=defaultPagedFit();storePrefs();if(documentPDF){if(isBookSpread())page=spreadStart(page);zoom=fitEntirePageZoom(page);rebuild();}};
 $('bookmark').onclick=()=>{if(!documentPDF)return;const marks=saved[current.id]?.bookmarks||[];persist(current.id,{bookmarks:marks.includes(page)?marks.filter(n=>n!==page):[...marks,page].sort((a,b)=>a-b)});updatePageUI();updateBookmarks();};$('bookmarks').onchange=e=>{if(e.target.value)move(+e.target.value);e.target.value='';};
 $('fullscreen').onclick=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await $('reader').requestFullscreen();}catch{toast('Fullscreen is unavailable in this browser.');}};
 let searchTimer;$('search').oninput=()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>{visibleLimit=60;drawLibrary();},150);};$('sort').onchange=e=>{prefs.sort=e.target.value;storePrefs();drawLibrary();};$('refresh').onclick=()=>refresh();document.querySelectorAll('[data-filter]').forEach(b=>b.onclick=()=>{filter=b.dataset.filter;category=collectionFilter='';visibleLimit=60;document.querySelectorAll('.tab,.category').forEach(t=>t.classList.toggle('active',t===b));drawLibrary();});
 document.addEventListener('keydown',e=>{if($('reader').hidden||document.querySelector('dialog[open]')||/INPUT|SELECT/.test(e.target.tagName))return;if(e.key==='ArrowRight'){e.preventDefault();turnFromControl(1);}if(e.key==='ArrowLeft'){e.preventDefault();turnFromControl(-1);}if(e.key==='Escape'&&!document.fullscreenElement)closeReader();if(e.key.toLowerCase()==='b')$('bookmark').click();if(e.key.toLowerCase()==='c'){e.preventDefault();toggleReaderControls();}});
-window.addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>{if(documentPDF){resetPinch();rebuild();}},250);});
+new ResizeObserver(()=>{
+ clearTimeout(resizeTimer);
+ resizeTimer=setTimeout(()=>{if(documentPDF&&layoutReady&&!pinch)rebuild();},100);
+}).observe($('page-area'));
 document.addEventListener('visibilitychange',()=>{if(document.hidden)remember();else{for(const [id,patch] of [...pendingSaves])persist(id,patch);refresh(true);}});window.addEventListener('pagehide',remember);
 // Library editing and backup controls.
 let editing=null;
@@ -890,7 +919,7 @@ function finishPinch(cancelled=false){
  if(!slot)return;
  // Capture the PDF point under the fingers before modifying layout.
  const fx=state.fx,fy=state.fy;
- zoom=next;page=isBookSpread()?spreadStart(state.page):state.page;
+ automaticFit=null;zoom=next;page=isBookSpread()?spreadStart(state.page):state.page;
  // Resize the actual page boxes. CSS zoom on the entire pages wrapper
  // creates a large scrollable gutter in iOS Safari and breaks pinch-out.
  $('pages').style.zoom='';
