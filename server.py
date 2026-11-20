@@ -496,7 +496,9 @@ class Handler(BaseHTTPRequestHandler):
                                 temporary.replace(target)
                             finally: temporary.unlink(missing_ok=True)
                         except APIError: raise
-                        except Exception as exc: raise APIError(500,'Image conversion failed: '+str(exc))
+                        except Exception:
+                            logging.exception('PiShelf WebP conversion failed')
+                            raise APIError(500,'Image conversion failed.')
                     # Byte-limited, least-recently-used cache; keep the requested page.
                     # Touching on read records recent use without changing PDF identity.
                     data=target.read_bytes()
