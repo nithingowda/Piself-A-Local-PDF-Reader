@@ -104,6 +104,41 @@ test('canceling single-page turn removes the underlay and never navigates',async
  assert.equal(f.underlays[0].removed,true);
 });
 
+
+test('single-page touch swipe bends the current page and releases into the slow turn',()=>{
+ const first=source.indexOf('let bookPaperSwipe=null;');
+ const last=source.indexOf("$('page-area').addEventListener('pointerdown'",first);
+ assert.ok(first>0&&last>first);
+ const classes=new Set(),sheet={
+  style:{},
+  classList:{
+   add:name=>classes.add(name),
+   remove:name=>classes.delete(name)
+  }
+ };
+ let now=1000,release=null;
+ const ctx={
+  prefs:{gestures:true},documentPDF:{numPages:7},page:2,
+  pinch:null,layoutReady:true,gesturePointers:new Set([7]),slots:[sheet],
+  gestureStart:null,lastTap:null,suppressTapUntil:0,zoom:1,
+  isAnimatedPageMode:()=>true,isBookSpread:()=>false,
+  fitEntirePageZoom:()=>.6,performance:{now:()=>now},
+  $:name=>name==='page-area'?{clientWidth:390}:{disabled:false},
+  turnBook:(direction,fromSwipe)=>{release={direction,fromSwipe};}
+ };
+ const create=new Function('ctx','with(ctx){'+source.slice(first,last)+'return {beginBookPaperSwipe,previewBookPaperSwipe,endBookPaperSwipe};}');
+ const swipe=create(ctx);
+ swipe.beginBookPaperSwipe({pointerType:'touch',pointerId:7,clientX:330,clientY:210});
+ swipe.previewBookPaperSwipe({pointerId:7,clientX:215,clientY:212});
+ assert.ok(classes.has('paper-dragging'));
+ assert.match(sheet.style.transform,/rotateY\(-/);
+ now=1200;
+ assert.equal(swipe.endBookPaperSwipe({pointerId:7,clientX:165,clientY:212}),true);
+ assert.equal(release.direction,1);
+ assert.equal(release.fromSwipe.sheet,sheet);
+ assert.ok(release.fromSwipe.degrees<0);
+});
+
 test('paper features and touch gestures remain isolated',()=>{
  assert.match(source,/const PAPER_TURN_DURATION_MS=1050/);
  assert.match(source,/function isAnimatedPageMode\(\)/);
