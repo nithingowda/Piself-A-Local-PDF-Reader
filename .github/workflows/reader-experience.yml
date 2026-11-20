@@ -27,6 +27,8 @@ jobs:
         run: node --test tests/test_page_turn_animation.mjs
       - name: Slow single-page paper turning tests
         run: node --test tests/test_single_page_paper_turn.mjs
+      - name: Decoded WebP preloading and no-flicker page-turn tests
+        run: node --test tests/test_predecoded_page_turn.mjs
       - name: Book spread source checks
         run: python -m unittest discover -s tests -p 'test_book_spread_source.py' -v
       - name: Reader regression tests
