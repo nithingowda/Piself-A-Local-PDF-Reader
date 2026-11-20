@@ -16,7 +16,7 @@
  * - A missing optional control must not prevent refresh() from starting.
  */
 const $=id=>document.getElementById(id);
-const defaults={sort:'issue',siteTheme:'light',theme:'dark',mode:'scroll',quality:'1.5',density:'compact',motion:true,gestures:true};
+const defaults={sort:'issue',siteTheme:'light',theme:'dark',mode:'scroll',quality:'1.5',density:'compact',motion:true,gestures:true,readerBrightness:75};
 let prefs={...defaults};try{const stored=JSON.parse(localStorage.getItem('pishelf-settings')||'{}');for(const k in defaults)if(k in stored)prefs[k]=stored[k];}catch{}
 let collections=[],collectionFilter='',collectionSets=new Map();
 let categories=[],sourceFilter='',seriesFilter='',tagFilter='',visibleLimit=60;
@@ -147,13 +147,26 @@ $('issue-close').onclick=()=>$('issue-dialog').close();
 /** load Trash: Support the PiShelf reader or library interface. */
 async function loadTrash(){try{const items=await api('/api/trash');$('trash-list').replaceChildren();if(!items.length)$('trash-list').append(el('p','hint','Trash is empty.'));for(const i of items){const row=el('div','trash-row'),text=el('div');text.append(el('strong','',i.title),el('small','',i.path));const b=el('button','','Restore');b.onclick=async()=>{b.disabled=true;try{await api('/api/trash/restore',{token:i.token});await loadTrash();await refresh();toast('Magazine restored.');}catch(e){toast(e.message);b.disabled=false;}};const remove=el('button','danger','Delete permanently');remove.onclick=async()=>{if(!await confirmAction('Delete trashed PDF permanently?',`“${i.title}” will be removed from storage. This cannot be undone.`,'Delete permanently'))return;try{await api('/api/trash/delete',{token:i.token,confirm:true});await loadTrash();await refresh();toast('PDF deleted from storage.');}catch(error){toast(error.message);}};row.append(text,b,remove);$('trash-list').append(row);}}catch(e){$('trash-list').textContent=e.message;}}
 /** apply Prefs: Support the PiShelf reader or library interface. */
-function applyPrefs(){const sortOptions=[...$('sort').options].map(o=>o.value);if(!sortOptions.includes(prefs.sort))prefs.sort=defaults.sort;$('sort').value=prefs.sort;document.body.dataset.theme=prefs.siteTheme==='system'?(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'):prefs.siteTheme;$('reader').dataset.pageTheme=prefs.theme;document.body.dataset.density=prefs.density;document.querySelector('footer').textContent='PDF library updates when the page reloads · Your files, on your storage';}
+function applyPrefs(){const sortOptions=[...$('sort').options].map(o=>o.value);if(!sortOptions.includes(prefs.sort))prefs.sort=defaults.sort;$('sort').value=prefs.sort;document.body.dataset.theme=prefs.siteTheme==='system'?(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'):prefs.siteTheme;$('reader').dataset.pageTheme=prefs.theme;document.body.dataset.density=prefs.density;const brightness=Math.max(35,Math.min(100,Number(prefs.readerBrightness)||75));$('reader').style.setProperty('--reader-brightness',String(brightness/100));$('reader-night-toggle').setAttribute('aria-pressed',String(prefs.theme==='night'||prefs.theme==='amoled'));$('reader-night-toggle').textContent=prefs.theme==='night'||prefs.theme==='amoled'?'☀ Day':'☾ Night';document.querySelector('footer').textContent='PDF library updates when the page reloads · Your files, on your storage';}
 /** store Prefs: Support the PiShelf reader or library interface. */
 function storePrefs(){try{localStorage.setItem('pishelf-settings',JSON.stringify(prefs));}catch{toast('Browser settings storage is unavailable.');}applyPrefs();}
 /** open Settings: Support the PiShelf reader or library interface. */
-function openSettings(){for(const k of ['siteTheme','theme','mode','quality','density'])$('pref-'+k).value=prefs[k];$('pref-motion').checked=prefs.motion;$('pref-gestures').checked=prefs.gestures;if(!uploading)populateUploadSources();drawCollectionManager();$('settings').showModal();loadTrash();loadWebPCacheStats();}
+function openSettings(){$('pref-readerBrightness').value=prefs.readerBrightness;$('reader-brightness-value').textContent=prefs.readerBrightness+'%';for(const k of ['siteTheme','theme','mode','quality','density'])$('pref-'+k).value=prefs[k];$('pref-motion').checked=prefs.motion;$('pref-gestures').checked=prefs.gestures;if(!uploading)populateUploadSources();drawCollectionManager();$('settings').showModal();loadTrash();loadWebPCacheStats();}
+// Quick night mode preserves the previous daytime theme when toggled off.
+let lastDayTheme=['light','sepia','dark'].includes(prefs.theme)?prefs.theme:'light';
+$('reader-night-toggle').onclick=()=>{
+ if(prefs.theme==='night'||prefs.theme==='amoled')prefs.theme=lastDayTheme;
+ else{lastDayTheme=prefs.theme;prefs.theme='night';}
+ storePrefs();
+};
+$('pref-readerBrightness').oninput=e=>{
+ prefs.readerBrightness=Math.max(35,Math.min(100,Number(e.target.value)||75));
+ $('reader-brightness-value').textContent=prefs.readerBrightness+'%';
+ applyPrefs();
+};
+$('pref-readerBrightness').onchange=()=>storePrefs();
 $('settings-open').onclick=openSettings;$('reader-settings').onclick=openSettings;$('settings-close').onclick=()=>$('settings').close();
-for(const k of ['siteTheme','theme','mode','quality','density'])$('pref-'+k).onchange=e=>{prefs[k]=e.target.value;storePrefs();if(documentPDF&&(k==='mode'||k==='quality')){$('view-mode').value=prefs.mode;rebuild();}};
+for(const k of ['siteTheme','theme','mode','quality','density'])$('pref-'+k).onchange=e=>{prefs[k]=e.target.value;if(k==='theme'&&['light','sepia','dark'].includes(prefs.theme))lastDayTheme=prefs.theme;storePrefs();if(documentPDF&&(k==='mode'||k==='quality')){$('view-mode').value=prefs.mode;rebuild();}};
 $('pref-gestures').onchange=e=>{prefs.gestures=e.target.checked;storePrefs();updateTouchMode();};
 $('pref-motion').onchange=e=>{prefs.motion=e.target.checked;storePrefs();};$('clear-all').onclick=()=>{if(documentPDF){toast('Return to the library before clearing all progress.');return;}clearProgress();};$('rescan').onclick=()=>{if(documentPDF){toast('Return to the library to rescan.');return;}refresh();toast('Library scan requested.');};
 // Continuous reader: lightweight page placeholders, serialized rendering, bounded canvas memory.
