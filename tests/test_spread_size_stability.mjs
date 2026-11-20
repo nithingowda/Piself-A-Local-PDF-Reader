@@ -37,7 +37,7 @@ test('stale geometry for a closed document is never committed',async()=>{
 });
 
 test('book spread navigates without a secondary animation',()=>{
- const start=source.indexOf('function move(n,turn=0)');
+ const start=source.indexOf('function move(n)');
  const end=source.indexOf('/** close Reader:',start);
  assert.ok(start>=0&&end>start);
  const navigation=source.slice(start,end);
