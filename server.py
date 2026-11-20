@@ -257,7 +257,9 @@ class Handler(BaseHTTPRequestHandler):
             route=urlsplit(self.path).path
             if route.startswith('/api/auth/') or route.startswith('/api/admin/'):
                 self.auth_post(route);return
-            self.require_session(admin=True,mutation=True)
+            # Readers may save their reading position, bookmarks and favourites.
+            # All other write endpoints remain administrator-only.
+            self.require_session(admin=route!='/api/progress',mutation=True)
             if urlsplit(self.path).path == '/api/webp-cache/clear':
                 with WEBP_CACHE_LOCK:
                     cache=self.server.state_db.parent/'page-images'
