@@ -19,5 +19,9 @@ jobs:
         run: node --check static/app.js
       - name: Zoom geometry and touch interaction tests
         run: node --test tests/test_zoom_center.mjs
+      - name: Two-page book spread logic
+        run: node --test tests/test_book_spread.mjs
+      - name: Book spread source checks
+        run: python -m unittest discover -s tests -p 'test_book_spread_source.py' -v
       - name: Reader regression tests
         run: python -m unittest discover -s tests -p 'test_reader_experience_source.py' -v
