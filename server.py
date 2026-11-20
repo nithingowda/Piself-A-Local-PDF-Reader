@@ -896,7 +896,7 @@ def validate_metadata(value):
 def validate_reader_options(value):
     if 'zoom' in value and (type(value['zoom']) not in (int,float) or not .1<=value['zoom']<=3): raise ValueError()
     if 'rotation' in value and (type(value['rotation']) is not int or value['rotation'] not in (0,90,180,270)): raise ValueError()
-    if 'mode' in value and value['mode'] not in ('scroll','single'): raise ValueError()
+    if 'mode' in value and value['mode'] not in ('scroll','single','book'): raise ValueError()
 
 
 # collection name: handle this step of the server request or library workflow.
