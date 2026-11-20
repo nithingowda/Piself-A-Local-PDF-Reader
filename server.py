@@ -607,7 +607,7 @@ class Handler(BaseHTTPRequestHandler):
                 if item['format']!='pdf': raise APIError(415,'Only PDF pages can be rendered as WebP.')
                 n=int(parts[4]);params=parse_qs(urlsplit(self.path).query)
                 width=int(params.get('width',['1600'])[0])
-                if not 1<=n<=5000 or width not in (960,1600,2800):
+                if not 1<=n<=5000 or width not in (400,960,1600,2800):
                     raise APIError(400,'Invalid page or image width.')
                 source=self.server.roots[item['source']]
                 pdf=checked_path(source,item['path'])
@@ -699,6 +699,38 @@ class Handler(BaseHTTPRequestHandler):
                     else:
                         result=[dict(token=r[0],path=r[1],title=r[2],deleted=r[3],source=r[4]) for r in db.execute('SELECT token,path,title,deleted,source FROM trash ORDER BY deleted DESC')]
                 self.json_response(result,head=head); return
+            # Auto-generate an EPUB book cover only when requested by the shelf.
+            # Cache it alongside existing JPEG covers; do not modify source EPUBs.
+            if path.startswith('/api/epub-cover/'):
+                book_id=path.removeprefix('/api/epub-cover/')
+                if not re.fullmatch('[a-f0-9]{20}',book_id):
+                    raise APIError(404,'Book cover not found.')
+                item=next((entry for entry in self.library_items()
+                           if entry['id']==book_id and entry['source']=='books'
+                           and entry['format']=='epub'),None)
+                if item is None: raise APIError(404,'Book cover not found.')
+                cover_key=item['coverKey']
+                destination=self.server.cover_dir/(cover_key+'.jpg')
+                with self.server.cover_lock:
+                    if not destination.is_file():
+                        from epub_covers import embedded_cover_jpeg
+                        ebook=checked_path(self.server.roots['books'],item['path'])
+                        thumbnail=embedded_cover_jpeg(ebook)
+                        if not thumbnail: raise APIError(404,'This EPUB has no supported embedded cover.')
+                        temporary=self.server.cover_dir/(uuid.uuid4().hex+'.tmp')
+                        try:
+                            temporary.write_bytes(thumbnail)
+                            temporary.replace(destination)
+                        finally:
+                            temporary.unlink(missing_ok=True)
+                        self.server.cover_bytes+=len(thumbnail)
+                self.send_response(302)
+                self.send_header('Location','/api/covers/'+cover_key)
+                self.send_header('Cache-Control','no-store')
+                self.security_headers()
+                self.end_headers()
+                return
+
             cover = path.startswith('/api/covers/')
             if cover:
                 key=path.rsplit('/',1)[-1]
