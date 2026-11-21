@@ -803,7 +803,7 @@ async function zoomWithControls(targetZoom){
  // Re-center even when the user is already at minimum and has panned sideways.
  if(Math.abs(next-zoom)<0.001&&!fits)return;
  const original=documentPDF,g=generation;
- page=anchor.number;zoom=next;showZoomBadge();
+ page=anchor.number;zoom=next;if(typeof showZoomBadge==='function')showZoomBadge();
  pinchScrollLockUntil=performance.now()+500;
  await rebuild();
  if(g!==generation||documentPDF!==original)return;
