@@ -120,12 +120,12 @@ export function createReadAloud({getText,next,peekNextText=()=>null,onState,getC
   token++;active=false;paused=false;
   for(const request of requests)request.abort();
   requests.clear();
-  if(audio&&!Array.from(prepared).some(ready=>ready.player===audio)){
+  if(audio){
+   audio.onended=audio.onerror=audio.ontimeupdate=audio.onseeked=null;
    audio.pause();audio.removeAttribute('src');audio.load();
-   if(audioUrl)URL.revokeObjectURL(audioUrl);
   }
-  for(const ready of prepared){ready.player.pause();ready.player.removeAttribute('src');ready.player.load();URL.revokeObjectURL(ready.url);}
-  prepared.clear();audio=null;audioUrl=null;
+  for(const ready of prepared)URL.revokeObjectURL(ready.url);
+  prepared.clear();audioUrl=null;
   notify();
  }
 
@@ -177,14 +177,12 @@ export function createReadAloud({getText,next,peekNextText=()=>null,onState,getC
    if(!valid(session))return null;
    const {blob,sentences}=await requestSpeech(chunk,voice);
    if(!valid(session))return null;
-   const url=URL.createObjectURL(blob),player=new Audio(url);
-   player.preload='auto';player.load();
-   const ready={url,player,sentences};prepared.add(ready);
+   const url=URL.createObjectURL(blob);
+   const ready={url,sentences};prepared.add(ready);
    return ready;
   }
   function release(ready){
    if(!ready||!prepared.has(ready))return;
-   ready.player.pause();ready.player.removeAttribute('src');ready.player.load();
    URL.revokeObjectURL(ready.url);prepared.delete(ready);
   }
   function preloadNextPage(){
@@ -215,10 +213,11 @@ export function createReadAloud({getText,next,peekNextText=()=>null,onState,getC
     if(!ready)throw Error('Could not prepare speech audio.');
     index++;
     if(index<chunks.length)prefetch=prepare(chunks[index]).catch(()=>null);
-    else nextPagePrefetch=preloadNextPage();
-    const {player,url}=ready;
+    if(!nextPagePrefetch&&index>=chunks.length-1)nextPagePrefetch=preloadNextPage();
+    const {url}=ready;
+    const player=audio;
     const sentences=speechSentenceRanges(chunk,ready.sentences);
-    audio=player;audioUrl=url;player.playbackRate=rate;
+    player.src=url;audioUrl=url;player.playbackRate=rate;
     let shown=-1;
     function updateSentence(){
      if(!valid(session))return;
@@ -246,21 +245,23 @@ export function createReadAloud({getText,next,peekNextText=()=>null,onState,getC
     player.ontimeupdate=updateSentence;
     player.onseeked=updateSentence;
     player.onended=()=>{
-     if(audio===player){audio=null;audioUrl=null;}
+     if(!valid(session)||audioUrl!==url)return;
+     player.onended=player.onerror=player.ontimeupdate=player.onseeked=null;
+     audioUrl=null;
      release(ready);
      if(valid(session)){onState?.({clipEnded:true});void say();}
     };
     player.onerror=()=>{if(valid(session)){stop();onState?.({error:'Could not play Edge audio.'});}};
-    await player.play();
-    if(paused)player.pause();
+    if(!paused)await player.play();
    }catch(error){if(valid(session)){stop();onState?.({error:error.message});}}
   }
   void say();
  }
 
  function play(){
-  if(active&&paused){if(audio)void audio.play();paused=false;notify();return;}
+  if(active&&paused){if(audioUrl)void audio.play().catch(error=>onState?.({error:error.message}));paused=false;notify();return;}
   if(active)return;
+  if(!audio){audio=new Audio();audio.preload='auto';}
   active=true;paused=false;notify();void speakNext(++token);
  }
  function pause(){if(!active||paused)return;audio?.pause();paused=true;notify();}
