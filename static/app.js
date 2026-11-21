@@ -744,6 +744,7 @@ const speechQueuePosition={pdf:0,epub:0};
 const speechDraft={pdf:'',epub:''};
 const speechSelecting={pdf:false,epub:false};
 const automaticQueueStartPending={pdf:false,epub:false};
+const speechControllerPending={pdf:null,epub:null};
 let pdfSpeechPage=null; // kept for reader teardown
 let pdfSelectionOverlay=null,pdfSelectionAnchor=null,pdfSelectionDrag=null;
 let pdfSelectionSerial=0;
@@ -795,18 +796,11 @@ function speechQueueUI(kind){
  };
  return panel;
 }
-function setSpeechDraft(kind,text){
- if(!speechSelecting[kind])return;
- const chosen=String(text||'').trim();
- if(!chosen)return;
- speechDraft[kind]=chosen;
- const panel=speechQueueUI(kind);
- panel.hidden=false;renderSpeechQueue(kind);
-}
 // Selecting text adds it immediately. The first selection speaks now; later
 // selections join the same queue without interrupting the current audio.
 async function enqueueSelectedSpeech(kind,text){
- if(!speechSelecting[kind])return;
+ // Selection gestures are gated at the PDF/EPUB event handlers. The Add
+ // button can also queue manually entered or edited text.
  const chosen=String(text||'').trim();
  if(!chosen)return;
  const queue=speechQueues[kind];
@@ -907,21 +901,30 @@ async function startEpubSpeech(){await ensureSpeechController('epub');}
 async function ensureSpeechController(kind){
  const existing=kind==='pdf'?pdfSpeech:epubSpeech;
  if(existing)return existing;
- const {createReadAloud}=await speechEngine();
- const controller=createReadAloud({
-  getCsrfToken:()=>signedInUser?.csrf||'',
-  getText(){return speechQueues[kind][speechQueuePosition[kind]]?.text||'';},
-  next(){
-   if(speechQueuePosition[kind]+1>=speechQueues[kind].length)return false;
-   speechQueuePosition[kind]++;renderSpeechQueue(kind);return true;
-  },
-  peekNextText(){return speechQueues[kind][speechQueuePosition[kind]+1]?.text||null;},
-  onState:state=>speechState(kind,state)
- });
- if(kind==='pdf')pdfSpeech=controller;else epubSpeech=controller;
- wireSpeech(kind,controller);
- return controller;
+ if(speechControllerPending[kind])return speechControllerPending[kind];
+ const creation=(async()=>{
+  const {createReadAloud}=await speechEngine();
+  const current=kind==='pdf'?pdfSpeech:epubSpeech;
+  if(current)return current;
+  const controller=createReadAloud({
+   getCsrfToken:()=>signedInUser?.csrf||'',
+   getText(){return speechQueues[kind][speechQueuePosition[kind]]?.text||'';},
+   next(){
+    if(speechQueuePosition[kind]+1>=speechQueues[kind].length)return false;
+    speechQueuePosition[kind]++;renderSpeechQueue(kind);return true;
+   },
+   peekNextText(){return speechQueues[kind][speechQueuePosition[kind]+1]?.text||null;},
+   onState:state=>speechState(kind,state)
+  });
+  if(kind==='pdf')pdfSpeech=controller;else epubSpeech=controller;
+  wireSpeech(kind,controller);
+  return controller;
+ })();
+ speechControllerPending[kind]=creation;
+ try{return await creation;}
+ finally{if(speechControllerPending[kind]===creation)speechControllerPending[kind]=null;}
 }
+
 async function playSpeechQueue(kind){
  const entries=speechQueues[kind];
  if(!entries.length){toast('Add some selected text to the queue first.');return;}
