@@ -49,3 +49,17 @@ test('spoken sentence indicator and scrollable immersive reader',()=>{
  assert.match(css,/#reader\.speech-immersive #page-area\{overflow:auto!important/);
  assert.doesNotMatch(css,/#reader\.speech-immersive,#epub-reader\.speech-immersive\{position:relative\}/);
 });
+
+test('Edge Neerja defaults with Piper fallback and buffered next segment',()=>{
+ const server=readFileSync(new URL('../server.py',import.meta.url),'utf8');
+ const docker=readFileSync(new URL('../Dockerfile',import.meta.url),'utf8');
+ assert.match(app,/Neerja · Indian English \(Online AI\)/);
+ assert.match(app,/select\.value=previous\|\|'edge-neerja'/);
+ assert.match(speech,/voice='edge-neerja'/);
+ assert.match(speech,/\/api\/tts\/edge/);
+ assert.match(speech,/\/api\/tts\/alba/);
+ assert.match(speech,/prefetch=requestSpeech\(chunks\[index\]\)/);
+ assert.match(server,/en-IN-NeerjaNeural/);
+ assert.match(server,/audio\/mpeg/);
+ assert.match(docker,/edge-tts/);
+});
