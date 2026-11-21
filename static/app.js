@@ -900,7 +900,33 @@ function activateSettingsTab(name){
  document.querySelectorAll('.settings-panel').forEach(panel=>{panel.hidden=panel.id!=='settings-panel-'+name;});
 }
 document.querySelectorAll('[data-settings-tab]').forEach(button=>{button.addEventListener('click',()=>activateSettingsTab(button.dataset.settingsTab));button.addEventListener('keydown',event=>{if(!['ArrowRight','ArrowLeft','Home','End'].includes(event.key))return;event.preventDefault();const tabs=[...document.querySelectorAll('[data-settings-tab]')];const index=tabs.indexOf(button);const next=event.key==='Home'?0:event.key==='End'?tabs.length-1:(index+(event.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;activateSettingsTab(tabs[next].dataset.settingsTab);tabs[next].focus();});});
-function drawCategoryManager(){const box=$('category-manager');if(!box)return;box.replaceChildren();const entries=categories.filter(c=>c.path!=='.');if(!entries.length)box.append(el('p','hint','No custom categories yet.'));for(const cat of entries){const row=el('div','collection-row');const label=el('span','',cat.source+' / '+cat.path);label.className='category-manager-label';const remove=el('button','danger','Delete');const used=library.some(item=>item.source===cat.source&&(item.category===cat.path||item.category.startsWith(cat.path+'/')));const nested=entries.some(item=>item.source===cat.source&&item.path.startsWith(cat.path+'/'));remove.disabled=used||nested;remove.title=remove.disabled?'Move documents and remove subcategories before deleting.':'Delete empty category';remove.onclick=async()=>{if(!await confirmAction('Delete empty category?','The empty category folder will be removed from storage. Files will never be deleted.','Delete category'))return;try{await api('/api/categories',{action:'delete',source:cat.source,path:cat.path});await refresh();drawCategoryManager();populateUploadSources();toast('Category removed.');}catch(error){toast(error.message);}};row.append(label,remove);box.append(row);}}
+function drawCategoryManager(){
+ const box=$('category-manager'),select=$('category-manage-select');if(!box||!select)return;
+ const previous=select.value,entries=categories.filter(c=>c.path!=='.');
+ select.replaceChildren(new Option('Choose a category…',''),...entries.map(c=>new Option(c.source+' / '+c.path,c.source+'|'+c.path)));
+ if(entries.some(c=>c.source+'|'+c.path===previous))select.value=previous;
+ const render=()=>{
+  box.replaceChildren();const cat=entries.find(c=>c.source+'|'+c.path===select.value);if(!cat)return;
+  const used=library.some(item=>item.source===cat.source&&(item.category===cat.path||item.category.startsWith(cat.path+'/')));
+  const nested=entries.some(item=>item.source===cat.source&&item.path.startsWith(cat.path+'/'));
+  const blocked=used||nested;
+  const row=el('div','collection-row'),name=el('input');name.value=cat.path.split('/').pop();name.maxLength=200;name.setAttribute('aria-label','New category name');
+  const edit=el('button','','Rename'),remove=el('button','danger','Delete');edit.type=remove.type='button';
+  edit.disabled=remove.disabled=blocked;
+  const warning=blocked?'Move all documents and remove subcategories before editing or deleting.':'Only the empty category folder will change; no documents are affected.';
+  edit.title=remove.title=warning;
+  edit.onclick=async()=>{const nextName=name.value.trim();if(!nextName||nextName==='.'||nextName==='..'||nextName.includes('/')||nextName.includes('\\\\')){toast('Enter a valid category name without slashes.');return;}
+   const parent=cat.path.includes('/')?cat.path.slice(0,cat.path.lastIndexOf('/')+1):'';const newPath=parent+nextName;
+   if(newPath===cat.path)return;
+   try{await api('/api/categories',{action:'rename',source:cat.source,path:cat.path,newPath});await refresh();populateUploadSources();drawCategoryManager();select.value=cat.source+'|'+newPath;select.dispatchEvent(new Event('change'));toast('Category renamed.');}catch(error){toast(error.message);}
+  };
+  remove.onclick=async()=>{if(!await confirmAction('Delete empty category?','Only the empty category folder will be removed. Your PDFs and EPUB books are safe.','Delete category'))return;
+   try{await api('/api/categories',{action:'delete',source:cat.source,path:cat.path});await refresh();populateUploadSources();drawCategoryManager();toast('Category removed.');}catch(error){toast(error.message);}
+  };
+  row.append(name,edit,remove);box.append(row,el('p','hint',warning));
+ };
+ select.onchange=render;render();
+}
 function drawCollectionManager(){const box=$('collection-manager');box.replaceChildren();if(!collections.length)box.append(el('p','hint','Create a collection in the library sidebar, then add issues using Edit issue.'));for(const collection of collections){const row=el('div','collection-row'),input=el('input');input.value=collection.name;input.maxLength=80;input.setAttribute('aria-label','Collection name: '+collection.name);const save=el('button','','Rename'),remove=el('button','danger','Remove');save.onclick=async()=>{try{await api('/api/collections',{action:'rename',id:collection.id,name:input.value});await reloadCollections();}catch(error){toast(error.message);}};remove.onclick=async()=>{if(!await confirmAction('Remove collection?','Only this shelf is removed. Your PDFs and reading progress are kept.','Remove collection'))return;try{await api('/api/collections',{action:'delete',id:collection.id});await reloadCollections();}catch(error){toast(error.message);}};row.append(input,save,remove);box.append(row);}}
 // Double-tap controls remain available even when swipe/pinch gestures are disabled.
 const gesturePointers=new Set();let gestureStart=null,lastTap=null,lastTouchTime=-Infinity,pinch=null,pinchFrame=0,suppressTapUntil=0;
