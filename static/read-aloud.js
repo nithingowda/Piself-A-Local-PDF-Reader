@@ -31,7 +31,7 @@ export function splitSpeechChunks(text){
 
 export function createReadAloud({getText,next,onState,getCsrfToken=()=>''}){
  let active=false,paused=false,token=0,voice=DEFAULT_VOICE,rate=1,audio=null,audioUrl=null;
- const requests=new Set();
+ const requests=new Set(),prepared=new Set();
  const notify=()=>onState?.({active,paused,rate,voice});
  const valid=session=>active&&session===token;
 
@@ -40,6 +40,8 @@ export function createReadAloud({getText,next,onState,getCsrfToken=()=>''}){
   token++;active=false;paused=false;
   for(const request of requests)request.abort();
   requests.clear();
+  for(const ready of prepared){ready.player.pause();ready.player.removeAttribute('src');ready.player.load();URL.revokeObjectURL(ready.url);}
+  prepared.clear();
   if(audio){audio.pause();audio.removeAttribute('src');audio.load();audio=null;}
   if(audioUrl){URL.revokeObjectURL(audioUrl);audioUrl=null;}
   notify();
@@ -73,6 +75,25 @@ export function createReadAloud({getText,next,onState,getCsrfToken=()=>''}){
   }
 
   let index=0,prefetch=null;
+  // Prepare the next audio clip while the current one plays. At most one
+  // extra clip and one Edge request are retained: low CPU/RAM on Raspberry Pi.
+  async function prepare(chunk){
+   const blob=await requestSpeech(chunk,voice);
+   if(!valid(session))return null;
+   const url=URL.createObjectURL(blob);
+   const player=new Audio(url);
+   player.preload='auto';player.load();
+   const ready={url,player};prepared.add(ready);
+   return ready;
+  }
+  function release(ready){
+   if(!ready)return;
+   ready.player.pause();
+   ready.player.removeAttribute('src');
+   ready.player.load();
+   URL.revokeObjectURL(ready.url);
+   prepared.delete(ready);
+  }
   async function say(){
    if(!valid(session))return;
    if(index>=chunks.length){
@@ -82,23 +103,23 @@ export function createReadAloud({getText,next,onState,getCsrfToken=()=>''}){
    }
    const chunk=chunks[index];
    try{
-    const blob=(prefetch?await prefetch:null)||await requestSpeech(chunk,voice);
+    const ready=(prefetch?await prefetch:null)||await prepare(chunk);
     prefetch=null;
-    if(!valid(session))return;
+    if(!valid(session)){release(ready);return;}
+    if(!ready)throw Error('Could not prepare speech audio.');
     index++;
-    // Only one segment ahead: bounded memory, network use and Pi CPU.
-    if(index<chunks.length)prefetch=requestSpeech(chunks[index],voice).catch(()=>null);
-    onState?.({spokenText:chunk,readingProgress:0});
-    const url=URL.createObjectURL(blob),player=new Audio(url);
+    // Begin buffering the next paragraph before current playback.
+    if(index<chunks.length)prefetch=prepare(chunks[index]).catch(()=>null);
+    const {player,url}=ready;
     audio=player;audioUrl=url;player.playbackRate=rate;
+    onState?.({spokenText:chunk,readingProgress:0});
     player.ontimeupdate=()=>{
      if(valid(session)&&Number.isFinite(player.duration)&&player.duration>0)
       onState?.({readingProgress:Math.min(1,player.currentTime/player.duration),spokenText:chunk});
     };
     player.onended=()=>{
-     URL.revokeObjectURL(url);
-     if(audioUrl===url)audioUrl=null;
-     audio=null;
+     if(audio===player){audio=null;audioUrl=null;}
+     release(ready);
      if(valid(session))void say();
     };
     player.onerror=()=>{if(valid(session)){stop();onState?.({error:'Could not play Edge audio.'});}};
