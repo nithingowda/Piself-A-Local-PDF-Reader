@@ -1,4 +1,3 @@
-import zlib
 # server.py: PiShelf HTTP server, library APIs, file access, and reading progress.
 # Comments explain responsibilities and non-obvious behavior; keep runtime logic unchanged.
 
@@ -19,6 +18,7 @@ import time
 import uuid
 import datetime
 import zipfile
+import zlib
 import auth
 import secrets
 import hmac
