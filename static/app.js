@@ -973,7 +973,16 @@ $('page-area').addEventListener('touchstart',e=>{
  const slot=slots.find(s=>{const r=s.getBoundingClientRect();return point.x>=r.left&&point.x<=r.right&&point.y>=r.top&&point.y<=r.bottom;})||slots.find(s=>+s.dataset.page===page);
  if(!slot||point.distance<10)return;const r=slot.getBoundingClientRect();
  pinch={slot,g:generation,distance:point.distance,startZoom:zoom,nextZoom:zoom,page:+slot.dataset.page,fx:Math.max(0,Math.min(1,(point.x-r.left)/r.width)),fy:Math.max(0,Math.min(1,(point.y-r.top)/r.height)),x:point.x,y:point.y,startX:point.x,startY:point.y};
- slot.style.transformOrigin=`${point.x-r.left}px ${point.y-r.top}px`;slot.style.willChange='transform';
+ if($('view-mode').value==='scroll'){
+  // Preview the entire continuous stack together; scaling only one slot
+  // leaves the following page visually detached until touchend.
+  const pages=$('pages'),bounds=pages.getBoundingClientRect();
+  pinch.previewStack=true;
+  pages.style.transformOrigin=`${point.x-bounds.left}px ${point.y-bounds.top}px`;
+  pages.style.willChange='transform';
+ }else{
+  slot.style.transformOrigin=`${point.x-r.left}px ${point.y-r.top}px`;slot.style.willChange='transform';
+ }
 },{passive:false});
 $('page-area').addEventListener('touchmove',e=>{
  if(!pinch)return;e.preventDefault();if(e.touches.length!==2)return;
@@ -983,6 +992,11 @@ $('page-area').addEventListener('touchmove',e=>{
   showZoomBadge(pinch.nextZoom);
   const slot=pinch.slot,area=$('page-area');
   const scale=pinch.nextZoom/pinch.startZoom;
+  if(pinch.previewStack){
+   // A single composited transform keeps every page in sync while pinching.
+   $('pages').style.transform=`translate(${pinch.x-pinch.startX}px, ${pinch.y-pinch.startY}px) scale(${scale})`;
+   return;
+  }
   let dx=pinch.x-pinch.startX,dy=pinch.y-pinch.startY;
   slot.style.transform=`translate(${dx}px, ${dy}px) scale(${scale})`;
   // Constrain the temporary pinch preview to the viewport, not the page list.
