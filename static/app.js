@@ -671,9 +671,9 @@ async function speechEngine(){
 function speechVoices(kind){
  const select=$(kind+'-read-voice');if(!select)return;
  const previous=select.value;
- select.replaceChildren(new Option('Default voice',''));
+ select.replaceChildren(new Option('Alba (Medium) · Offline AI','piper-alba'),new Option('Browser default voice',''));
  for(const voice of (window.speechSynthesis?.getVoices()||[]))select.add(new Option(voice.name+' ('+voice.lang+')',voice.voiceURI));
- select.value=previous;
+ select.value=previous||'piper-alba';
 }
 function wireSpeech(kind,controller){
  const toggle=$(kind+'-read-toggle'),panel=$(kind+'-read-panel');
