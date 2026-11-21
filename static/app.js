@@ -738,54 +738,64 @@ function wireSpeech(kind,controller){
  $(kind+'-read-voice').onchange=e=>{const selected=e.target.value;try{localStorage.setItem(VOICE_STORAGE_KEY,selected);}catch{}controller.setVoice(selected);speechVoices(kind==='pdf'?'epub':'pdf');};
  speechVoices(kind);
 }
-let readingMark=null,readingMarkText='',readingMarkPage=0;
+let readingMark=null,readingMarkText='',readingMarkPage=0,readingMarkIndex=-1;
 function clearReadingMark(){
  if(readingMark){readingMark.remove();readingMark=null;}
  if(window.CSS?.highlights)CSS.highlights.delete('pishelf-reading');
- readingMarkText='';readingMarkPage=0;
+ readingMarkText='';readingMarkPage=0;readingMarkIndex=-1;
 }
 async function markPdfReading(text,progress){
  if(!documentPDF||!text)return;
  const currentPage=page,slot=$('pages').querySelector('.pdf-slot[data-page="'+currentPage+'"]');
  if(!slot)return;
+ const currentWord=Math.floor(Math.max(0,Math.min(.999,progress))*text.trim().split(/\s+/).length);
+ if(readingMarkText===text&&readingMarkPage===currentPage&&readingMarkIndex===currentWord)return;
  if(readingMarkText!==text||readingMarkPage!==currentPage){
   clearReadingMark();readingMarkText=text;readingMarkPage=currentPage;
   try{
    const pdfPage=await documentPDF.getPage(currentPage);
    const content=await pdfPage.getTextContent();
    if(readingMarkText!==text||readingMarkPage!==currentPage)return;
-   const words=text.toLowerCase().replace(/\\s+/g,' ').trim().split(' ');
+   const words=text.toLowerCase().replace(/\s+/g,' ').trim().split(' ');
    const items=content.items.filter(item=>item.str?.trim());
    const start=items.findIndex(item=>words.some(word=>word.length>3&&item.str.toLowerCase().includes(word)));
    if(start<0)return;
    const viewport=pdfPage.getViewport({scale:1,rotation});
    const overlay=document.createElement('div');overlay.className='speech-page-highlight';
-   const item=items[start],pt=viewport.convertToViewportPoint(item.transform[4],item.transform[5]);
+   // Approximate the current word position from playback progress and PDF text items.
+   let remaining=currentWord,item=items[start];
+   for(const candidate of items.slice(start)){item=candidate;remaining-=Math.max(1,candidate.str.trim().split(/\s+/).length);if(remaining<0)break;}
+   readingMarkIndex=currentWord;
+   const pt=viewport.convertToViewportPoint(item.transform[4],item.transform[5]);
    overlay.style.left=(pt[0]/viewport.width*100)+'%';
    overlay.style.top=((pt[1]-Math.abs(item.height||12))/viewport.height*100)+'%';
    overlay.style.width=Math.min(100-pt[0]/viewport.width*100,Math.max(2,item.width/viewport.width*100))+'%';
    overlay.style.height=Math.max(1.5,Math.abs(item.height||12)/viewport.height*100)+'%';
-   slot.append(overlay);readingMark=overlay;
+   readingMark?.remove();slot.append(overlay);readingMark=overlay;
   }catch{}
  }
  if(readingMark)readingMark.style.opacity=progress>=1?'0.25':'0.7';
 }
-function markEpubReading(text){
- if(!window.CSS?.highlights||!window.Highlight||!epubController)return;
- CSS.highlights.delete('pishelf-reading');
+function markEpubReading(text,progress=0){
+ if(!epubController)return;
  const iframe=$('epub-page').querySelector('iframe'),doc=iframe?.contentDocument;
  if(!doc||!text)return;
- const needle=text.trim().split(/\\s+/).slice(0,5).join(' ').toLowerCase();
+ const view=doc.defaultView;
+ if(!view?.CSS?.highlights||!view.Highlight)return;
+ view.CSS.highlights.delete('pishelf-reading');
+ const words=text.trim().split(/\s+/);
+ const needle=words[Math.min(words.length-1,Math.floor(Math.max(0,Math.min(.999,progress))*words.length))]?.toLowerCase();
+ if(!needle)return;
  const walker=doc.createTreeWalker(doc.body,NodeFilter.SHOW_TEXT);
  let node;
  while((node=walker.nextNode())){
   const hay=node.textContent.toLowerCase(),idx=hay.indexOf(needle);
-  if(idx>=0){const range=doc.createRange();range.setStart(node,idx);range.setEnd(node,Math.min(node.length,idx+needle.length));CSS.highlights.set('pishelf-reading',new Highlight(range));break;}
+  if(idx>=0){const range=doc.createRange();range.setStart(node,idx);range.setEnd(node,Math.min(node.length,idx+needle.length));view.CSS.highlights.set('pishelf-reading',new view.Highlight(range));break;}
  }
 }
 function speechState(kind,state){
  if(state.notice){toast(state.notice);return;}
- if(state.spokenText!==undefined){if(kind==='pdf')void markPdfReading(state.spokenText,state.readingProgress||0);else markEpubReading(state.spokenText);return;}
+ if(state.spokenText!==undefined){if(kind==='pdf')void markPdfReading(state.spokenText,state.readingProgress||0);else markEpubReading(state.spokenText,state.readingProgress||0);return;}
  if(state.error){toast('Read aloud: '+state.error);return;}
  $(kind+'-read-play').textContent=state.active?'Reading…':'▶ Read aloud';
  $(kind+'-read-main').textContent=state.paused||!state.active?'▶':'⏸';
