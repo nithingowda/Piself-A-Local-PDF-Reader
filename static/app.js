@@ -261,6 +261,7 @@ async function installTextSurface(slot,pixels,doc){
   const content=await pdfPage.getTextContent();
   if(!slot.isConnected||documentPDF!==doc||slot.dataset.ready!=='yes'||slot.querySelector('.pdf-text-surface'))return;
   const viewport=pdfPage.getViewport({scale:1,rotation:pixels.tagName==='IMG'?pdfPage.rotate:rotation});
+  slot.style.setProperty('--pdf-aspect',String(viewport.width/viewport.height));
   slot.append(buildTextSurface(content,viewport,engine.Util.transform));
  }catch{/* Image-only or unreadable text still leaves the page usable. */}
 }
@@ -794,7 +795,7 @@ function renderNumberedMarkers(){
    mark.style.left=Math.max(0,box.x*100)+'%';
    mark.style.top=Math.max(0,box.y*100)+'%';
    mark.style.width=Math.min(100,box.w*100)+'%';
-   mark.style.height=Math.max(1,box.h*100)+'%';
+   mark.style.height=box.h*100+'%';
    overlay.append(mark);
   }
   const badge=document.createElement('span');badge.className='numbered-pick-badge';
@@ -867,10 +868,13 @@ async function playNumberedParagraphs(kind){
 const paragraphLayouts=new WeakMap();
 async function pickNumberedPdfParagraph(event,slot){
  const ticket=++numberedTapSerial,pageNumber=+slot.dataset.page;
- const rect=slot.getBoundingClientRect();
- if(!rect.width||!rect.height||!documentPDF)return;
+ const touched=event.target.closest('.pdf-text-surface span[data-item]');
  const pdfPage=await documentPDF.getPage(pageNumber);
- const viewport=pdfPage.getViewport({scale:1,rotation});
+ const image=slot.firstElementChild?.tagName==='IMG';
+ const viewport=pdfPage.getViewport({scale:1,rotation:image?pdfPage.rotate:rotation});
+ slot.style.setProperty('--pdf-aspect',String(viewport.width/viewport.height));
+ const rect=(slot.querySelector('.pdf-text-surface')||slot).getBoundingClientRect();
+ if(!rect.width||!rect.height)return;
  const x=(event.clientX-rect.left)*viewport.width/rect.width;
  const y=(event.clientY-rect.top)*viewport.height/rect.height;
  const {orderPdfSpeechItems}=await import('./pdf-reading-order.js');
@@ -883,7 +887,7 @@ async function pickNumberedPdfParagraph(event,slot){
   paragraphLayouts.set(slot,layout);
   paragraphs.catch(()=>{if(paragraphLayouts.get(slot)===layout)paragraphLayouts.delete(slot);});
  }
- const candidate=paragraphAtPoint(await layout.paragraphs,x,y,viewport);
+ const candidate=paragraphAtPoint(await layout.paragraphs,x,y,viewport,touched?.dataset.item);
  if(!numberedPickMode.pdf||!candidate||!slot.isConnected)return;
  addNumberedParagraph('pdf',{...candidate,page:pageNumber,key:pageNumber+':'+candidate.id,ticket});
 }

@@ -369,3 +369,11 @@ body.epub-open{overflow:hidden}
 }
 .pdf-slot>img,.pdf-slot>canvas{pointer-events:none;-webkit-user-drag:none}
 .pdf-slot .pdf-text-surface{-webkit-user-select:text;user-select:text}
+
+/* Match the centered, contain-fitted WebP even when a slot uses estimated dimensions. */
+.pdf-slot{container-type:size}
+.pdf-slot:has(>img)[style*="--pdf-aspect"]>:is(.pdf-text-surface,.numbered-pick-overlay){
+ inset:0;margin:auto;
+ width:min(100cqw,calc(100cqh * var(--pdf-aspect)));
+ height:min(100cqh,calc(100cqw / var(--pdf-aspect)));
+}
