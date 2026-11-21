@@ -26,7 +26,7 @@ const readerColors={
  night:{body:{background:'#1c1c1c',color:'#eee3d3'},a:{color:'#b7cdfa'}},
  amoled:{body:{background:'#000000',color:'#e6e6e6'},a:{color:'#a9cfff'}}
 };
-export async function createEpubReader({url,container,cfi,theme='light',fontSize=100,onLocation,onChapters,onStatus,onTextTap}){
+export async function createEpubReader({url,container,cfi,theme='light',fontSize=100,onLocation,onChapters,onStatus,onTextTap,canSelectSpeechText=()=>false}){
  await loadEngine();
  const book=window.ePub(url);
  let dead=false,locationsReady=false,latestCfi='',lastPercentage=0;
@@ -62,7 +62,7 @@ export async function createEpubReader({url,container,cfi,theme='light',fontSize
    style.textContent='.pishelf-tap-selected{outline:2px solid #ed9a19!important;background:rgba(255,193,54,.3)!important;border-radius:3px}';
    doc.head?.append(style);
    doc.addEventListener('click',event=>{
-    if(!event.isTrusted||event.target.closest('a,button,input,select,textarea'))return;
+    if(!canSelectSpeechText()||!event.isTrusted||event.target.closest('a,button,input,select,textarea'))return;
     const block=event.target.closest('h1,h2,h3,h4,h5,h6,p,blockquote,li');
     if(!block||!block.textContent?.trim())return;
     selectedSpeechBlock?.classList.remove('pishelf-tap-selected');
