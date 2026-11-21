@@ -949,6 +949,7 @@ async function openEpubBook(item,start){
    url:pdfURL(item),container:$('epub-page'),
    cfi:start===1?'':initial.epubCfi||'',
    theme:prefs.epubTheme||'light',fontSize:prefs.epubFontSize||100,
+   canSelectSpeechText:()=>speechPickMode==='epub',
    onTextTap:async()=>{
     if(g!==epubGeneration||speechPickMode!=='epub')return;
     cancelSpeechPick();
