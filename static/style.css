@@ -306,3 +306,17 @@ body.epub-open{overflow:hidden}
 /* Temporary read-aloud pointer, independent of saved annotations. */
 .speech-page-highlight{position:absolute;z-index:8;pointer-events:none;background:rgba(251,247,25,.52);border-radius:2px;mix-blend-mode:multiply;transition:opacity .2s}
 ::highlight(pishelf-reading){background:rgba(251,247,25,.65);color:inherit}
+
+/* Liquid-glass controls: compositor-only blur, no animated backdrop or expensive filters. */
+#reader .speech-floating-player:not([hidden]),#epub-reader .speech-floating-player:not([hidden]){
+ background:linear-gradient(135deg,rgba(255,255,255,.23),rgba(255,255,255,.08))!important;
+ border:1px solid rgba(255,255,255,.38)!important;
+ border-radius:26px!important;
+ box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 10px 32px rgba(0,0,0,.22)!important;
+ backdrop-filter:blur(14px) saturate(1.25)!important;
+ -webkit-backdrop-filter:blur(14px) saturate(1.25)!important;
+}
+.speech-player-main button{background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.18);border-radius:50%}
+@media(prefers-reduced-transparency:reduce){
+ #reader .speech-floating-player:not([hidden]),#epub-reader .speech-floating-player:not([hidden]){background:rgba(30,34,42,.94)!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+}
