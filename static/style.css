@@ -243,3 +243,9 @@ body.epub-open{overflow:hidden}
  #reader .reader-bar button,#reader .controls button{transition:none}
  #reader .reader-bar button:hover,#reader .controls button:hover{transform:none}
 }
+
+/* Thumbnail navigation and progress remain usable on narrow screens. */
+.thumbnail-navigation{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:8px}
+.thumbnail-navigation .thumbnail-jump{width:76px;max-width:22vw;text-align:center;border-radius:8px;padding:7px}
+#thumbnail-grid button[aria-current="page"]{outline:2px solid #589bdc;outline-offset:2px}
+.reader-scrubber output{font-variant-numeric:tabular-nums}
