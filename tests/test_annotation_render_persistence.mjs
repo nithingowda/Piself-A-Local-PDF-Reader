@@ -9,12 +9,12 @@ const replace=new Function('return ('+js.slice(begin,end)+')')();
 
 test('image refresh retains annotation overlay',()=>{
  const overlay={className:'annotation-layer'},preview={type:'preview'},sharp={type:'sharp'};
- const slot={nodes:[overlay],querySelector(selector){return selector==='.annotation-layer'?this.nodes.find(x=>x===overlay)||null:null;},replaceChildren(...nodes){this.nodes=nodes;},append(node){this.nodes.push(node);}};
+ const slot={nodes:[overlay],querySelector(){return null;},querySelectorAll(){return this.nodes.filter(x=>x===overlay);},replaceChildren(...nodes){this.nodes=nodes;},append(node){this.nodes.push(node);}};
  replace(slot,preview);assert.deepEqual(slot.nodes,[preview,overlay]);
  replace(slot,sharp);assert.deepEqual(slot.nodes,[sharp,overlay]);
 });
 test('replacement also works before an annotation layer exists',()=>{
- const slot={nodes:[],querySelector(){return null;},replaceChildren(...nodes){this.nodes=nodes;},append(node){this.nodes.push(node);}};
+ const slot={nodes:[],querySelector(){return null;},querySelectorAll(){return [];},replaceChildren(...nodes){this.nodes=nodes;},append(node){this.nodes.push(node);}};
  replace(slot,{type:'canvas'});assert.equal(slot.nodes.length,1);
 });
 test('all PDF rendering paths preserve annotation layers',()=>{
