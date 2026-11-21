@@ -154,3 +154,15 @@ body.epub-open{overflow:hidden}
 /* Responsive paged fit: center full PDF pages without cropping or stretching. */
 #pages.paged-layout{min-width:100%;min-height:100%;align-items:center;justify-content:center}
 #pages.paged-layout:not(.book-layout){width:100%}
+
+/* Accessible, responsive Settings navigation. */
+.settings-tabs{display:flex;gap:7px;overflow-x:auto;padding:4px 0 12px;margin-bottom:14px;border-bottom:1px solid var(--line);scrollbar-width:thin}
+.settings-tabs button{flex:0 0 auto;white-space:nowrap;padding:10px 13px;border:1px solid transparent;border-radius:9px;background:transparent;color:var(--muted);font-size:12px}
+.settings-tabs button[aria-selected="true"]{background:var(--panel);color:var(--accent);border-color:var(--line);font-weight:650}
+.settings-tabs button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.settings-panel[hidden]{display:none!important}
+.settings-panel .settings-grid{grid-template-columns:minmax(0,1fr);max-width:680px}
+.settings-panel .settings-grid section{min-width:0}
+.category-manager-label{flex:1;min-width:120px;overflow-wrap:anywhere;font-size:12px;align-self:center}
+.collection-row button:disabled{opacity:.45;cursor:not-allowed}
+@media(max-width:650px){.settings-tabs{margin-inline:-4px}.settings-tabs button{padding:10px;font-size:11px}}
