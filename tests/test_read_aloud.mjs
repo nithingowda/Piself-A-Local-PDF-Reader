@@ -109,14 +109,14 @@ test('speech chunker handles long text without oversized chunks',async()=>{
 test('headlines are preserved in speech extraction',async()=>{
  const {splitSpeechChunks}=await import('../static/read-aloud.js');
  assert.deepEqual(splitSpeechChunks('Breaking News\nThe story begins here.'),['Breaking News','The story begins here.']);
- assert.match(app,/item\.hasEOL/);
+ assert.match(readFileSync(new URL('pdf-reading-order.js',root),'utf8'),/item\.hasEOL/);
  assert.match(epub,/h1,h2,h3,h4,h5,h6,p,blockquote,li/);
 });
 
 test('tap to read starts PDF at a selected text item',()=>{
  assert.match(app,/async function readPdfFromTap\(event\)/);
- assert.match(app,/pdfSpeechStart=\{page:targetPage,index\}/);
- assert.match(app,/content\.items\.slice\(start\)/);
+ assert.match(app,/pdfSpeechStart=\{page:targetPage,index:items\[index\]\.sourceIndex\}/);
+ assert.match(app,/pdfSpeechText\(ordered\.slice\(start\)\)/);
  assert.match(app,/pdfSpeech\.play\(\)/);
 });
 test('EPUB text taps choose a heading or paragraph and preserve later content',()=>{
@@ -144,7 +144,7 @@ test('read aloud requires an explicit tap-to-start prompt',()=>{
  assert.match(app,/speech-pick-notice/);
  assert.match(css,/\.speech-pick-notice/);
  assert.match(epub,/canSelectSpeechText\(\)/);
- assert.match(app,/sourceIndex:index/);
+ assert.match(readFileSync(new URL('pdf-reading-order.js',root),'utf8'),/sourceIndex/);
 });
 
 test('read aloud stays on tapped PDF page including right side of a book spread',()=>{
@@ -166,4 +166,33 @@ test('tapped page stays the read-aloud source even in scroll and book views',()=
  assert.match(app,/const currentPage=pdfSpeechCurrentPage\(\)/);
  assert.match(app,/pdfSpeechPage=currentPage\+1/);
  assert.match(app,/if\(target\)\{/);
+});
+
+test('a magazine headline continues into bottom article columns on the same page',async()=>{
+ const {orderPdfSpeechItems,pdfSpeechText}=await import('../static/pdf-reading-order.js');
+ const viewport={width:600,height:800,convertToViewportPoint:(x,y)=>[x,y]};
+ const item=(str,x,y,width=160)=>({str,transform:[1,0,0,1,x,y],width,height:12,hasEOL:true});
+ // Stream order deliberately differs from the visual reading order.
+ const raw=[
+  item('middle paragraph two',220,630),
+  item('left paragraph two',20,630),
+  item('right paragraph one',420,600),
+  item('left paragraph one',20,600),
+  item('middle paragraph one',220,600),
+  item('right paragraph two',420,630),
+  item('Happy 70th birthday',170,95,280),
+  item('Join us as we look to the past and future',170,130,300)
+ ];
+ const ordered=orderPdfSpeechItems(raw,viewport);
+ assert.deepEqual(ordered.map(item=>item.str),[
+  'Happy 70th birthday','Join us as we look to the past and future',
+  'left paragraph one','left paragraph two',
+  'middle paragraph one','middle paragraph two',
+  'right paragraph one','right paragraph two'
+ ]);
+ const start=ordered.findIndex(item=>item.sourceIndex===6);
+ const remainder=pdfSpeechText(ordered.slice(start));
+ assert.ok(remainder.includes('left paragraph one'));
+ assert.ok(remainder.indexOf('Happy 70th birthday')<remainder.indexOf('left paragraph one'));
+ assert.ok(remainder.indexOf('left paragraph two')<remainder.indexOf('middle paragraph one'));
 });
