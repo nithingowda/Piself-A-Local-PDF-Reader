@@ -91,9 +91,17 @@ export function paragraphAtPoint(paragraphs,x,y,viewport){
   const last=prev.boxes.at(-1),first=next.boxes[0];
   const height=Math.min(last.h,first.h);
   const gap=first.y-last.y-last.h;
-  if(next.region!==prev.region||next.column!==prev.column||next.font!==prev.font||
-     Math.abs(first.h-last.h)>height*.12||gap<0||gap>height*1.8||
-     Math.abs(next.anchor.x-prev.anchor.x)*viewport.width>height*viewport.height*1.6)break;
+  if(next.region!==prev.region||next.font!==prev.font||Math.abs(first.h-last.h)>height*.12)break;
+  if(next.column===prev.column){
+   if(gap<0||gap>height*1.8||
+      Math.abs(next.anchor.x-prev.anchor.x)*viewport.width>height*viewport.height*1.6)break;
+  }else{
+   // Follow a wrapped sentence only into the adjacent column of this region.
+   const continuation=next.column===prev.column+1&&first.x>prev.anchor.x&&
+    first.y<last.y-height&&typeof prev.font==='string'&&
+    /[\p{L}\p{N},;–—-]$/u.test(prev.text.trimEnd())&&/^\p{Ll}/u.test(next.text.trimStart());
+   if(!continuation)break;
+  }
   parts.push(next);
  }
  if(parts.length===1)return chosen;

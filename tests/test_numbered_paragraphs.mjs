@@ -168,3 +168,18 @@ test('opening Read prepares selection without starting narration',async()=>{
   assert.deepEqual(events,['stop','show player']);
  }
 });
+
+test('a wrapped sentence continues into the next column but stops at a sidebar',()=>{
+ const body=(text,x,y,id,column,region=0)=>({
+  ...line(text,x,y,id),fontName:'body',readingColumn:column,readingRegion:region
+ });
+ const paragraphs=numberedPdfParagraphs([
+  body('Power use is rising across',25,600,0,0),
+  body('the region as demand grows.',220,100,1,1),
+  body('New capacity is planned.',220,131,2,1),
+  body('The debate over how to reverse warming',220,164,3,1,1)
+ ],viewport);
+ const passage=paragraphAtPoint(paragraphs,30,598,viewport);
+ assert.equal(passage.id,'0,1,2');
+ assert.equal(passage.text.includes('The debate'),false);
+});
