@@ -144,4 +144,3 @@ body.epub-open{overflow:hidden}
 #pages.paged-layout{min-height:100%;display:flex;flex-direction:column;justify-content:center;box-sizing:border-box}
 #pages.paged-layout>.pdf-slot{flex:none;margin-block:0}
 #pages.book-layout .book-spread{align-items:center;padding-block:8px}
-\n/* Non-interactive zoom feedback stays visible over the PDF and controls. */\n#zoom-indicator{position:fixed;left:50%;bottom:max(24px,env(safe-area-inset-bottom));transform:translateX(-50%);z-index:1000;padding:5px 12px;border-radius:20px;background:rgba(20,24,30,.48);color:white;font:600 13px system-ui,sans-serif;pointer-events:none;opacity:0;transition:opacity .2s;backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px)}\n#zoom-indicator.visible{opacity:1}\n
