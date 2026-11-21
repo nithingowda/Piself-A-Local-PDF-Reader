@@ -320,3 +320,9 @@ body.epub-open{overflow:hidden}
 @media(prefers-reduced-transparency:reduce){
  #reader .speech-floating-player:not([hidden]),#epub-reader .speech-floating-player:not([hidden]){background:rgba(30,34,42,.94)!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
 }
+
+/* Keep player controls legible over bright pages; drag handle is touch-friendly. */
+.speech-floating-player{touch-action:none}
+.speech-drag-handle{align-self:stretch;text-align:center;cursor:grab;touch-action:none;user-select:none;line-height:12px;font-weight:700;letter-spacing:5px;color:#fff;text-shadow:0 1px 3px #000;padding:1px 12px 5px}
+.speech-floating-player .speech-player-main button{color:#fff!important;text-shadow:0 1px 2px rgba(0,0,0,.85);background:rgba(15,24,36,.6)!important;border:1px solid rgba(255,255,255,.4)!important}
+.speech-floating-player .read-aloud-panel{color:#fff;background:rgba(15,24,36,.85);border-radius:12px;padding:8px}

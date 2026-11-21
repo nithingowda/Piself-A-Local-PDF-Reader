@@ -677,11 +677,40 @@ const EDGE_VOICES=[
  ['en-GB-RyanNeural','Ryan · British English (Male)'],
  ['en-AU-NatashaNeural','Natasha · Australian English (Female)']
 ];
+// Keep the user's preferred voice across PDF/EPUB and browser reloads.
+const VOICE_STORAGE_KEY='pishelf-edge-voice';
+function preferredSpeechVoice(){
+ try{const value=localStorage.getItem(VOICE_STORAGE_KEY);if(EDGE_VOICES.some(([id])=>id===value))return value;}catch{}
+ return 'en-IN-NeerjaNeural';
+}
 function speechVoices(kind){
  const select=$(kind+'-read-voice');if(!select)return;
- const previous=select.value;
  select.replaceChildren(...EDGE_VOICES.map(([id,label])=>new Option(label,id)));
- select.value=EDGE_VOICES.some(([id])=>id===previous)?previous:'en-IN-NeerjaNeural';
+ select.value=preferredSpeechVoice();
+}
+// Drag only from the player background: buttons and settings remain clickable.
+function enableSpeechDrag(kind){
+ const player=$(kind+'-speech-player');
+ if(player.dataset.draggable)return;
+ player.dataset.draggable='true';
+ let drag=null;
+ player.addEventListener('pointerdown',event=>{
+  if(event.button!==0||event.target.closest('button,select,label,input,.read-aloud-panel'))return;
+  const rect=player.getBoundingClientRect();
+  drag={id:event.pointerId,dx:event.clientX-rect.left,dy:event.clientY-rect.top};
+  player.setPointerCapture(event.pointerId);
+ });
+ player.addEventListener('pointermove',event=>{
+  if(!drag||drag.id!==event.pointerId)return;
+  const x=Math.max(0,Math.min(innerWidth-player.offsetWidth,event.clientX-drag.dx));
+  const y=Math.max(0,Math.min(innerHeight-player.offsetHeight,event.clientY-drag.dy));
+  player.style.setProperty('left',x+'px','important');
+  player.style.setProperty('top',y+'px','important');
+  player.style.setProperty('bottom','auto','important');
+  player.style.setProperty('transform','none','important');
+ });
+ const end=event=>{if(drag?.id===event.pointerId)drag=null;};
+ player.addEventListener('pointerup',end);player.addEventListener('pointercancel',end);
 }
 function speechPlayer(kind,visible){
  if(!visible)clearReadingMark();
@@ -693,6 +722,8 @@ function speechPlayer(kind,visible){
  if(!visible)$(kind+'-read-panel').hidden=true;
 }
 function wireSpeech(kind,controller){
+ enableSpeechDrag(kind);
+ controller.setVoice(preferredSpeechVoice());
  const panel=$(kind+'-read-panel');
  $(kind+'-read-toggle').onclick=()=>{speechPlayer(kind,true);controller.play();};
  $(kind+'-read-main').onclick=()=>controller.paused?controller.play():controller.pause();
@@ -704,57 +735,76 @@ function wireSpeech(kind,controller){
  $(kind+'-read-pause').onclick=()=>controller.paused?controller.play():controller.pause();
  $(kind+'-read-stop').onclick=()=>{controller.stop();speechPlayer(kind,false);};
  $(kind+'-read-rate').onchange=e=>controller.setRate(e.target.value);
- $(kind+'-read-voice').onchange=e=>controller.setVoice(e.target.value);
+ $(kind+'-read-voice').onchange=e=>{const selected=e.target.value;try{localStorage.setItem(VOICE_STORAGE_KEY,selected);}catch{}controller.setVoice(selected);speechVoices(kind==='pdf'?'epub':'pdf');};
  speechVoices(kind);
 }
-let readingMark=null,readingMarkText='',readingMarkPage=0;
+let readingMark=null,readingMarkText='',readingMarkPage=0,readingMarkIndex=-1;
 function clearReadingMark(){
  if(readingMark){readingMark.remove();readingMark=null;}
  if(window.CSS?.highlights)CSS.highlights.delete('pishelf-reading');
- readingMarkText='';readingMarkPage=0;
+ readingMarkText='';readingMarkPage=0;readingMarkIndex=-1;
 }
+// PDF images have no selectable text layer; use PDF.js text item coordinates.
+let pdfSpeechItems=null,pdfSpeechItemsPage=0;
 async function markPdfReading(text,progress){
  if(!documentPDF||!text)return;
- const currentPage=page,slot=$('pages').querySelector('.pdf-slot[data-page="'+currentPage+'"]');
+ const currentPage=page;
+ const slot=Array.from($('pages').querySelectorAll('[data-page]')).find(el=>+el.dataset.page===currentPage);
  if(!slot)return;
+ const words=text.trim().split(/\s+/),wordIndex=Math.floor(Math.max(0,Math.min(.999,progress))*words.length);
+ if(readingMarkText===text&&readingMarkPage===currentPage&&readingMarkIndex===wordIndex)return;
  if(readingMarkText!==text||readingMarkPage!==currentPage){
-  clearReadingMark();readingMarkText=text;readingMarkPage=currentPage;
-  try{
-   const pdfPage=await documentPDF.getPage(currentPage);
-   const content=await pdfPage.getTextContent();
-   if(readingMarkText!==text||readingMarkPage!==currentPage)return;
-   const words=text.toLowerCase().replace(/\\s+/g,' ').trim().split(' ');
-   const items=content.items.filter(item=>item.str?.trim());
-   const start=items.findIndex(item=>words.some(word=>word.length>3&&item.str.toLowerCase().includes(word)));
-   if(start<0)return;
-   const viewport=pdfPage.getViewport({scale:1,rotation});
-   const overlay=document.createElement('div');overlay.className='speech-page-highlight';
-   const item=items[start],pt=viewport.convertToViewportPoint(item.transform[4],item.transform[5]);
-   overlay.style.left=(pt[0]/viewport.width*100)+'%';
-   overlay.style.top=((pt[1]-Math.abs(item.height||12))/viewport.height*100)+'%';
-   overlay.style.width=Math.min(100-pt[0]/viewport.width*100,Math.max(2,item.width/viewport.width*100))+'%';
-   overlay.style.height=Math.max(1.5,Math.abs(item.height||12)/viewport.height*100)+'%';
-   slot.append(overlay);readingMark=overlay;
-  }catch{}
+  readingMark?.remove();readingMark=null;readingMarkText=text;readingMarkPage=currentPage;readingMarkIndex=-1;
  }
- if(readingMark)readingMark.style.opacity=progress>=1?'0.25':'0.7';
+ readingMarkIndex=wordIndex;
+ try{
+  const pdfPage=await documentPDF.getPage(currentPage);
+  if(pdfSpeechItemsPage!==currentPage||!pdfSpeechItems){
+   pdfSpeechItems=(await pdfPage.getTextContent()).items.filter(item=>item.str?.trim());
+   pdfSpeechItemsPage=currentPage;
+  }
+  if(readingMarkText!==text||readingMarkPage!==currentPage)return;
+  const items=pdfSpeechItems;
+  const anchor=words.slice(0,5).find(word=>word.length>3)?.toLowerCase();
+  const start=items.findIndex(item=>anchor&&item.str.toLowerCase().includes(anchor));
+  if(start<0)return;
+  let remaining=wordIndex,item=items[start];
+  for(const candidate of items.slice(start)){
+   item=candidate;remaining-=Math.max(1,candidate.str.trim().split(/\s+/).length);
+   if(remaining<0)break;
+  }
+  const viewport=pdfPage.getViewport({scale:1,rotation});
+  const pt=viewport.convertToViewportPoint(item.transform[4],item.transform[5]);
+  const overlay=readingMark||document.createElement('div');
+  overlay.className='speech-page-highlight';
+  overlay.style.left=Math.max(0,pt[0]/viewport.width*100)+'%';
+  overlay.style.top=Math.max(0,(pt[1]-Math.abs(item.height||12))/viewport.height*100)+'%';
+  overlay.style.width=Math.max(2,Math.min(100,item.width/viewport.width*100))+'%';
+  overlay.style.height=Math.max(1.5,Math.abs(item.height||12)/viewport.height*100)+'%';
+  if(!overlay.isConnected)slot.append(overlay);
+  readingMark=overlay;
+ }catch{}
 }
-function markEpubReading(text){
- if(!window.CSS?.highlights||!window.Highlight||!epubController)return;
- CSS.highlights.delete('pishelf-reading');
+function markEpubReading(text,progress=0){
+ if(!epubController)return;
  const iframe=$('epub-page').querySelector('iframe'),doc=iframe?.contentDocument;
  if(!doc||!text)return;
- const needle=text.trim().split(/\\s+/).slice(0,5).join(' ').toLowerCase();
+ const view=doc.defaultView;
+ if(!view?.CSS?.highlights||!view.Highlight)return;
+ view.CSS.highlights.delete('pishelf-reading');
+ const words=text.trim().split(/\s+/);
+ const needle=words[Math.min(words.length-1,Math.floor(Math.max(0,Math.min(.999,progress))*words.length))]?.toLowerCase();
+ if(!needle)return;
  const walker=doc.createTreeWalker(doc.body,NodeFilter.SHOW_TEXT);
  let node;
  while((node=walker.nextNode())){
   const hay=node.textContent.toLowerCase(),idx=hay.indexOf(needle);
-  if(idx>=0){const range=doc.createRange();range.setStart(node,idx);range.setEnd(node,Math.min(node.length,idx+needle.length));CSS.highlights.set('pishelf-reading',new Highlight(range));break;}
+  if(idx>=0){const range=doc.createRange();range.setStart(node,idx);range.setEnd(node,Math.min(node.length,idx+needle.length));view.CSS.highlights.set('pishelf-reading',new view.Highlight(range));break;}
  }
 }
 function speechState(kind,state){
  if(state.notice){toast(state.notice);return;}
- if(state.spokenText!==undefined){if(kind==='pdf')void markPdfReading(state.spokenText,state.readingProgress||0);else markEpubReading(state.spokenText);return;}
+ if(state.spokenText!==undefined){if(kind==='pdf')void markPdfReading(state.spokenText,state.readingProgress||0);else markEpubReading(state.spokenText,state.readingProgress||0);return;}
  if(state.error){toast('Read aloud: '+state.error);return;}
  $(kind+'-read-play').textContent=state.active?'Reading…':'▶ Read aloud';
  $(kind+'-read-main').textContent=state.paused||!state.active?'▶':'⏸';
