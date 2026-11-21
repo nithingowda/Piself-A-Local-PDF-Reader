@@ -1062,7 +1062,7 @@ function drawCurl(progress){
 }
 function turnFromControl(direction){
  if(curl)return;
- if(documentPDF&&isBookSpread()&&zoom<=fitEntirePageZoom(page)+.04){
+ if(documentPDF){
   beginCurl(direction,{y:$('page-area').getBoundingClientRect().bottom});
   if(curl){drawCurl(0);settleCurl(true);return;}
  }
@@ -1120,7 +1120,7 @@ $('reader-accessibility-controls').onclick=toggleReaderControls;
 /** set Reader Focus: Support the PiShelf reader or library interface. */
 function setReaderFocus(focused){$('reader').classList.toggle('focused',focused);$('reader-focus').setAttribute('aria-pressed',String(focused));$('reader-focus').textContent=focused?'Show controls':'Immersive';$('reader-accessibility-controls').setAttribute('aria-expanded',String(!focused));if(focused&&$('reader').contains(document.activeElement))$('page-area').focus({preventScroll:true});}
 $('reader-focus').onclick=()=>{setReaderFocus(true);};
-$('page-area').addEventListener('click',e=>{if(!documentPDF||pinch||performance.now()<suppressTapUntil)return;if($('reader').classList.contains('focused')){setReaderFocus(false);scheduleImmersiveHide();}}, {passive:true});
+$('page-area').addEventListener('click',e=>{if(!documentPDF||pinch||curl||performance.now()<suppressTapUntil)return;if($('reader').classList.contains('focused')){setReaderFocus(false);scheduleImmersiveHide();}}, {passive:true});
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{if(prefs.siteTheme==='system')applyPrefs();});
 // === Session bootstrap ======================================================
 // The server is authoritative: hiding controls is only a UX improvement;
