@@ -134,3 +134,15 @@ test('tap selection is visible in PDF and EPUB while audio loads',()=>{
  assert.match(epub,/pishelf-tap-selected/);
  assert.match(epub,/doc\.head\?\.append\(style\)/);
 });
+
+test('read aloud requires an explicit tap-to-start prompt',()=>{
+ const css=readFileSync(new URL('style.css',root),'utf8');
+ assert.match(app,/function beginSpeechPick\(kind\)/);
+ assert.match(app,/speechPickMode!=='pdf'/);
+ assert.match(app,/speechPickMode!=='epub'/);
+ assert.match(app,/\$\(kind\+'-read-toggle'\)\.onclick=\(\)=>beginSpeechPick\(kind\)/);
+ assert.match(app,/speech-pick-notice/);
+ assert.match(css,/\.speech-pick-notice/);
+ assert.match(epub,/canSelectSpeechText\(\)/);
+ assert.match(app,/sourceIndex:index/);
+});
