@@ -675,23 +675,36 @@ function speechVoices(kind){
  for(const voice of (window.speechSynthesis?.getVoices()||[]))select.add(new Option(voice.name+' ('+voice.lang+')',voice.voiceURI));
  select.value=previous||'piper-alba';
 }
+function speechPlayer(kind,visible){
+ const root=$(kind==='pdf'?'reader':'epub-reader');
+ const player=$(kind+'-speech-player');
+ player.hidden=!visible;
+ root.classList.toggle('speech-immersive',visible);
+ $(kind+'-read-toggle').setAttribute('aria-expanded',String(visible));
+ if(!visible)$(kind+'-read-panel').hidden=true;
+}
 function wireSpeech(kind,controller){
- const toggle=$(kind+'-read-toggle'),panel=$(kind+'-read-panel');
- toggle.onclick=()=>{panel.hidden=!panel.hidden;toggle.setAttribute('aria-expanded',String(!panel.hidden));};
- const play=$(kind+'-read-play'),pause=$(kind+'-read-pause'),stop=$(kind+'-read-stop');
- play.onclick=()=>controller.play();
- pause.onclick=()=>controller.paused?controller.play():controller.pause();
- stop.onclick=()=>controller.stop();
+ const panel=$(kind+'-read-panel');
+ $(kind+'-read-toggle').onclick=()=>{speechPlayer(kind,true);controller.play();};
+ $(kind+'-read-main').onclick=()=>controller.paused?controller.play():controller.pause();
+ $(kind+'-read-back').onclick=()=>controller.seek(-10);
+ $(kind+'-read-forward').onclick=()=>controller.seek(10);
+ $(kind+'-read-close').onclick=()=>{controller.stop();speechPlayer(kind,false);};
+ $(kind+'-read-more').onclick=()=>{panel.hidden=!panel.hidden;};
+ $(kind+'-read-play').onclick=()=>controller.play();
+ $(kind+'-read-pause').onclick=()=>controller.paused?controller.play():controller.pause();
+ $(kind+'-read-stop').onclick=()=>{controller.stop();speechPlayer(kind,false);};
  $(kind+'-read-rate').onchange=e=>controller.setRate(e.target.value);
  $(kind+'-read-voice').onchange=e=>controller.setVoice(e.target.value);
  speechVoices(kind);
 }
 function speechState(kind,state){
  if(state.error){toast('Read aloud: '+state.error);return;}
- const play=$(kind+'-read-play'),pause=$(kind+'-read-pause');
- play.textContent=state.active?'Reading…':'▶ Read aloud';
- $(kind+'-read-toggle').textContent=state.active?'🔊 Reading…':'🔊 Read aloud';
- pause.textContent=state.paused?'Resume':'Pause';
+ $(kind+'-read-play').textContent=state.active?'Reading…':'▶ Read aloud';
+ $(kind+'-read-main').textContent=state.paused||!state.active?'▶':'⏸';
+ $(kind+'-read-main').setAttribute('aria-label',state.paused||!state.active?'Resume reading':'Pause reading');
+ $(kind+'-read-pause').textContent=state.paused?'Resume':'Pause';
+ if(!state.active&&!state.error)speechPlayer(kind,false);
 }
 async function startPdfSpeech(){
  const {createReadAloud}=await speechEngine();
@@ -718,10 +731,8 @@ async function startEpubSpeech(){
  });
  wireSpeech('epub',epubSpeech);
 }
-$('pdf-read-play').onclick=async()=>{await startPdfSpeech();pdfSpeech.play();};
-$('pdf-read-toggle').onclick=async()=>{await startPdfSpeech();const panel=$('pdf-read-panel');panel.hidden=!panel.hidden;$('pdf-read-toggle').setAttribute('aria-expanded',String(!panel.hidden));};
-$('epub-read-play').onclick=async()=>{await startEpubSpeech();epubSpeech.play();};
-$('epub-read-toggle').onclick=async()=>{await startEpubSpeech();const panel=$('epub-read-panel');panel.hidden=!panel.hidden;$('epub-read-toggle').setAttribute('aria-expanded',String(!panel.hidden));};
+$('pdf-read-toggle').onclick=async()=>{await startPdfSpeech();speechPlayer('pdf',true);pdfSpeech.play();};
+$('epub-read-toggle').onclick=async()=>{await startEpubSpeech();speechPlayer('epub',true);epubSpeech.play();};
 window.speechSynthesis?.addEventListener?.('voiceschanged',()=>{speechVoices('pdf');speechVoices('epub');});
 
 async function closeEpubBook({fromHistory=false}={}){
