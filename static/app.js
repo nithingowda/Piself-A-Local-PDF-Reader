@@ -744,37 +744,46 @@ function clearReadingMark(){
  if(window.CSS?.highlights)CSS.highlights.delete('pishelf-reading');
  readingMarkText='';readingMarkPage=0;readingMarkIndex=-1;
 }
+// PDF images have no selectable text layer; use PDF.js text item coordinates.
+let pdfSpeechItems=null,pdfSpeechItemsPage=0;
 async function markPdfReading(text,progress){
  if(!documentPDF||!text)return;
- const currentPage=page,slot=$('pages').querySelector('.pdf-slot[data-page="'+currentPage+'"]');
+ const currentPage=page;
+ const slot=Array.from($('pages').querySelectorAll('[data-page]')).find(el=>+el.dataset.page===currentPage);
  if(!slot)return;
- const currentWord=Math.floor(Math.max(0,Math.min(.999,progress))*text.trim().split(/\s+/).length);
- if(readingMarkText===text&&readingMarkPage===currentPage&&readingMarkIndex===currentWord)return;
+ const words=text.trim().split(/\s+/),wordIndex=Math.floor(Math.max(0,Math.min(.999,progress))*words.length);
+ if(readingMarkText===text&&readingMarkPage===currentPage&&readingMarkIndex===wordIndex)return;
  if(readingMarkText!==text||readingMarkPage!==currentPage){
-  clearReadingMark();readingMarkText=text;readingMarkPage=currentPage;
-  try{
-   const pdfPage=await documentPDF.getPage(currentPage);
-   const content=await pdfPage.getTextContent();
-   if(readingMarkText!==text||readingMarkPage!==currentPage)return;
-   const words=text.toLowerCase().replace(/\s+/g,' ').trim().split(' ');
-   const items=content.items.filter(item=>item.str?.trim());
-   const start=items.findIndex(item=>words.some(word=>word.length>3&&item.str.toLowerCase().includes(word)));
-   if(start<0)return;
-   const viewport=pdfPage.getViewport({scale:1,rotation});
-   const overlay=document.createElement('div');overlay.className='speech-page-highlight';
-   // Approximate the current word position from playback progress and PDF text items.
-   let remaining=currentWord,item=items[start];
-   for(const candidate of items.slice(start)){item=candidate;remaining-=Math.max(1,candidate.str.trim().split(/\s+/).length);if(remaining<0)break;}
-   readingMarkIndex=currentWord;
-   const pt=viewport.convertToViewportPoint(item.transform[4],item.transform[5]);
-   overlay.style.left=(pt[0]/viewport.width*100)+'%';
-   overlay.style.top=((pt[1]-Math.abs(item.height||12))/viewport.height*100)+'%';
-   overlay.style.width=Math.min(100-pt[0]/viewport.width*100,Math.max(2,item.width/viewport.width*100))+'%';
-   overlay.style.height=Math.max(1.5,Math.abs(item.height||12)/viewport.height*100)+'%';
-   readingMark?.remove();slot.append(overlay);readingMark=overlay;
-  }catch{}
+  readingMark?.remove();readingMark=null;readingMarkText=text;readingMarkPage=currentPage;readingMarkIndex=-1;
  }
- if(readingMark)readingMark.style.opacity=progress>=1?'0.25':'0.7';
+ readingMarkIndex=wordIndex;
+ try{
+  const pdfPage=await documentPDF.getPage(currentPage);
+  if(pdfSpeechItemsPage!==currentPage||!pdfSpeechItems){
+   pdfSpeechItems=(await pdfPage.getTextContent()).items.filter(item=>item.str?.trim());
+   pdfSpeechItemsPage=currentPage;
+  }
+  if(readingMarkText!==text||readingMarkPage!==currentPage)return;
+  const items=pdfSpeechItems;
+  const anchor=words.slice(0,5).find(word=>word.length>3)?.toLowerCase();
+  const start=items.findIndex(item=>anchor&&item.str.toLowerCase().includes(anchor));
+  if(start<0)return;
+  let remaining=wordIndex,item=items[start];
+  for(const candidate of items.slice(start)){
+   item=candidate;remaining-=Math.max(1,candidate.str.trim().split(/\s+/).length);
+   if(remaining<0)break;
+  }
+  const viewport=pdfPage.getViewport({scale:1,rotation});
+  const pt=viewport.convertToViewportPoint(item.transform[4],item.transform[5]);
+  const overlay=readingMark||document.createElement('div');
+  overlay.className='speech-page-highlight';
+  overlay.style.left=Math.max(0,pt[0]/viewport.width*100)+'%';
+  overlay.style.top=Math.max(0,(pt[1]-Math.abs(item.height||12))/viewport.height*100)+'%';
+  overlay.style.width=Math.max(2,Math.min(100,item.width/viewport.width*100))+'%';
+  overlay.style.height=Math.max(1.5,Math.abs(item.height||12)/viewport.height*100)+'%';
+  if(!overlay.isConnected)slot.append(overlay);
+  readingMark=overlay;
+ }catch{}
 }
 function markEpubReading(text,progress=0){
  if(!epubController)return;
