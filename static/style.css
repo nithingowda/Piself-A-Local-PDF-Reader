@@ -144,8 +144,3 @@ body.epub-open{overflow:hidden}
 #pages.paged-layout{min-height:100%;display:flex;flex-direction:column;justify-content:center;box-sizing:border-box}
 #pages.paged-layout>.pdf-slot{flex:none;margin-block:0}
 #pages.book-layout .book-spread{align-items:center;padding-block:8px}
-
-.reader-zoom-badge{position:absolute;left:50%;bottom:calc(82px + env(safe-area-inset-bottom));transform:translate(-50%,8px);z-index:6;padding:6px 13px;border-radius:18px;background:rgba(20,24,29,.58);color:#fff;font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;pointer-events:none;opacity:0;visibility:hidden;transition:opacity .2s ease,transform .2s ease,visibility .2s;backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px)}
-.reader-zoom-badge.visible{opacity:1;visibility:visible;transform:translate(-50%,0)}
-#reader.focused .reader-zoom-badge{bottom:calc(22px + env(safe-area-inset-bottom))}
-@media(prefers-reduced-motion:reduce){.reader-zoom-badge{transition:none}}
