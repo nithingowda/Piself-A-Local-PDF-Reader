@@ -333,3 +333,7 @@ body.epub-open{overflow:hidden}
 .speech-pick-notice:not([hidden]){position:fixed;z-index:9999;left:50%;top:16px;transform:translateX(-50%);max-width:calc(100vw - 24px);display:flex;align-items:center;gap:12px;padding:10px 14px;border:1px solid rgba(255,255,255,.35);border-radius:16px;background:rgba(28,36,48,.88);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);color:#fff;font-size:13px;box-shadow:0 6px 24px #0004}
 .speech-pick-notice button{background:rgba(255,255,255,.18);color:inherit;border:1px solid #ffffff55;border-radius:9px;padding:5px 10px;cursor:pointer}
 .speech-picking #pages [data-page]{cursor:text}
+
+/* The spoken paragraph spans several PDF text items on top of the WebP page. */
+.speech-paragraph-overlay{position:absolute;inset:0;z-index:8;pointer-events:none}
+.speech-paragraph-overlay .speech-page-highlight{background:rgba(251,247,25,.32);transition:none}

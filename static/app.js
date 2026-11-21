@@ -751,12 +751,11 @@ async function markPdfReading(text,progress){
  const currentPage=pdfSpeechCurrentPage();
  const slot=Array.from($('pages').querySelectorAll('[data-page]')).find(el=>+el.dataset.page===currentPage);
  if(!slot)return;
+ // Highlight the entire spoken passage, not just one bouncing word.
+ // Audio progress still updates internally, without rebuilding DOM every tick.
  const words=text.trim().split(/\s+/),wordIndex=Math.floor(Math.max(0,Math.min(.999,progress))*words.length);
- if(readingMarkText===text&&readingMarkPage===currentPage&&readingMarkIndex===wordIndex)return;
- if(readingMarkText!==text||readingMarkPage!==currentPage){
-  readingMark?.remove();readingMark=null;readingMarkText=text;readingMarkPage=currentPage;readingMarkIndex=-1;
- }
- readingMarkIndex=wordIndex;
+ if(readingMarkText===text&&readingMarkPage===currentPage){readingMarkIndex=wordIndex;return;}
+ readingMark?.remove();readingMark=null;readingMarkText=text;readingMarkPage=currentPage;readingMarkIndex=wordIndex;
  try{
   const pdfPage=await documentPDF.getPage(currentPage);
   if(pdfSpeechItemsPage!==currentPage||!pdfSpeechItems){
@@ -769,23 +768,30 @@ async function markPdfReading(text,progress){
   const anchor=words.slice(0,5).find(word=>word.length>3)?.toLowerCase();
   const start=items.findIndex((item,i)=>i>=pdfSpeechStartIndex&&anchor&&item.str.toLowerCase().includes(anchor));
   if(start<0)return;
-  let remaining=wordIndex,item=items[start];
-  for(const candidate of items.slice(start)){
-   item=candidate;remaining-=Math.max(1,candidate.str.trim().split(/\s+/).length);
-   if(remaining<0)break;
-  }
   const viewport=pdfPage.getViewport({scale:1,rotation});
-  const pt=viewport.convertToViewportPoint(item.transform[4],item.transform[5]);
-  const overlay=readingMark||document.createElement('div');
-  overlay.className='speech-page-highlight';
-  overlay.style.left=Math.max(0,pt[0]/viewport.width*100)+'%';
-  overlay.style.top=Math.max(0,(pt[1]-Math.abs(item.height||12))/viewport.height*100)+'%';
-  overlay.style.width=Math.max(2,Math.min(100,item.width/viewport.width*100))+'%';
-  overlay.style.height=Math.max(1.5,Math.abs(item.height||12)/viewport.height*100)+'%';
-  if(!overlay.isConnected)slot.append(overlay);
-  readingMark=overlay;
+  const overlay=document.createElement('div');
+  overlay.className='speech-paragraph-overlay';
+  let remaining=words.length;
+  for(const item of items.slice(start)){
+   if(remaining<=0)break;
+   const pt=viewport.convertToViewportPoint(item.transform[4],item.transform[5]);
+   const highlight=document.createElement('div');
+   highlight.className='speech-page-highlight';
+   highlight.style.left=Math.max(0,pt[0]/viewport.width*100)+'%';
+   highlight.style.top=Math.max(0,(pt[1]-Math.abs(item.height||12))/viewport.height*100)+'%';
+   highlight.style.width=Math.max(2,Math.min(100,(item.width||20)/viewport.width*100))+'%';
+   highlight.style.height=Math.max(1.5,Math.abs(item.height||12)/viewport.height*100)+'%';
+   overlay.append(highlight);
+   remaining-=Math.max(1,item.str.trim().split(/\s+/).length);
+   // Hard cap guards against malformed PDFs creating thousands of overlays.
+   if(overlay.childElementCount>=120)break;
+  }
+  if(readingMarkText===text&&readingMarkPage===currentPage){
+   slot.append(overlay);readingMark=overlay;
+  }
  }catch{}
 }
+
 function markEpubReading(text,progress=0){
  if(!epubController)return;
  const iframe=$('epub-page').querySelector('iframe'),doc=iframe?.contentDocument;
