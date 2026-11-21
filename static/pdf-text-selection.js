@@ -47,5 +47,24 @@ export function selectedPassage(selection){
  const page=Number(surface.parentElement.dataset.page);
  const edge=node=>node.parentElement.dataset.item??Array.prototype.indexOf.call(surface.childNodes,node)+'s';
  const key=[page,edge(range.startContainer),range.startOffset,edge(range.endContainer),range.endOffset].join(':');
- return {text,boxes,page,anchor:boxes[0],key};
+ const parts=[];
+ for(const span of surface.querySelectorAll('span[data-item]')){
+  const node=span.firstChild;
+  if(!node||!range.intersectsNode(node))continue;
+  const start=node===range.startContainer?range.startOffset:0;
+  const end=node===range.endContainer?range.endOffset:node.length;
+  if(end>start)parts.push({item:Number(span.dataset.item),start,end});
+ }
+ return {text,boxes,page,anchor:boxes[0],key,parts};
+}
+
+
+export function selectionsOverlap(a,b){
+ if(a.page!==b.page)return false;
+ const parts=entry=>entry.parts||entry.id.split(',').map(item=>({item:Number(item),start:0,end:Infinity}));
+ const occupied=new Map(parts(a).map(part=>[part.item,part]));
+ return parts(b).some(part=>{
+  const other=occupied.get(part.item);
+  return other&&other.start<part.end&&part.start<other.end;
+ });
 }

@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {selectedPassage} from '../static/pdf-text-selection.js';
+import {selectedPassage,selectionsOverlap} from '../static/pdf-text-selection.js';
 
 test('an exact range inside a sidebar uses its characters and its own bounds',()=>{
  const surface={
   parentElement:{dataset:{page:'6'}},
+  querySelectorAll:()=>[],
   contains:node=>node===end,
   getBoundingClientRect:()=>({left:10,top:20,width:500,height:800})
  };
@@ -20,4 +21,15 @@ test('an exact range inside a sidebar uses its characters and its own bounds',()
  assert.deepEqual(passage.boxes,[{x:.05,y:.75,w:.4,h:.02}]);
  range.endContainer=item(100);
  assert.equal(selectedPassage(selection),null);
+});
+
+
+test('tap and drag cannot queue overlapping text twice',()=>{
+ const paragraph={page:6,id:'70,71'};
+ const passage=(item,start,end,page=6)=>({page,parts:[{item,start,end}]});
+ assert.equal(selectionsOverlap(paragraph,passage(71,2,8)),true);
+ assert.equal(selectionsOverlap(passage(71,2,8),paragraph),true);
+ assert.equal(selectionsOverlap(passage(71,2,8),passage(71,7,12)),true);
+ assert.equal(selectionsOverlap(passage(71,2,8),passage(71,8,12)),false);
+ assert.equal(selectionsOverlap(paragraph,passage(71,2,8,7)),false);
 });

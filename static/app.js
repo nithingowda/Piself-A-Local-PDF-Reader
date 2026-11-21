@@ -1,3 +1,4 @@
+import {selectionsOverlap,selectedPassage} from './pdf-text-selection.js';
 /* PiShelf browser client — navigation guide
  *
  * Find these named functions to work on a feature:
@@ -834,6 +835,9 @@ function addNumberedParagraph(kind,entry){
   refreshNumberedSelection(kind);
   return;
  }
+ if(kind==='pdf'&&list.some(current=>selectionsOverlap(current,entry))){
+  toast('This text is already selected.');return;
+ }
  if(list.length>=50){toast('Select up to 50 paragraphs.');return;}
  const later=list.findIndex(item=>(item.ticket||0)>(entry.ticket||0));
  if(later<0)list.push(entry);else list.splice(later,0,entry);
@@ -877,6 +881,11 @@ async function pickNumberedPdfParagraph(event,slot){
 }
 $('pages').addEventListener('click',event=>{
  const selection=window.getSelection();
+ if(event.detail>1&&(numberedPickMode.pdf||speechPickMode==='pdf')){
+  event.stopImmediatePropagation();
+  selection?.removeAllRanges();
+  return;
+ }
  if(selection&&!selection.isCollapsed&&selection.anchorNode?.parentElement?.closest('.pdf-text-surface')){
   if(numberedPickMode.pdf||speechPickMode==='pdf'){
    event.stopImmediatePropagation();
@@ -907,7 +916,6 @@ rangeAction.onpointerdown=event=>event.preventDefault();
 rangeAction.onclick=()=>useSelectedPassage(window.getSelection());
 
 async function useSelectedPassage(selection){
- const {selectedPassage}=await import('./pdf-text-selection.js');
  const entry=selectedPassage(selection);
  if(!entry)return;
  const start=speechPickMode==='pdf';
