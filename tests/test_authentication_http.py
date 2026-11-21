@@ -68,6 +68,22 @@ class AuthHttpTests(unittest.TestCase):
         self.assertEqual(status,200)
         status,_,_=self.request('POST','/api/collections',{'action':'create','name':'Forbidden'},cookie=reader_cookie,csrf=reader['csrf'])
         self.assertEqual(status,403)
+        for route in ('/api/upload','/api/delete','/api/trash/delete'):
+            status,_,_=self.request('POST',route,{},cookie=reader_cookie,csrf=reader['csrf'])
+            self.assertEqual(status,403)
+        connection=http.client.HTTPConnection('127.0.0.1',self.server.server_port,timeout=10)
+        connection.request('POST','/api/upload?filename=sample.pdf',body=b'%PDF-1.4 temporary test document',
+                           headers={'Content-Type':'application/pdf','Cookie':admin_cookie,'X-PiShelf-CSRF':me['csrf']})
+        response=connection.getresponse()
+        self.assertEqual(response.status,201)
+        uploaded=json.loads(response.read())
+        connection.close()
+        delete={'id':uploaded['id'],'confirm':True,'coverKey':'stale-version'}
+        status,_,_=self.request('POST','/api/delete',delete,cookie=admin_cookie,csrf=me['csrf'])
+        self.assertEqual(status,409)
+        del delete['coverKey']
+        status,_,_=self.request('POST','/api/delete',delete,cookie=admin_cookie,csrf=me['csrf'])
+        self.assertEqual(status,200)
         status,_,_=self.request('GET','/api/library')
         self.assertEqual(status,401)
 

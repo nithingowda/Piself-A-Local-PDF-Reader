@@ -171,6 +171,9 @@ class Handler(BaseHTTPRequestHandler):
                         output.write(chunk);remaining-=len(chunk)
                 if fmt=='.epub': validate_epub(temporary)
                 with self.server.mutation_lock:
+                    # A session can expire or lose admin access during a long transfer.
+                    self.require_session(admin=True,mutation=True)
+                    checked_path(root,(Path(category)/filename).as_posix())
                     # Exclusive move refuses to replace a file created during the upload.
                     try: move_exclusive(temporary,destination)
                     except FileExistsError: raise APIError(409,'A PDF with this filename already exists.')
@@ -377,6 +380,12 @@ class Handler(BaseHTTPRequestHandler):
             # Readers may save their reading position, bookmarks and favourites.
             # All other write endpoints remain administrator-only.
             self.require_session(admin=route not in ('/api/progress','/api/annotations','/api/tts/edge'),mutation=True)
+            if route in ('/api/upload','/api/delete','/api/trash/delete'):
+                lengths=self.headers.get_all('Content-Length',[])
+                if (self.headers.get_all('Transfer-Encoding') or len(lengths)!=1
+                        or not re.fullmatch(r'[0-9]{1,10}',lengths[0])):
+                    self.close_connection=True
+                    raise APIError(400,'A single valid content length is required.')
             if route == '/api/tts/edge':
                 length=int(self.headers.get('Content-Length','0'))
                 if self.headers.get_content_type()!='application/json' or not 0<length<=2048:
@@ -498,6 +507,10 @@ class Handler(BaseHTTPRequestHandler):
             if not item: raise APIError(404,'Issue no longer exists.')
             if data.get('confirm') is not True: raise APIError(400,'Permanent deletion requires confirmation.')
             file=checked_path(self.server.roots[item['source']],item['path'])
+            info=file.stat()
+            current_key=hashlib.sha256(f"{item['id']}:{info.st_mtime_ns}:{info.st_size}".encode()).hexdigest()
+            if current_key!=item['coverKey'] or data.get('coverKey',current_key)!=current_key:
+                raise APIError(409,'The document changed. Refresh before deleting it.')
             file.unlink()
             remove_reading_state(db,item['id'])
             with self.server.cover_lock:
