@@ -16,9 +16,11 @@ test('drawing positions are normalized for zoom-safe overlays',()=>{
  assert.match(js,/setAttribute\('viewBox','0 0 1000 1000'\)/);
  assert.match(css,/\.annotation-layer\{position:absolute/);
 });
-test('tools, notes, undo, deletion and export are available',()=>{
- for(const type of ['highlight','pen','underline','circle'])assert.match(html,new RegExp('value="'+type+'"'));
- for(const id of ['annotation-save-note','annotation-undo','annotation-export','annotation-list'])assert.ok(html.includes('id="'+id+'"'));
+test('only pen and highlighter tools, undo, deletion and export are available',()=>{
+ for(const type of ['highlight','pen'])assert.match(html,new RegExp('value="'+type+'"'));
+ for(const id of ['annotation-undo','annotation-export','annotation-list'])assert.ok(html.includes('id="'+id+'"'));
+ for(const type of ['underline','circle'])assert.doesNotMatch(html,new RegExp('value="'+type+'"'));
+ assert.doesNotMatch(html,/id="annotation-save-note"/);
  assert.match(js,/new Blob\(\[lines\.join/);
  assert.match(js,/annotationItems\.splice\(index,1\)/);
 });
