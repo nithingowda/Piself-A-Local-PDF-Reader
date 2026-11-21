@@ -745,7 +745,7 @@ function clearReadingMark(){
  readingMarkText='';readingMarkPage=0;readingMarkIndex=-1;
 }
 // PDF images have no selectable text layer; use PDF.js text item coordinates.
-let pdfSpeechItems=null,pdfSpeechItemsPage=0,pdfSpeechStartIndex=0;
+let pdfSpeechItems=null,pdfSpeechItemsPage=0,pdfSpeechStartIndex=0,pdfSpeechHighlightSpans=null,pdfSpeechSpansPage=0;
 async function markPdfReading(text,offset=0,length=0){
  if(!documentPDF||!text||!length)return;
  const currentPage=pdfSpeechCurrentPage();
@@ -763,20 +763,24 @@ async function markPdfReading(text,offset=0,length=0){
    pdfSpeechItemsPage=currentPage;
   }
   if(readingMarkText!==key||pdfSpeechCurrentPage()!==currentPage)return;
-  const {pdfSpeechLayout}=await import('./pdf-reading-order.js');
-  const {normalizeSpeechText}=await speechEngine();
-  const layout=pdfSpeechLayout(pdfSpeechItems.slice(pdfSpeechStartIndex));
+  if(pdfSpeechSpansPage!==currentPage||!pdfSpeechHighlightSpans){
+   const {pdfSpeechLayout}=await import('./pdf-reading-order.js');
+   const {normalizeSpeechText}=await speechEngine();
+   const layout=pdfSpeechLayout(pdfSpeechItems.slice(pdfSpeechStartIndex));
+   pdfSpeechHighlightSpans=layout.spans.map(span=>({
+    item:span.item,
+    from:normalizeSpeechText(layout.text.slice(0,span.start)).length,
+    to:normalizeSpeechText(layout.text.slice(0,span.end)).length
+   }));
+   pdfSpeechSpansPage=currentPage;
+  }
   const end=offset+length;
   const viewport=pdfPage.getViewport({scale:1,rotation});
   const overlay=document.createElement('div');
   overlay.className='speech-paragraph-overlay';
-  for(const span of layout.spans){
-   // Speech processing may clean PDF whitespace and punctuation.
-   // Compare offsets in the same normalized text used for synthesis.
-   const from=normalizeSpeechText(layout.text.slice(0,span.start)).length;
-   const to=normalizeSpeechText(layout.text.slice(0,span.end)).length;
+  for(const {item,from,to} of pdfSpeechHighlightSpans){
+   // Sentence positions share the exact normalized text used for synthesis.
    if(to<=offset||from>=end)continue;
-   const item=span.item;
    const characters=Math.max(1,to-from);
    const first=Math.max(from,offset),last=Math.min(to,end);
    const startFraction=Math.max(0,(first-from)/characters);
@@ -933,7 +937,7 @@ async function startPdfSpeech(){
     ?Math.max(0,ordered.findIndex(item=>item.sourceIndex===pdfSpeechStart.index)):0;
    pdfSpeechStart=null;
    pdfSpeechItemsPage=speechPage;pdfSpeechItems=ordered;
-   pdfSpeechStartIndex=start;
+   pdfSpeechStartIndex=start;pdfSpeechHighlightSpans=null;pdfSpeechSpansPage=0;
    return pdfSpeechText(ordered.slice(start));
   },
   async peekNextText(){
