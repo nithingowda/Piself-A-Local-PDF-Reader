@@ -760,7 +760,8 @@ async function markPdfReading(text,progress){
  try{
   const pdfPage=await documentPDF.getPage(currentPage);
   if(pdfSpeechItemsPage!==currentPage||!pdfSpeechItems){
-   pdfSpeechItems=(await pdfPage.getTextContent()).items.filter(item=>item.str?.trim());
+   const {orderPdfSpeechItems}=await import('./pdf-reading-order.js');
+   pdfSpeechItems=orderPdfSpeechItems((await pdfPage.getTextContent()).items,pdfPage.getViewport({scale:1,rotation}));
    pdfSpeechItemsPage=currentPage;
   }
   if(readingMarkText!==text||readingMarkPage!==currentPage)return;
@@ -865,8 +866,9 @@ async function readPdfFromTap(event){
  const rect=slot.getBoundingClientRect();
  const pdfPage=await documentPDF.getPage(targetPage);
  const viewport=pdfPage.getViewport({scale:1,rotation});
+ const {orderPdfSpeechItems}=await import('./pdf-reading-order.js');
  const rawItems=(await pdfPage.getTextContent()).items;
- const items=rawItems.map((item,index)=>({...item,sourceIndex:index})).filter(item=>item.str?.trim());
+ const items=orderPdfSpeechItems(rawItems,viewport);
  if(!items.length){toast('This page has no selectable text for Read Aloud.');return;}
  // Choose the nearest text line by vertical distance, then horizontal position.
  const x=(event.clientX-rect.left)/rect.width*viewport.width;
@@ -910,11 +912,14 @@ async function startPdfSpeech(){
    const pdfPage=await documentPDF.getPage(speechPage);
    const content=await pdfPage.getTextContent();
    // Read from the tapped page, not the first page of a book spread.
-   const start=pdfSpeechStart?.page===speechPage?pdfSpeechStart.index:0;
+   const {orderPdfSpeechItems,pdfSpeechText}=await import('./pdf-reading-order.js');
+   const ordered=orderPdfSpeechItems(content.items,pdfPage.getViewport({scale:1,rotation}));
+   const start=pdfSpeechStart?.page===speechPage
+    ?Math.max(0,ordered.findIndex(item=>item.sourceIndex===pdfSpeechStart.index)):0;
    pdfSpeechStart=null;
-   pdfSpeechItemsPage=0;pdfSpeechItems=null;
+   pdfSpeechItemsPage=speechPage;pdfSpeechItems=ordered;
    pdfSpeechStartIndex=start;
-   return content.items.slice(start).map(item=>(item.str||'')+(item.hasEOL?'\n':' ')).join('').trim();
+   return pdfSpeechText(ordered.slice(start));
   },
   async next(){
    const currentPage=pdfSpeechCurrentPage();
