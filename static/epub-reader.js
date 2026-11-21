@@ -94,6 +94,7 @@ export async function createEpubReader({url,container,cfi,theme='light',fontSize
   emitLocation();
  }).catch(()=>{if(!dead)onStatus('Reading is available; percentage navigation is unavailable for this EPUB.');});
  return {
+  clearSpeechStart(){speechStartNode=null;},
   clearReadingHighlight(){
    selectedSpeechBlock?.classList.remove('pishelf-tap-selected');
    for(const content of rendition.getContents()||[]){
