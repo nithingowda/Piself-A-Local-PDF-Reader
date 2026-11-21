@@ -212,7 +212,7 @@ async function annotationLoad(id){
   if(old&&!annotationItems.length){
    const legacy=JSON.parse(old);
    if(Array.isArray(legacy)){
-    const marks=legacy.filter(x=>['pen','highlight'].includes(x.type)).map(x=>({type:x.type,page:x.page,color:x.color,points:x.points}));
+    const marks=legacy.filter(x=>['pen','highlight','note'].includes(x.type)).map(x=>x.type==='note'?{type:'note',page:x.page,text:x.text}:{type:x.type,page:x.page,color:x.color,points:x.points});
     if(marks.length){annotationItems=marks;await annotationStore();}
    }
   }
@@ -223,7 +223,7 @@ async function annotationLoad(id){
 function annotationStore(){
  if(!annotationDocument)return Promise.resolve();
  const id=annotationDocument;
- const items=annotationItems.filter(x=>['pen','highlight'].includes(x.type)).map(x=>({type:x.type,page:x.page,color:x.color,points:x.points}));
+ const items=annotationItems.filter(x=>['pen','highlight','note'].includes(x.type)).map(x=>x.type==='note'?{type:'note',page:x.page,text:x.text}:{type:x.type,page:x.page,color:x.color,points:x.points});
  annotationDrawAll();annotationList();
  annotationSaveQueue=annotationSaveQueue.catch(()=>{}).then(async()=>{
   try{await api('/api/annotations',{id,items});}
@@ -268,7 +268,7 @@ function annotationList(){
  const list=$('annotation-list');if(!list)return;list.replaceChildren();
  annotationItems.forEach((item,index)=>{
   const row=document.createElement('div');row.className='annotation-entry';
-  const go=document.createElement('button');go.type='button';go.textContent='Page '+item.page+' · '+(item.type);go.onclick=()=>move(item.page);
+  const go=document.createElement('button');go.type='button';go.textContent='Page '+item.page+' · '+(item.type==='note'?item.text:item.type);go.onclick=()=>move(item.page);
   const remove=document.createElement('button');remove.type='button';remove.textContent='Delete';remove.setAttribute('aria-label','Delete annotation on page '+item.page);
   remove.onclick=()=>{annotationItems.splice(index,1);annotationStore();};
   row.append(go,remove);list.append(row);
@@ -283,13 +283,18 @@ function annotationToggle(enabled){
 $('annotation-toggle').onclick=()=>annotationToggle(!annotationActive);
 $('annotation-close').onclick=()=>annotationToggle(false);
 $('annotation-tool').onchange=()=>{$('page-area').classList.toggle('annotation-editing',annotationTool()!=='none');};
+$('annotation-save-note').onclick=()=>{
+ if(!documentPDF||!current)return;
+ const text=$('annotation-note').value.trim();if(!text)return;
+ annotationItems.push({type:'note',page,text});$('annotation-note').value='';annotationStore();
+};
 $('annotation-undo').onclick=()=>{
  for(let i=annotationItems.length-1;i>=0;i--)if(annotationItems[i].page===page){annotationItems.splice(i,1);annotationStore();return;}
 };
 $('annotation-export').onclick=()=>{
  if(!current)return;
  const lines=['# Notes: '+current.title,''];
- for(const item of annotationItems){lines.push('## Page '+item.page);lines.push('- '+item.type+' mark ('+(item.color||'')+')');lines.push('');}
+ for(const item of annotationItems){lines.push('## Page '+item.page);lines.push(item.type==='note'?item.text:'- '+item.type+' mark ('+(item.color||'')+')');lines.push('');}
  const blob=new Blob([lines.join('\n')],{type:'text/markdown;charset=utf-8'});
  const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='pishelf-notes-'+String(current.title).replace(/[^a-z0-9_-]+/gi,'-').slice(0,60)+'.md';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 };
