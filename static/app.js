@@ -198,12 +198,12 @@ $('clear-all').onclick=()=>{if(documentPDF){toast('Return to the library before 
 let slots=[],renderQueue=[],renderBusy=false,pageObserver=null;
 const dimensions=new Map(),renderedSlots=new Set();
 /** update Page UI: Keep the visible PDF page and navigation state in sync. */
-function updatePageUI(){if(!documentPDF)return;const percent=Math.round(page/documentPDF.numPages*100);$('reader-progress-fill').style.width=percent+'%';document.querySelector('.reader-progress').setAttribute('aria-valuenow',String(percent));$('page-number').value=page;$('reader-page-slider').max=documentPDF.numPages;$('reader-page-slider').value=page;$('reader-page-slider-label').textContent=page+' / '+documentPDF.numPages;$('page-total').textContent='/ '+documentPDF.numPages;$('prev').disabled=page<=1;$('next').disabled=isBookSpread()?(page===1?documentPDF.numPages===1:spreadStart(page)+1>=documentPDF.numPages):page>=documentPDF.numPages;$('book-turn-prev').disabled=page<=1;$('book-turn-next').disabled=$('next').disabled;const marks=saved[current.id]?.bookmarks||[];$('bookmark').textContent=marks.includes(page)?'★':'☆';$('bookmark').setAttribute('aria-pressed',marks.includes(page));}
+function updatePageUI(){if(!documentPDF)return;const percent=Math.round(page/documentPDF.numPages*100);$('reader-progress-fill').style.width=percent+'%';document.querySelector('.reader-progress').setAttribute('aria-valuenow',String(percent));$('page-number').value=page;$('reader-page-slider').max=documentPDF.numPages;$('reader-page-slider').value=page;$('reader-page-slider-label').textContent=page+' / '+documentPDF.numPages+' · '+percent+'%';$('page-total').textContent='/ '+documentPDF.numPages;$('prev').disabled=page<=1;$('next').disabled=isBookSpread()?(page===1?documentPDF.numPages===1:spreadStart(page)+1>=documentPDF.numPages):page>=documentPDF.numPages;$('book-turn-prev').disabled=page<=1;$('book-turn-next').disabled=$('next').disabled;const marks=saved[current.id]?.bookmarks||[];$('bookmark').textContent=marks.includes(page)?'★':'☆';$('bookmark').setAttribute('aria-pressed',marks.includes(page));}
 // Scrub previews page numbers without rerendering dozens of pages while
 // dragging; the final change uses the existing move() navigation path.
 $('reader-page-slider').addEventListener('input',e=>{
  if(!documentPDF)return;
- $('reader-page-slider-label').textContent=e.target.value+' / '+documentPDF.numPages;
+ $('reader-page-slider-label').textContent=e.target.value+' / '+documentPDF.numPages+' · '+Math.round(Number(e.target.value)/documentPDF.numPages*100)+'%';
 });
 $('reader-page-slider').addEventListener('change',e=>{
  if(!documentPDF)return;
@@ -467,6 +467,13 @@ function trackScroll(){
  clearTimeout(scrollTimer);scrollTimer=setTimeout(remember,750);
 }
 $('page-area').addEventListener('scroll',()=>{if(!scrollFrame)scrollFrame=requestAnimationFrame(()=>{scrollFrame=null;trackScroll();});},{passive:true});
+// Preload fewer pages on low-memory devices and more on desktop, without
+// changing the active page or forcing full-size images into thumbnail views.
+function readerPrefetchMargin(){
+ const memory=Number(navigator.deviceMemory)||4;
+ const height=$('page-area').clientHeight||600;
+ return Math.round(Math.min(memory<=2?240:900,Math.max(240,height*(memory<=2?.35:.8))))+'px';
+}
 /** rebuild: Manage PDF page rendering and canvas lifecycle. */
 async function rebuild(){if(!documentPDF)return;cancelAllSharpImages();$('pages').style.zoom='';$('pages').style.transform='';$('pages').style.transformOrigin='';cssZoomBase=zoom;updateTouchMode();const g=generation,epoch=++layoutEpoch;layoutReady=false;pageObserver?.disconnect();renderQueue=[];clearCurl();
  if(automaticFit){
@@ -502,7 +509,7 @@ async function rebuild(){if(!documentPDF)return;cancelAllSharpImages();$('pages'
  $('pages').classList.toggle('book-layout',mode==='book');
  $('reader').classList.toggle('book-mode',mode==='book');
  $('pages').append(fragment);
- pageObserver=new IntersectionObserver(entries=>{for(const e of entries)if(e.isIntersecting)enqueue(e.target);},{root:$('page-area'),rootMargin:'500px'});slots.forEach(s=>pageObserver.observe(s));
+ pageObserver=new IntersectionObserver(entries=>{for(const e of entries)if(e.isIntersecting)enqueue(e.target);},{root:$('page-area'),rootMargin:readerPrefetchMargin()});slots.forEach(s=>pageObserver.observe(s));
  layoutReady=true;const target=slots.find(s=>+s.dataset.page===page);
  if(target){$('page-area').scrollTop=mode==='scroll'?target.offsetTop-20:0;enqueue(target);}
  if(automaticFit){const area=$('page-area');area.scrollLeft=(area.scrollWidth-area.clientWidth)/2;}
@@ -728,7 +735,7 @@ function showThumbnailRange(begin){
   img.loading='lazy';img.decoding='async';img.alt='';
   // Assign src only near the visible thumbnail grid; Safari's lazy loading
   // does not always prevent every eager request inside a modal.
-  img.dataset.src='/api/page-image/'+encodeURIComponent(current.id)+'/'+n+'?width=960';
+  img.dataset.src='/api/page-image/'+encodeURIComponent(current.id)+'/'+n+'?width=320';
   button.append(img,document.createTextNode('Page '+n));
   button.onclick=()=>{$('thumbnail-dialog').close();move(n);};
   grid.append(button);
