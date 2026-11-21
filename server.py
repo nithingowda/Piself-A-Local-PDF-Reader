@@ -306,6 +306,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not row: raise APIError(403,'Set a folder access PIN before editing library paths.')
                 pin=data.get('pin')
                 if not isinstance(pin,str) or not re.fullmatch(r'[0-9]{6}',pin) or not hmac.compare_digest(hashlib.pbkdf2_hmac('sha256',pin.encode(),row[0],600000),row[1]):
+                    with self.server.auth_lock: self.server.auth_attempts['pin:'+self.client_address[0]].append(time.time())
                     raise APIError(403,'Invalid access PIN.')
                 save_library_paths(db,{k:v for k,v in data.items() if k!='pin'},self.server.roots,self.server.state_db.parent)
             self.json_response({'ok':True})
