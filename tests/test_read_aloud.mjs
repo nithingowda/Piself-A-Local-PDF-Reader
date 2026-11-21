@@ -15,7 +15,7 @@ test('PDF text is extracted from PDF.js and EPUB text from the rendition',()=>{
  assert.match(epub,/readAloudText\(\)/);
  assert.match(epub,/readAloudNext\(\)/);
 });
-test('speech cancels on closing and uses local browser voices',()=>{
+test('speech cancels on closing without browser voice fallback',()=>{
  assert.match(app,/pdfSpeech\?\.stop\(\)/);
  assert.match(app,/epubSpeech\?\.stop\(\)/);
  assert.doesNotMatch(speech,/window.speechSynthesis/);
@@ -35,7 +35,7 @@ test('compact immersive player provides seek and playback controls for both form
  assert.match(speech,/audio\.currentTime/);
 });
 
-test('Piper speech requests include the current session CSRF token',()=>{
+test('Online Edge speech requests include the current session CSRF token',()=>{
  assert.match(speech,/getCsrfToken=\(\)=>''/);
  assert.match(speech,/'X-PiShelf-CSRF':getCsrfToken\(\)/);
  assert.match(app,/getCsrfToken:\(\)=>signedInUser\?\.csrf\|\|''/);
