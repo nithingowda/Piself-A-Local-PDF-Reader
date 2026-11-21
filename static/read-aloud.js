@@ -12,14 +12,14 @@ export function createReadAloud({getText,next,onState}){
   if(!active||t!==token)return;
   if(!text){let more=false;try{more=await next();}catch{}if(more&&active&&t===token)return speakNext(t);stop();return;}
   // Short utterances avoid browser speech synthesis silently stopping on long pages.
-  const chunks=text.match(/.{1,180}(?:\s|$)|.{1,180}/g)||[];
+  const chunks=(text.match(/[^.!?।！？]+[.!?।！？]*|[^.!?।！？]+$/g)||[text]).flatMap(sentence=>{const words=sentence.trim().split(/\s+/),parts=[];let part='';for(const word of words){if(part.length+word.length+1>240&&part){parts.push(part);part='';}part+=(part?' ':'')+word;}if(part)parts.push(part);return parts;});
   let index=0;
   function say(){
    if(!active||t!==token)return;
    if(index>=chunks.length){Promise.resolve(next()).then(more=>{if(more&&active&&t===token)speakNext(t);else stop();}).catch(()=>stop());return;}
    const u=new SpeechSynthesisUtterance(chunks[index++]);
    utterance=u;u.rate=rate;
-   const voices=synth.getVoices();const selected=voices.find(v=>v.voiceURI===voice);if(selected){u.voice=selected;u.lang=selected.lang;}
+   const voices=synth.getVoices();const selected=voices.find(v=>v.voiceURI===voice)||(!voice?voices.find(v=>v.localService&&/premium|enhanced|natural|neural/i.test(v.name))||voices.find(v=>v.default)||null:null);if(selected){u.voice=selected;u.lang=selected.lang;}
    u.onend=()=>{if(active&&t===token)say();};
    u.onerror=e=>{if(e.error!=='interrupted'&&e.error!=='canceled')stop();};
    synth.speak(u);

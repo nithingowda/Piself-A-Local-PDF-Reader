@@ -676,6 +676,8 @@ function speechVoices(kind){
  select.value=previous;
 }
 function wireSpeech(kind,controller){
+ const toggle=$(kind+'-read-toggle'),panel=$(kind+'-read-panel');
+ toggle.onclick=()=>{panel.hidden=!panel.hidden;toggle.setAttribute('aria-expanded',String(!panel.hidden));};
  const play=$(kind+'-read-play'),pause=$(kind+'-read-pause'),stop=$(kind+'-read-stop');
  play.onclick=()=>controller.play();
  pause.onclick=()=>controller.paused?controller.play():controller.pause();
@@ -688,6 +690,7 @@ function speechState(kind,state){
  if(state.error){toast('Read aloud: '+state.error);return;}
  const play=$(kind+'-read-play'),pause=$(kind+'-read-pause');
  play.textContent=state.active?'Reading…':'▶ Read aloud';
+ $(kind+'-read-toggle').textContent=state.active?'🔊 Reading…':'🔊 Read aloud';
  pause.textContent=state.paused?'Resume':'Pause';
 }
 async function startPdfSpeech(){
@@ -700,7 +703,7 @@ async function startPdfSpeech(){
    const content=await pdfPage.getTextContent();
    return content.items.map(x=>x.str||'').join(' ');
   },
-  async next(){if(!documentPDF||page>=documentPDF.numPages)return false;await move(page+1);return true;},
+  async next(){if(!documentPDF||page>=documentPDF.numPages)return false;move(page+1);return true;},
   onState:state=>speechState('pdf',state)
  });
  wireSpeech('pdf',pdfSpeech);
@@ -716,7 +719,9 @@ async function startEpubSpeech(){
  wireSpeech('epub',epubSpeech);
 }
 $('pdf-read-play').onclick=async()=>{await startPdfSpeech();pdfSpeech.play();};
+$('pdf-read-toggle').onclick=async()=>{await startPdfSpeech();const panel=$('pdf-read-panel');panel.hidden=!panel.hidden;$('pdf-read-toggle').setAttribute('aria-expanded',String(!panel.hidden));};
 $('epub-read-play').onclick=async()=>{await startEpubSpeech();epubSpeech.play();};
+$('epub-read-toggle').onclick=async()=>{await startEpubSpeech();const panel=$('epub-read-panel');panel.hidden=!panel.hidden;$('epub-read-toggle').setAttribute('aria-expanded',String(!panel.hidden));};
 window.speechSynthesis?.addEventListener?.('voiceschanged',()=>{speechVoices('pdf');speechVoices('epub');});
 
 async function closeEpubBook({fromHistory=false}={}){
