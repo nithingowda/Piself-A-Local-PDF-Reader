@@ -398,15 +398,24 @@ class Handler(BaseHTTPRequestHandler):
                 try:
                     import edge_tts
                     async def generate_edge():
-                        speech=edge_tts.Communicate(phrase,voice=selected_voice)
+                        speech=edge_tts.Communicate(phrase,voice=selected_voice,boundary='SentenceBoundary')
                         audio=bytearray()
+                        sentences=[]
                         async for part in speech.stream():
                             if part['type']=='audio':
                                 audio.extend(part['data'])
                                 if len(audio)>8*1024*1024:
                                     raise ValueError('Speech audio too large.')
-                        return bytes(audio)
-                    body=asyncio.run(asyncio.wait_for(generate_edge(),timeout=30))
+                            elif part['type']=='SentenceBoundary' and len(sentences)<32:
+                                # Edge offsets are in 100 ns ticks; send compact
+                                # sentence timing without altering the MP3 response.
+                                sentences.append([
+                                    round(part['offset']/10_000_000,3),
+                                    round(part['duration']/10_000_000,3),
+                                    str(part['text'])[:500]
+                                ])
+                        return bytes(audio),sentences
+                    body,sentences=asyncio.run(asyncio.wait_for(generate_edge(),timeout=30))
                 except Exception as error:
                     logging.warning('Edge TTS unavailable: %s',type(error).__name__)
                     raise APIError(503,'Online Edge voice unavailable.')
@@ -417,6 +426,11 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_response(200)
                 self.send_header('Content-Type','audio/mpeg')
                 self.send_header('Content-Length',str(len(body)))
+                # Same-origin browser uses exact Edge sentence timestamps to
+                # highlight one sentence at a time on the PDF/WebP page.
+                timing=json.dumps(sentences,ensure_ascii=True,separators=(',',':'))
+                if sentences and len(timing)<=6000:
+                    self.send_header('X-PiShelf-Sentences',timing)
                 self.send_header('Cache-Control','no-store')
                 self.security_headers()
                 self.end_headers()
