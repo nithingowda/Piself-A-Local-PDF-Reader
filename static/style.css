@@ -289,3 +289,12 @@ body.epub-open{overflow:hidden}
 #epub-reader.speech-immersive .epub-toolbar,#epub-reader.speech-immersive .epub-controls{display:none!important}
 #reader.speech-immersive,#epub-reader.speech-immersive{position:relative}
 @media(max-width:600px){.speech-floating-player:not([hidden]){padding:8px 10px;bottom:calc(12px + env(safe-area-inset-bottom,0px))}.speech-player-main{gap:6px}}
+
+/* The player must not inherit the hidden/scrolling reader toolbar layout. */
+#reader .speech-floating-player:not([hidden]),#epub-reader .speech-floating-player:not([hidden]){
+ position:fixed!important;left:50%!important;top:auto!important;bottom:calc(20px + env(safe-area-inset-bottom,0px))!important;
+ transform:translateX(-50%)!important;z-index:2147483000!important;visibility:visible!important;opacity:1!important;
+ pointer-events:auto!important;
+}
+#reader.speech-immersive .speech-floating-player,#epub-reader.speech-immersive .speech-floating-player{display:flex!important}
+#reader.speech-immersive .speech-floating-player[hidden],#epub-reader.speech-immersive .speech-floating-player[hidden]{display:none!important}
