@@ -725,7 +725,7 @@ function wireSpeech(kind,controller){
  enableSpeechDrag(kind);
  controller.setVoice(preferredSpeechVoice());
  const panel=$(kind+'-read-panel');
- $(kind+'-read-toggle').onclick=()=>{speechPlayer(kind,true);controller.play();};
+ $(kind+'-read-toggle').onclick=()=>beginSpeechPick(kind);
  $(kind+'-read-main').onclick=()=>controller.paused?controller.play():controller.pause();
  $(kind+'-read-back').onclick=()=>controller.seek(-10);
  $(kind+'-read-forward').onclick=()=>controller.seek(10);
@@ -850,7 +850,8 @@ async function readPdfFromTap(event){
  const rect=slot.getBoundingClientRect();
  const pdfPage=await documentPDF.getPage(targetPage);
  const viewport=pdfPage.getViewport({scale:1,rotation});
- const items=(await pdfPage.getTextContent()).items.filter(item=>item.str?.trim());
+ const rawItems=(await pdfPage.getTextContent()).items;
+ const items=rawItems.map((item,index)=>({...item,sourceIndex:index})).filter(item=>item.str?.trim());
  if(!items.length){toast('This page has no selectable text for Read Aloud.');return;}
  // Choose the nearest text line by vertical distance, then horizontal position.
  const x=(event.clientX-rect.left)/rect.width*viewport.width;
@@ -874,7 +875,7 @@ async function readPdfFromTap(event){
  readingMark=selection;
  cancelSpeechPick();
  pdfSpeech?.stop();
- pdfSpeechStart={page:targetPage,index};
+ pdfSpeechStart={page:targetPage,index:items[index].sourceIndex};
  if(page!==targetPage)move(targetPage);
  await startPdfSpeech();
  speechPlayer('pdf',true);
