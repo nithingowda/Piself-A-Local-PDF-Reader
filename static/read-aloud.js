@@ -2,29 +2,63 @@
 const MAX_CHUNK_LENGTH=440; // Server accepts up to 500 characters per request.
 const DEFAULT_VOICE='en-IN-NeerjaNeural';
 
-// Preserve paragraph and heading boundaries before normalizing whitespace.
+// Keep punctuation for the neural voice: it supplies cadence for commas,
+// sentence endings, quotations and questions without inserting timed delays.
+export function normalizeSpeechText(text){
+ return String(text||'').normalize('NFC')
+  .replace(/[\u00ad\u200b\u2060]/g,'') // PDF discretionary hyphens / invisible joins
+  .replace(/\r\n?/g,'\n')
+  .replace(/\u00a0/g,' ')
+  .replace(/[ \t\f\v]+/g,' ')
+  .replace(/ *\n */g,'\n')
+  .replace(/ +([,;:.!?…%°)\]}”’])/g,'$1')
+  .replace(/([(\[{“‘]) +/g,'$1')
+  .replace(/(\d)\. +(\d)/g,'$1.$2')
+  .replace(/ *([—–]) */g,' $1 ')
+  .replace(/ {2,}/g,' ')
+  .trim();
+}
+
+// If a paragraph exceeds Edge's safe limit, prefer a sentence boundary,
+// then a clause (comma/semicolon/em dash), and only then a word boundary.
+// Unlike sentence-regex splitting, decimals, initials and closing quotation
+// marks stay attached to their original text.
+function speechBreakAt(paragraph,maxLength){
+ const minimum=Math.floor(maxLength*.55);
+ let selected=0,bestScore=-1,lastSpace=0;
+ for(let i=1;i<=maxLength&&i<paragraph.length;i++){
+  if(paragraph[i]!==' ')continue;
+  lastSpace=i;
+  if(i<minimum)continue;
+  const before=paragraph.slice(0,i).trimEnd().replace(/["”’)\]]+$/u,'');
+  const end=before.slice(-1);
+  let weight=0;
+  if(/[!?。！？]/u.test(end))weight=5;
+  else if(/[.…]/u.test(end)){
+   // Treat abbreviations as ordinary words rather than ending a sentence.
+   if(!/(?:\b(?:Mr|Mrs|Ms|Dr|Prof|Sr|Jr|St|vs|etc|e\.g|i\.e)|\b(?:[A-Z]\.){2,})\.$/i.test(before))
+    weight=4;
+  }else if(/[;:]/.test(end))weight=3;
+  else if(/[,—–]/.test(end))weight=2;
+  const score=weight*1000+i;
+  if(score>bestScore){bestScore=score;selected=i;}
+ }
+ return selected||lastSpace||maxLength;
+}
+
+// One clip per short paragraph; long paragraphs are split at natural points.
+// Do not split each sentence: pre-buffered clips avoid network gaps this way.
 export function splitSpeechChunks(text){
- const paragraphs=String(text||'').split(/\n+/).map(line=>line.replace(/[ \t]+/g,' ').trim()).filter(Boolean);
  const chunks=[];
- // Combine sentences in the same paragraph into one synthesis request.
- // Short requests for every line/sentence create audible network pauses.
- for(const paragraph of paragraphs){
-  const sentences=paragraph.match(/[^.!?।！？]+[.!?।！？]*|[^.!?।！？]+$/g)||[];
-  let chunk='';
-  for(const sentence of sentences){
-   const words=sentence.trim().split(/\s+/);
-   for(const word of words){
-    if(!word)continue;
-    if(chunk&&chunk.length+1+word.length>MAX_CHUNK_LENGTH){
-     chunks.push(chunk);chunk='';
-    }
-    if(word.length>MAX_CHUNK_LENGTH){
-     if(chunk){chunks.push(chunk);chunk='';}
-     for(let i=0;i<word.length;i+=MAX_CHUNK_LENGTH)chunks.push(word.slice(i,i+MAX_CHUNK_LENGTH));
-    }else chunk+=(chunk?' ':'')+word;
-   }
+ for(const paragraph of normalizeSpeechText(text).split(/\n+/)){
+  if(!paragraph)continue;
+  let remaining=paragraph;
+  while(remaining.length>MAX_CHUNK_LENGTH){
+   const at=speechBreakAt(remaining,MAX_CHUNK_LENGTH);
+   chunks.push(remaining.slice(0,at).trimEnd());
+   remaining=remaining.slice(at).trimStart();
   }
-  if(chunk)chunks.push(chunk);
+  if(remaining)chunks.push(remaining);
  }
  return chunks;
 }
