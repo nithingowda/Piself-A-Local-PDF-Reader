@@ -5,9 +5,9 @@ const js=readFileSync(new URL('../static/app.js',import.meta.url),'utf8');
 const html=readFileSync(new URL('../static/index.html',import.meta.url),'utf8');
 const css=readFileSync(new URL('../static/style.css',import.meta.url),'utf8');
 
-test('PDF annotations are kept separate from original files and stored by document',()=>{
+test('PDF annotations are kept separate from original files and stored per account on server',()=>{
  assert.match(js,/pishelf:annotations:v1:/);
- assert.match(js,/localStorage\.setItem\(annotationKey\(annotationDocument\)/);
+ assert.match(js,/api\('\/api\/annotations',\{id,items\}\)/);
  assert.doesNotMatch(js,/fetch\([^\n]*\.pdf[^\n]*method:\s*['"]PUT/);
 });
 test('drawing positions are normalized for zoom-safe overlays',()=>{
