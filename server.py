@@ -581,7 +581,10 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(items,list) or len(items)>3000: raise APIError(400,'Too many annotations.')
             if not any(item['id']==key for item in self.library_items()): raise APIError(404,'PDF not found.')
             for mark in items:
-                if not isinstance(mark,dict) or mark.get('type') not in ('pen','highlight') or type(mark.get('page')) is not int or not 1<=mark['page']<=100000: raise ValueError()
+                if not isinstance(mark,dict) or mark.get('type') not in ('pen','highlight','note') or type(mark.get('page')) is not int or not 1<=mark['page']<=100000: raise ValueError()
+                if mark['type']=='note':
+                    if set(mark)-{'type','page','text'} or not isinstance(mark.get('text'),str) or not 0<len(mark['text'].strip())<=4000: raise ValueError()
+                    continue
                 if not isinstance(mark.get('color'),str) or not re.fullmatch('#[a-fA-F0-9]{6}',mark['color']): raise ValueError()
                 points=mark.get('points')
                 if not isinstance(points,list) or not 2<=len(points)<=1000: raise ValueError()
