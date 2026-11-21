@@ -1669,7 +1669,9 @@ let uploadXHR=null,uploading=false,uploadCancelled=false;
 /** populate Upload Sources: Support the PiShelf reader or library interface. */
 function populateUploadSources(){const selected=$('upload-source').value;const sources=[...new Set(categories.map(c=>c.source))];$('upload-source').replaceChildren(...sources.map(s=>new Option(s==='newspapers'?'Newspapers':s==='books'?'Books':'Magazines',s)));if(sources.includes(selected))$('upload-source').value=selected;populateUploadCategories();}
 /** populate Upload Categories: Support the PiShelf reader or library interface. */
-function populateUploadCategories(){const source=$('upload-source').value;$('upload-category').replaceChildren(...categories.filter(c=>c.source===source).map(c=>new Option(c.path==='.'?'Uncategorised':c.path,c.path)));}
+function populateUploadCategories(){const source=$('upload-source').value;
+ $('upload-files').accept=source==='books'?'.pdf,application/pdf,.epub,application/epub+zip':'.pdf,application/pdf';
+ $('upload-category').replaceChildren(...categories.filter(c=>c.source===source).map(c=>new Option(c.path==='.'?'Uncategorised':c.path,c.path)));}
 $('upload-source').onchange=populateUploadCategories;
 /** upload File: Support the PiShelf reader or library interface. */
 function uploadFile(file,source,category){return new Promise((resolve,reject)=>{const xhr=uploadXHR=new XMLHttpRequest();xhr.open('POST','/api/upload?'+new URLSearchParams({source,category,filename:file.name}));xhr.setRequestHeader('Content-Type',file.name.toLowerCase().endsWith('.epub')?'application/epub+zip':'application/pdf');

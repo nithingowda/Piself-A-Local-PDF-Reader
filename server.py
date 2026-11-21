@@ -165,7 +165,7 @@ class Handler(BaseHTTPRequestHandler):
                     while remaining:
                         chunk=self.rfile.read(min(256*1024,remaining))
                         if not chunk: raise APIError(400,'Upload interrupted. No PDF was added.')
-                        if first and fmt=='.pdf' and b'%PDF-' not in chunk[:1024]: raise APIError(400,'This file does not have a PDF header.')
+                        if first and fmt=='.pdf' and not re.match(rb'%PDF-[0-9]\.[0-9]',chunk): raise APIError(400,'This file does not have a PDF header.')
                         if first and fmt=='.epub' and not chunk.startswith(b'PK\x03\x04'): raise APIError(400,'This EPUB is not a ZIP archive.')
                         first=False
                         output.write(chunk);remaining-=len(chunk)
