@@ -24,28 +24,31 @@ export function orderPdfSpeechItems(items,viewport){
  ];
  function columnSorted(group){
   if(group.length<3)return [...group].sort((a,b)=>a.y-b.y||a.x-b.x);
-  // Horizontal bands with no glyphs are likely multi-column gutters.
-  const bins=200,occupied=new Uint8Array(bins);
-  for(const item of group){
-   const begin=Math.max(0,Math.min(bins-1,Math.floor(item.x/viewport.width*bins)));
-   const end=Math.max(begin,Math.min(bins-1,Math.ceil((item.x+item.boxWidth)/viewport.width*bins)));
-   for(let i=begin;i<=end;i++)occupied[i]=1;
+  // Determine column starts using repeated left-aligned text origins.
+  // Bounding-box gutters fail when PDF text boxes overlap neighboring columns.
+  const tolerance=Math.max(5,viewport.width*.018);
+  const starts=[];
+  for(const item of [...group].sort((a,b)=>a.x-b.x)){
+   const anchor=starts.find(entry=>Math.abs(entry.x-item.x)<=tolerance);
+   if(anchor){anchor.x=(anchor.x*anchor.count+item.x)/(anchor.count+1);anchor.count++;}
+   else starts.push({x:item.x,count:1});
   }
-  const gutters=[];
-  for(let i=0;i<bins;){
-   if(occupied[i]){i++;continue;}
-   const begin=i;while(i<bins&&!occupied[i])i++;
-   const middle=(begin+i)/2;
-   if(i-begin>=4&&middle>bins*.17&&middle<bins*.83)gutters.push({middle,width:i-begin});
+  // A genuine column begins at the same x on multiple lines.
+  const minimumCount=Math.max(2,Math.floor(group.length*.06));
+  const candidates=starts.filter(entry=>entry.count>=minimumCount)
+   .sort((a,b)=>b.count-a.count||a.x-b.x);
+  const columns=[];
+  for(const candidate of candidates){
+   if(columns.every(other=>Math.abs(other.x-candidate.x)>viewport.width*.17))
+    columns.push(candidate);
+   if(columns.length===3)break;
   }
-  // Favor the two widest separated gutters; never create more than 3 columns.
-  const selected=[];
-  for(const gap of gutters.sort((a,b)=>b.width-a.width)){
-   if(selected.every(other=>Math.abs(other.middle-gap.middle)>bins*.18))selected.push(gap);
-   if(selected.length===2)break;
-  }
-  const boundaries=selected.map(gap=>gap.middle/bins*viewport.width).sort((a,b)=>a-b);
-  const column=item=>boundaries.filter(x=>item.x>=x).length;
+  columns.sort((a,b)=>a.x-b.x);
+  // If there are not enough repeated starts, preserve vertical order rather
+  // than incorrectly reading a row across multiple columns.
+  if(columns.length<2)return [...group].sort((a,b)=>a.y-b.y||a.x-b.x);
+  const boundaries=columns.slice(1).map((entry,i)=>(columns[i].x+entry.x)/2);
+  const column=item=>boundaries.filter(boundary=>item.x>=boundary).length;
   return [...group].sort((a,b)=>column(a)-column(b)||a.y-b.y||a.x-b.x);
  }
  return groups.flatMap(columnSorted);
