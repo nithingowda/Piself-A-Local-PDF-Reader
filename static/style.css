@@ -222,22 +222,26 @@ body.epub-open{overflow:hidden}
  outline:2px solid #589bdc;outline-offset:2px;
 }
 #reader .reader-progress{pointer-events:none}
-@media(max-width:650px){
+@media(max-width:650px), (pointer:coarse) and (max-height:500px){
  #reader .reader-bar{gap:5px;padding-inline:8px}
  #reader .reader-bar button{padding:7px 9px}
  #reader .controls{
-  flex-wrap:nowrap;
-  justify-content:flex-start;
-  overflow-x:auto;
-  overflow-y:hidden;
-  max-height:none;
+  flex-wrap:wrap;
+  justify-content:center;
+  overflow-x:hidden;
+  overflow-y:auto;
+  max-height:46dvh;
   gap:5px;
   scrollbar-width:thin;
   -webkit-overflow-scrolling:touch;
  }
  #reader .controls>*{flex-shrink:0}
  #reader .controls button,#reader .controls select{min-height:38px}
- #reader .controls .reader-scrubber{min-width:130px}
+ #reader .controls .reader-scrubber{flex:1 1 100%;min-width:0}
+ .speech-player-main{width:100%;min-width:0;flex-wrap:wrap}
+ .speech-floating-player:not([hidden]){box-sizing:border-box;width:max-content}
+ .numbered-pick-line,.speech-paragraph-overlay,.speech-page-highlight{display:none}
+ .numbered-pick-overlay.is-active .numbered-pick-badge{background:#69d2f3}
 }
 @media(prefers-reduced-motion:reduce){
  #reader .reader-bar button,#reader .controls button{transition:none}
