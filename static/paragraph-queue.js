@@ -9,7 +9,23 @@ export function numberedPdfParagraphs(ordered,viewport){
   return {...item,x,y,sourceIndex:item.sourceIndex??index,boxHeight:Math.abs(item.height||12),
    boxWidth:Math.abs(item.width||20),readingColumn:item.readingColumn??0,readingRegion:item.readingRegion??0};
  });
- const {text,spans}=pdfSpeechLayout(measured);
+ // Manual picks follow contiguous printed lines, even when narration
+ // would join an unfinished sentence to text in another column.
+ let region=0;
+ const localItems=measured.map((item,index)=>{
+  const prev=measured[index-1];
+  if(prev){
+   const height=Math.max(1,Math.min(prev.boxHeight,item.boxHeight));
+   const dy=item.y-prev.y;
+   const gapX=Math.max(item.x-prev.x-prev.boxWidth,prev.x-item.x-item.boxWidth);
+   const newLine=dy>height*.55;
+   const headingChange=newLine&&prev.fontName&&item.fontName&&prev.fontName!==item.fontName;
+   if(item.readingRegion!==prev.readingRegion||item.readingColumn!==prev.readingColumn||
+      dy < -height*.65||dy>height*1.8||gapX>height*1.4||headingChange)region++;
+  }
+  return {...item,readingRegion:region};
+ });
+ const {text,spans}=pdfSpeechLayout(localItems);
  if(!text.trim()||!viewport.width||!viewport.height)return [];
  const groups=[];
  let start=0;
