@@ -365,7 +365,7 @@ body.epub-open{overflow:hidden}
 .numbered-row-actions{justify-content:end}
 .numbered-pick-overlay{position:absolute;inset:0;z-index:8;pointer-events:none}
 .numbered-pick-line{position:absolute;display:block;background:rgba(255,200,45,.24);border-radius:2px;mix-blend-mode:multiply}
-.numbered-pick-overlay.is-active .numbered-pick-line{background:rgba(255,192,32,.5)}
+.numbered-pick-overlay.is-active .numbered-pick-line{background:rgba(44,190,242,.42)}
 .numbered-pick-badge{position:absolute;display:block;transform:translate(-10%,-55%);min-width:19px;min-height:19px;
  padding:2px 5px;box-sizing:border-box;text-align:center;border-radius:99px;background:#f6b326;
  color:#181714;font-size:12px;font-weight:800;box-shadow:0 0 0 2px white}
