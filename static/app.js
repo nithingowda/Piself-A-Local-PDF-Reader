@@ -699,6 +699,7 @@ function wireSpeech(kind,controller){
  speechVoices(kind);
 }
 function speechState(kind,state){
+ if(state.spokenText!==undefined){$(kind+'-spoken-text').textContent=state.spokenText;return;}
  if(state.error){toast('Read aloud: '+state.error);return;}
  $(kind+'-read-play').textContent=state.active?'Reading…':'▶ Read aloud';
  $(kind+'-read-main').textContent=state.paused||!state.active?'▶':'⏸';

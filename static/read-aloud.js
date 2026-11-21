@@ -17,7 +17,7 @@ export function createReadAloud({getText,next,onState,getCsrfToken=()=>''}){
   async function say(){
    if(!active||t!==token)return;
    if(index>=chunks.length){Promise.resolve(next()).then(more=>{if(more&&active&&t===token)speakNext(t);else stop();}).catch(()=>stop());return;}
-   const chunk=chunks[index++];
+   const chunk=chunks[index++];onState?.({spokenText:chunk});
    if(voice==='piper-alba'){
     const request=new AbortController();abort=request;
     try{
