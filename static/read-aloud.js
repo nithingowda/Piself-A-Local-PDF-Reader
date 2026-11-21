@@ -152,7 +152,10 @@ export function createReadAloud({getText,next,peekNextText=()=>null,onState,getC
   try{
    // Refresh page-specific PDF text/highlight mapping after navigation.
    text=await getText();
-   if(preparedPage)text=preparedPage.text;
+   if(preparedPage&&preparedPage.text!==text){
+    release(preparedPage.ready);
+    preparedPage=null;
+   }
   }catch(error){if(valid(session)){stop();onState?.({error:error.message});}return;}
   if(!valid(session))return;
   const chunks=preparedPage?.chunks||splitSpeechChunks(text);

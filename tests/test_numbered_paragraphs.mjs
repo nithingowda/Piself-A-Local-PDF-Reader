@@ -55,21 +55,11 @@ test('existing automatic PDF/EPUB Read Aloud remains available by default',()=>{
  assert.match(app,/if\(numberedPlayback\.epub\)/);
 });
 
-test('numbered queue buttons and readable preview use textContent',()=>{
- for(const kind of ['pdf','epub']){
-  assert.match(html,new RegExp('id="'+kind+'-read-paragraphs"'));
- }
- assert.match(app,/function enableNumberedParagraphs\(kind\)/);
- assert.match(app,/function renderNumberedPanel\(kind\)/);
- assert.match(app,/function changeNumberedParagraph\(kind,index,direction\)/);
- assert.match(app,/function playNumberedParagraphs\(kind\)/);
- assert.match(app,/numberedParagraphs=\{pdf:\[\],epub:\[\]\}/);
- assert.match(app,/text\.textContent=entry\.text/);
- assert.match(app,/badge\.textContent=String\(index\+1\)/);
- assert.match(app,/list\.replaceChildren\(\)/);
- assert.match(css,/\.numbered-paragraph-panel/);
- assert.match(css,/\.numbered-pick-badge/);
- assert.match(css,/\.numbered-pick-line/);
+test('numbered selections use inline playback controls',()=>{
+ for(const kind of ['pdf','epub'])assert.ok(html.includes('id="'+kind+'-play-selected"'));
+ assert.doesNotMatch(app,/Paragraph reading order/);
+ assert.ok(app.includes('list.splice(index,1)'));
+ assert.ok(css.includes('rgba(255,200,45,.20)'));
 });
 
 test('selected paragraphs use the same Edge player and prefetch as automatic reading',()=>{

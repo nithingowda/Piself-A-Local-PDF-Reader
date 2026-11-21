@@ -730,37 +730,12 @@ const numberedPlayback={pdf:false,epub:false};
 const numberedPickMode={pdf:false,epub:false};
 const numberedPlayPending={pdf:false,epub:false};
 let numberedTapSerial=0;
-function numberedPanel(kind){
- let panel=$(kind+'-numbered-paragraphs');
- if(panel)return panel;
- panel=document.createElement('aside');
- panel.id=kind+'-numbered-paragraphs';
- panel.className='numbered-paragraph-panel';panel.hidden=true;
- panel.setAttribute('aria-label','Numbered read-aloud paragraphs');
- panel.innerHTML='<header><strong>Paragraph reading order</strong><button type="button" class="numbered-panel-close" aria-label="Close paragraph selection">✕</button></header>'
-  +'<p>Tap paragraphs to mark 1, 2, 3… in your chosen order. Automatic reading continues until you press Play selected.</p>'
-  +'<ol class="numbered-paragraph-list" aria-label="Selected paragraphs"></ol>'
-  +'<div class="numbered-paragraph-actions"><button type="button" class="numbered-play">▶ Play selected</button><button type="button" class="numbered-clear">Clear</button></div>'
-  +'<p class="numbered-paragraph-status" role="status"></p>';
- $(kind==='pdf'?'reader':'epub-reader').append(panel);
- panel.querySelector('.numbered-panel-close').onclick=()=>{numberedPickMode[kind]=false;panel.hidden=true;$(kind+'-read-paragraphs').setAttribute('aria-expanded','false');};
- panel.querySelector('.numbered-play').onclick=()=>{void playNumberedParagraphs(kind);};
- panel.querySelector('.numbered-clear').onclick=()=>{
-  (kind==='pdf'?pdfSpeech:epubSpeech)?.stop();
-  numberedPlayback[kind]=false;
-  for(const entry of numberedParagraphs[kind])if(entry.node){entry.node.classList.remove('pishelf-numbered-paragraph','pishelf-speaking');entry.node.removeAttribute('data-pishelf-paragraph-number');}
-  numberedParagraphs[kind]=[];numberedCursor[kind]=0;
-  renderNumberedPanel(kind);
- };
- return panel;
-}
 function resetNumberedParagraphs(kind){
  numberedPlayback[kind]=false;numberedPickMode[kind]=false;
  for(const entry of numberedParagraphs[kind])if(entry.node){entry.node.classList.remove('pishelf-numbered-paragraph','pishelf-speaking');entry.node.removeAttribute('data-pishelf-paragraph-number');}
  numberedParagraphs[kind]=[];numberedCursor[kind]=0;
- const panel=$(kind+'-numbered-paragraphs');
- if(panel)panel.hidden=true;
- $(kind+'-read-paragraphs').setAttribute('aria-expanded','false');
+ $(kind+'-play-selected').hidden=true;
+ $(kind+'-read-paragraphs').setAttribute('aria-pressed','false');
  if(kind==='pdf')renderNumberedMarkers();
 }
 function renderNumberedMarkers(){
@@ -804,9 +779,7 @@ function renderNumberedMarkers(){
  });
  for(const overlay of stale.values())overlay.remove();
 }
-function renderNumberedPanel(kind){
- const panel=$(kind+'-numbered-paragraphs');if(!panel)return;
- const list=panel.querySelector('.numbered-paragraph-list');list.replaceChildren();
+function refreshNumberedSelection(kind){
  const items=numberedParagraphs[kind];
  items.forEach((entry,index)=>{
   if(entry.node){
@@ -814,55 +787,41 @@ function renderNumberedPanel(kind){
    entry.node.classList.toggle('pishelf-speaking',numberedPlayback[kind]&&index===numberedCursor[kind]);
    entry.node.setAttribute('data-pishelf-paragraph-number',String(index+1));
   }
-  const li=document.createElement('li');
-  if(numberedPlayback[kind]&&numberedCursor[kind]===index)li.className='is-active';
-  const label=document.createElement('strong');
-  label.textContent=(index+1)+'. '+(kind==='pdf'?'Page '+entry.page:'EPUB');
-  const text=document.createElement('span');text.className='numbered-paragraph-preview';
-  text.textContent=entry.text;
-  const controls=document.createElement('div');controls.className='numbered-row-actions';
-  const action=(title,disabled,callback)=>{
-   const button=document.createElement('button');button.type='button';
-   button.textContent=title;button.disabled=disabled;button.onclick=callback;
-   controls.append(button);
-  };
-  action('↑',index===0,()=>changeNumberedParagraph(kind,index,-1));
-  action('↓',index===items.length-1,()=>changeNumberedParagraph(kind,index,1));
-  action('✕',false,()=>{
-   (kind==='pdf'?pdfSpeech:epubSpeech)?.stop();
-   numberedPlayback[kind]=false;
-   if(entry.node){entry.node.classList.remove('pishelf-numbered-paragraph','pishelf-speaking');entry.node.removeAttribute('data-pishelf-paragraph-number');}
-   items.splice(index,1);renderNumberedPanel(kind);
-  });
-  li.append(label,text,controls);list.append(li);
  });
- panel.querySelector('.numbered-play').disabled=!items.length;
- panel.querySelector('.numbered-paragraph-status').textContent=
-  items.length+' selected'+(numberedPlayback[kind]?' · Playing #'+(numberedCursor[kind]+1):'');
+ $(kind+'-play-selected').hidden=!items.length||numberedPlayback[kind]||!numberedPickMode[kind];
  if(kind==='pdf')renderNumberedMarkers();
-}
-function changeNumberedParagraph(kind,index,direction){
- (kind==='pdf'?pdfSpeech:epubSpeech)?.stop();
- numberedPlayback[kind]=false;numberedCursor[kind]=0;
- const items=numberedParagraphs[kind],target=index+direction;
- if(target<0||target>=items.length)return;
- [items[index],items[target]]=[items[target],items[index]];
- renderNumberedPanel(kind);
 }
 function enableNumberedParagraphs(kind){
  cancelSpeechPick();
- const panel=numberedPanel(kind);panel.hidden=false;
- numberedPickMode[kind]=true;
- $(kind+'-read-paragraphs').setAttribute('aria-expanded','true');
- renderNumberedPanel(kind);
+ numberedPickMode[kind]=!numberedPickMode[kind];
+ $(kind+'-read-paragraphs').setAttribute('aria-pressed',String(numberedPickMode[kind]));
+ refreshNumberedSelection(kind);
 }
 function addNumberedParagraph(kind,entry){
  const list=numberedParagraphs[kind];
- if(list.some(current=>current.key===entry.key)){toast('Paragraph already selected.');return;}
+ const index=list.findIndex(current=>current.key===entry.key);
+ if(index>=0){
+  const [removed]=list.splice(index,1);
+  removed.node?.classList.remove('pishelf-numbered-paragraph','pishelf-speaking','pishelf-tap-selected');
+  removed.node?.removeAttribute('data-pishelf-paragraph-number');
+  if(numberedPlayback[kind]&&index<numberedCursor[kind])numberedCursor[kind]--;
+  else if(numberedPlayback[kind]&&index===numberedCursor[kind]){
+   const controller=kind==='pdf'?pdfSpeech:epubSpeech;
+   numberedPlayback[kind]=false;
+   controller.stop();
+   if(index<list.length){
+    numberedPlayback[kind]=true;
+    if(kind==='pdf'){pdfSpeechPage=list[index].page;showPdfSpeechPage(pdfSpeechPage);}
+    controller.play();
+   }else resetNumberedParagraphs(kind);
+  }
+  refreshNumberedSelection(kind);
+  return;
+ }
  if(list.length>=50){toast('Select up to 50 paragraphs.');return;}
  const later=list.findIndex(item=>(item.ticket||0)>(entry.ticket||0));
  if(later<0)list.push(entry);else list.splice(later,0,entry);
- renderNumberedPanel(kind);
+ refreshNumberedSelection(kind);
 }
 async function playNumberedParagraphs(kind){
  if(numberedPlayPending[kind]||!numberedParagraphs[kind].length)return;
@@ -873,11 +832,7 @@ async function playNumberedParagraphs(kind){
   numberedPlayback[kind]=false;controller.stop();numberedPlayback[kind]=true;numberedPickMode[kind]=true;numberedCursor[kind]=0;
   const first=numberedParagraphs[kind][0];
   if(kind==='pdf'){pdfSpeechPage=first.page;showPdfSpeechPage(first.page);}
-  if(compactReader.matches){
-   numberedPanel(kind).hidden=true;
-   $(kind+'-read-paragraphs').setAttribute('aria-expanded','false');
-  }
-  speechPlayer(kind,true);renderNumberedPanel(kind);
+  speechPlayer(kind,true);refreshNumberedSelection(kind);
   controller.play();
  }finally{numberedPlayPending[kind]=false;}
 }
@@ -917,15 +872,16 @@ function wireSpeech(kind,controller){
  controller.setVoice(preferredSpeechVoice());
  const panel=$(kind+'-read-panel');
  $(kind+'-read-toggle').onclick=()=>beginSpeechPick(kind);
+ $(kind+'-play-selected').onclick=()=>playNumberedParagraphs(kind);
  $(kind+'-read-paragraphs').onclick=()=>enableNumberedParagraphs(kind);
  $(kind+'-read-main').onclick=()=>controller.paused?controller.play():controller.pause();
  $(kind+'-read-back').onclick=()=>controller.seek(-10);
  $(kind+'-read-forward').onclick=()=>controller.seek(10);
- $(kind+'-read-close').onclick=()=>{controller.stop();numberedPlayback[kind]=false;speechPlayer(kind,false);renderNumberedPanel(kind);};
+ $(kind+'-read-close').onclick=()=>{controller.stop();numberedPlayback[kind]=false;speechPlayer(kind,false);refreshNumberedSelection(kind);};
  $(kind+'-read-more').onclick=()=>{panel.hidden=!panel.hidden;};
  $(kind+'-read-play').onclick=()=>controller.play();
  $(kind+'-read-pause').onclick=()=>controller.paused?controller.play():controller.pause();
- $(kind+'-read-stop').onclick=()=>{controller.stop();numberedPlayback[kind]=false;speechPlayer(kind,false);renderNumberedPanel(kind);};
+ $(kind+'-read-stop').onclick=()=>{controller.stop();numberedPlayback[kind]=false;speechPlayer(kind,false);refreshNumberedSelection(kind);};
  $(kind+'-read-rate').onchange=e=>controller.setRate(e.target.value);
  $(kind+'-read-voice').onchange=e=>{const selected=e.target.value;try{localStorage.setItem(VOICE_STORAGE_KEY,selected);}catch{}controller.setVoice(selected);speechVoices(kind==='pdf'?'epub':'pdf');};
  speechVoices(kind);
@@ -1014,12 +970,9 @@ function speechState(kind,state){
  if(state.notice){toast(state.notice);return;}
  if(numberedPlayback[kind]){
   if(state.spokenText!==undefined){
-   const panel=$(kind+'-numbered-paragraphs');
-   if(panel)panel.querySelector('.numbered-paragraph-status').textContent=
-    'Reading paragraph '+(numberedCursor[kind]+1)+' of '+numberedParagraphs[kind].length;
    return;
   }
-  if(state.active===false){resetNumberedParagraphs(kind);renderNumberedPanel(kind);}
+  if(state.active===false){resetNumberedParagraphs(kind);refreshNumberedSelection(kind);}
  }
  if(state.spokenText!==undefined){
   if(compactReader.matches)return;
@@ -1074,9 +1027,8 @@ function cancelSpeechPick(){
 function beginSpeechPick(kind){
  numberedPlayback.pdf=false;numberedPlayback.epub=false;
  numberedPickMode[kind]=false;
- const paragraphPanel=$(kind+'-numbered-paragraphs');
- if(paragraphPanel)paragraphPanel.hidden=true;
- $(kind+'-read-paragraphs').setAttribute('aria-expanded','false');
+ $(kind+'-play-selected').hidden=true;
+ $(kind+'-read-paragraphs').setAttribute('aria-pressed','false');
  pdfSpeech?.stop();epubSpeech?.stop();
  pdfSpeechPage=null;pdfSpeechStart=null;
  speechPickMode=kind;
@@ -1164,7 +1116,7 @@ async function startPdfSpeech(){
     numberedCursor.pdf=following;
     pdfSpeechPage=numberedParagraphs.pdf[following].page;
     showPdfSpeechPage(pdfSpeechPage);
-    renderNumberedPanel('pdf');return true;
+    refreshNumberedSelection('pdf');return true;
    }
    const currentPage=pdfSpeechCurrentPage();
    if(!documentPDF||currentPage>=documentPDF.numPages)return false;
@@ -1185,7 +1137,7 @@ async function startEpubSpeech(){
   next(){
    if(numberedPlayback.epub){
     if(numberedCursor.epub+1>=numberedParagraphs.epub.length)return false;
-    numberedCursor.epub++;renderNumberedPanel('epub');return true;
+    numberedCursor.epub++;refreshNumberedSelection('epub');return true;
    }
    return epubController?.readAloudNext()||false;
   },
@@ -1234,6 +1186,7 @@ async function openEpubBook(item,start){
    onTextTap:async(text,node)=>{
     if(g!==epubGeneration)return;
     if(numberedPickMode.epub){
+     node.classList.remove('pishelf-tap-selected');
      if(!node.dataset.pishelfParagraphChoiceId)node.dataset.pishelfParagraphChoiceId=String(++numberedTapSerial);
      addNumberedParagraph('epub',{
       key:'epub:'+g+':'+node.dataset.pishelfParagraphChoiceId,
