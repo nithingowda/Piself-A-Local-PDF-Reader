@@ -348,6 +348,8 @@ body.epub-open{overflow:hidden}
 .numbered-pick-badge{position:absolute;display:block;transform:translate(0,-100%);min-width:0;min-height:0;
  padding:0;box-sizing:border-box;text-align:center;background:transparent;opacity:.72;
  color:#30240d;font-size:9px;line-height:9px;font-weight:600}
+@media(max-width:650px){
+}
 
 .pdf-text-surface{position:absolute;inset:0;z-index:2;container-type:inline-size;pointer-events:none;color:transparent;white-space:pre;font-size:0;line-height:1}
 .pdf-text-surface span{position:absolute;transform-origin:0 0;pointer-events:auto;cursor:text;user-select:text;-webkit-user-select:text}
@@ -361,3 +363,12 @@ body.epub-open{overflow:hidden}
 }
 .pdf-slot>img,.pdf-slot>canvas{pointer-events:none;-webkit-user-drag:none}
 .pdf-slot .pdf-text-surface{-webkit-user-select:text;user-select:text}
+
+
+#reader .controls{padding:4px 8px max(4px,env(safe-area-inset-bottom));gap:3px 5px}
+.page-navigation{display:flex;align-items:center;gap:4px}
+#reader .controls .reader-scrubber{flex-basis:100%;max-width:none}
+#reader .controls button,#reader .controls select{padding:4px 6px}
+.speech-floating-player:not([hidden]){padding:5px 8px;gap:3px}
+.speech-player-main{gap:4px}
+.speech-player-main button{min-width:36px;min-height:34px;padding:4px}
