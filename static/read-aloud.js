@@ -38,11 +38,11 @@ export function createReadAloud({getText,next,onState,getCsrfToken=()=>''}){
    const chunk=chunks[index];
    if(voice==='edge-neerja'||voice==='piper-alba'){
     try{
-     const blob=prefetch?await prefetch:await requestSpeech(chunk);
+     const blob=(prefetch?await prefetch:null)||await requestSpeech(chunk);
      prefetch=null;
      if(!active||t!==token)return;
      index++;
-     if(index<chunks.length)prefetch=requestSpeech(chunks[index]);
+     if(index<chunks.length)prefetch=requestSpeech(chunks[index]).catch(()=>null);
      onState?.({spokenText:chunk});
      const url=URL.createObjectURL(blob);const player=new Audio(url);audio=player;player.playbackRate=rate;
      player.onended=()=>{URL.revokeObjectURL(url);audio=null;if(active&&t===token)void say();};
@@ -50,7 +50,7 @@ export function createReadAloud({getText,next,onState,getCsrfToken=()=>''}){
      await player.play();if(paused)player.pause();return;
     }catch(error){
      if(!active||t!==token)return;
-     voice='';index--;onState?.({notice:'Online and offline voices unavailable; using browser speech.'});
+     voice='';onState?.({notice:'Online and offline voices unavailable; using browser speech.'});
     }
    }
    index++;
