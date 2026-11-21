@@ -105,3 +105,10 @@ test('speech chunker handles long text without oversized chunks',async()=>{
  assert.ok(chunks.every(chunk=>chunk.length<=240));
  assert.equal(chunks.join(' ').replace(/\s+/g,' '),('First sentence. '+'long '.repeat(140)+'Final sentence!').trim().replace(/\s+/g,' '));
 });
+
+test('headlines are preserved in speech extraction',async()=>{
+ const {splitSpeechChunks}=await import('../static/read-aloud.js');
+ assert.deepEqual(splitSpeechChunks('Breaking News\nThe story begins here.'),['Breaking News','The story begins here.']);
+ assert.match(app,/item\.hasEOL/);
+ assert.match(epub,/h1,h2,h3,h4,h5,h6,p,blockquote,li/);
+});

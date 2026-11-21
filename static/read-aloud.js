@@ -2,16 +2,20 @@
 const MAX_CHUNK_LENGTH=240;
 const DEFAULT_VOICE='en-IN-NeerjaNeural';
 
+// Preserve paragraph and heading boundaries before normalizing whitespace.
 export function splitSpeechChunks(text){
- const sentences=String(text||'').replace(/\s+/g,' ').trim().match(/[^.!?।！？]+[.!?।！？]*|[^.!?।！？]+$/g)||[];
+ const paragraphs=String(text||'').split(/\n+/).map(line=>line.replace(/[ \t]+/g,' ').trim()).filter(Boolean);
  const chunks=[];
- for(const sentence of sentences){
-  let part='';
-  for(const word of sentence.trim().split(/\s+/)){
-   if(part&&part.length+word.length+1>MAX_CHUNK_LENGTH){chunks.push(part);part='';}
-   part+=(part?' ':'')+word;
+ for(const paragraph of paragraphs){
+  const sentences=paragraph.match(/[^.!?।！？]+[.!?।！？]*|[^.!?।！？]+$/g)||[];
+  for(const sentence of sentences){
+   let part='';
+   for(const word of sentence.trim().split(/\s+/)){
+    if(part&&part.length+word.length+1>MAX_CHUNK_LENGTH){chunks.push(part);part='';}
+    part+=(part?' ':'')+word;
+   }
+   if(part)chunks.push(part);
   }
-  if(part)chunks.push(part);
  }
  return chunks;
 }

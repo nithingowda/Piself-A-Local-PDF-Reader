@@ -73,7 +73,17 @@ export async function createEpubReader({url,container,cfi,theme='light',fontSize
  return {
   next(){return rendition.next();},
   async readAloudNext(){const before=rendition.currentLocation()?.start?.cfi;await rendition.next();const after=rendition.currentLocation()?.start?.cfi;return Boolean(after&&after!==before);},
-  readAloudText(){const contents=rendition.getContents();return (contents||[]).map(c=>c.document?.body?.innerText||c.document?.body?.textContent||'').join(' ').trim();},
+  readAloudText(){
+   const contents=rendition.getContents();
+   return (contents||[]).map(c=>{
+    const body=c.document?.body;if(!body)return '';
+    // DOM order includes h1–h6, which innerText can omit in some EPUB layouts.
+    const blocks=body.querySelectorAll('h1,h2,h3,h4,h5,h6,p,blockquote,li');
+    if(!blocks.length)return body.textContent||'';
+    return Array.from(blocks).filter(node=>!node.closest('nav,[hidden],[aria-hidden="true"]'))
+     .map(node=>node.textContent?.trim()||'').filter(Boolean).join('\n');
+   }).filter(Boolean).join('\n').trim();
+  },
   prev(){return rendition.prev();},
   display(location){return rendition.display(location);},
   goPercent(percent){
