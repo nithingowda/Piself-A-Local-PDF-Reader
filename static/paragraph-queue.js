@@ -70,9 +70,12 @@ export function numberedPdfParagraphs(ordered,viewport){
  return groups;
 }
 
-export function paragraphAtPoint(paragraphs,x,y,viewport){
+export function paragraphAtPoint(paragraphs,x,y,viewport,sourceItem){
  let chosen=null,nearest=Infinity;
  for(const paragraph of paragraphs){
+  if(sourceItem!=null&&paragraph.id.split(',').includes(String(sourceItem))){
+   chosen=paragraph;nearest=0;break;
+  }
   for(const box of paragraph.boxes){
    const left=box.x*viewport.width,top=box.y*viewport.height;
    const right=left+box.w*viewport.width,bottom=top+box.h*viewport.height;

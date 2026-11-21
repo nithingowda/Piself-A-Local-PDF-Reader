@@ -213,3 +213,10 @@ test('selection keeps the right-hand fragment of left-knee cartilage in its prin
  assert.equal(pick.boxes.length,4);
  assert.equal(paragraphAtPoint(groups,340,116,viewport).id,pick.id);
 });
+
+test('the tapped text item wins when nearby selection boxes overlap',()=>{
+ const groups=numberedPdfParagraphs([
+  line('News',25,36,0),line('Gene may explain autism gender gap',25,100,1)
+ ],viewport);
+ assert.equal(paragraphAtPoint(groups,30,33,viewport,'1').id,'1');
+});
