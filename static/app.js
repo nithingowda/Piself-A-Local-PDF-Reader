@@ -194,6 +194,113 @@ $('settings-open').onclick=openSettings;$('reader-settings').onclick=openSetting
 for(const k of ['siteTheme','theme','mode','quality','density'])$('pref-'+k).onchange=e=>{prefs[k]=e.target.value;if(k==='theme'){prefs.comfort='custom';$('pref-comfort').value='custom';}if(k==='theme'&&['light','sepia','dark'].includes(prefs.theme))lastDayTheme=prefs.theme;storePrefs();if(documentPDF&&(k==='mode'||k==='quality')){$('view-mode').value=prefs.mode;rebuild();}};
 $('pref-gestures').onchange=e=>{prefs.gestures=e.target.checked;storePrefs();updateTouchMode();};
 $('clear-all').onclick=()=>{if(documentPDF){toast('Return to the library before clearing all progress.');return;}clearProgress();};$('rescan').onclick=()=>{if(documentPDF){toast('Return to the library to rescan.');return;}refresh();toast('Library scan requested.');};
+
+/* Non-destructive PDF annotations. Coordinates are fractions of the page slot,
+   so zoom, rotation layout and responsive sizing cannot displace the marks. */
+let annotationDocument='',annotationItems=[],annotationActive=false,annotationStroke=null;
+const annotationKey=id=>'pishelf:annotations:v1:'+id;
+function annotationLoad(id){
+ annotationDocument=id;annotationItems=[];
+ try{const value=JSON.parse(localStorage.getItem(annotationKey(id))||'[]');
+  if(Array.isArray(value))annotationItems=value.filter(x=>x&&Number.isInteger(x.page)&&x.page>0&&['note','highlight','pen','underline','circle','text'].includes(x.type)).slice(-3000);
+ }catch{}
+ annotationDrawAll();annotationList();
+}
+function annotationStore(){
+ if(!annotationDocument)return;
+ try{localStorage.setItem(annotationKey(annotationDocument),JSON.stringify(annotationItems));}
+ catch{toast('Annotation storage is full. Export your notes to keep them.');}
+ annotationDrawAll();annotationList();
+}
+function annotationLayer(slot){
+ let layer=slot.querySelector('.annotation-layer');
+ if(!layer){layer=document.createElementNS('http://www.w3.org/2000/svg','svg');layer.setAttribute('viewBox','0 0 1000 1000');layer.setAttribute('preserveAspectRatio','none');layer.classList.add('annotation-layer');slot.append(layer);}
+ return layer;
+}
+function annotationPoint(event,slot){
+ const r=slot.getBoundingClientRect();
+ return [Math.max(0,Math.min(1000,Math.round((event.clientX-r.left)/r.width*1000))),Math.max(0,Math.min(1000,Math.round((event.clientY-r.top)/r.height*1000)))];
+}
+function annotationElement(item){
+ const ns='http://www.w3.org/2000/svg';
+ let el;
+ if(item.type==='circle'){el=document.createElementNS(ns,'ellipse');el.setAttribute('cx',(item.points[0][0]+item.points[1][0])/2);el.setAttribute('cy',(item.points[0][1]+item.points[1][1])/2);el.setAttribute('rx',Math.abs(item.points[1][0]-item.points[0][0])/2);el.setAttribute('ry',Math.abs(item.points[1][1]-item.points[0][1])/2);}
+ else{el=document.createElementNS(ns,'polyline');el.setAttribute('points',item.points.map(p=>p.join(',')).join(' '));}
+ el.setAttribute('fill','none');el.setAttribute('stroke',item.color||'#ffdf4d');
+ el.setAttribute('stroke-width',item.type==='highlight'?'26':item.type==='pen'?'5':'7');
+ el.setAttribute('stroke-linecap','round');el.setAttribute('stroke-linejoin','round');
+ if(item.type==='highlight')el.setAttribute('opacity','.42');
+ return el;
+}
+function annotationDrawAll(){
+ if(!documentPDF)return;
+ for(const slot of slots){
+  const layer=annotationLayer(slot);layer.replaceChildren();
+  for(const item of annotationItems)if(item.page===Number(slot.dataset.page)&&Array.isArray(item.points)&&item.points.length>1)layer.append(annotationElement(item));
+ }
+}
+function annotationList(){
+ const list=$('annotation-list');if(!list)return;list.replaceChildren();
+ annotationItems.forEach((item,index)=>{
+  const row=document.createElement('div');row.className='annotation-entry';
+  const go=document.createElement('button');go.type='button';go.textContent='Page '+item.page+' · '+(item.type==='note'?item.text:item.type);go.onclick=()=>move(item.page);
+  const remove=document.createElement('button');remove.type='button';remove.textContent='Delete';remove.setAttribute('aria-label','Delete annotation on page '+item.page);
+  remove.onclick=()=>{annotationItems.splice(index,1);annotationStore();};
+  row.append(go,remove);list.append(row);
+ });
+}
+function annotationTool(){return annotationActive?$('annotation-tool').value:'none';}
+function annotationToggle(enabled){
+ annotationActive=enabled;$('annotation-panel').hidden=!enabled;
+ $('annotation-toggle').setAttribute('aria-pressed',String(enabled));
+ $('page-area').classList.toggle('annotation-editing',enabled&&annotationTool()!=='none');
+}
+$('annotation-toggle').onclick=()=>annotationToggle(!annotationActive);
+$('annotation-close').onclick=()=>annotationToggle(false);
+$('annotation-tool').onchange=()=>{$('page-area').classList.toggle('annotation-editing',annotationTool()!=='none');};
+$('annotation-save-note').onclick=()=>{
+ if(!documentPDF||!current)return;
+ const text=$('annotation-note').value.trim();if(!text)return;
+ annotationItems.push({type:'note',page,text,created:new Date().toISOString()});$('annotation-note').value='';annotationStore();
+};
+$('annotation-undo').onclick=()=>{
+ for(let i=annotationItems.length-1;i>=0;i--)if(annotationItems[i].page===page&&annotationItems[i].type!=='note'){annotationItems.splice(i,1);annotationStore();return;}
+};
+$('annotation-export').onclick=()=>{
+ if(!current)return;
+ const lines=['# Notes: '+current.title,''];
+ for(const item of annotationItems){lines.push('## Page '+item.page);lines.push(item.type==='note'?item.text:'- '+item.type+' mark ('+(item.color||'')+')');lines.push('');}
+ const blob=new Blob([lines.join('\n')],{type:'text/markdown;charset=utf-8'});
+ const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='pishelf-notes-'+String(current.title).replace(/[^a-z0-9_-]+/gi,'-').slice(0,60)+'.md';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+};
+$('page-area').addEventListener('pointerdown',event=>{
+ const tool=annotationTool();if(tool==='none'||!documentPDF||event.button!==0||event.pointerType==='touch'&&event.isPrimary===false)return;
+ const slot=event.target.closest('.pdf-slot');if(!slot)return;
+ event.preventDefault();event.stopPropagation();
+ annotationStroke={id:event.pointerId,slot,tool,points:[annotationPoint(event,slot)],color:$('annotation-color').value};
+ $('page-area').setPointerCapture(event.pointerId);
+},true);
+$('page-area').addEventListener('pointermove',event=>{
+ const a=annotationStroke;if(!a||a.id!==event.pointerId)return;
+ event.preventDefault();event.stopPropagation();
+ const p=annotationPoint(event,a.slot);
+ if(a.tool==='pen'||a.tool==='highlight'){if(a.points.length<1000)a.points.push(p);}
+ else a.points[1]=p;
+ annotationDrawAll();
+ const preview={type:a.tool,points:a.points,color:a.color};
+ if(preview.points.length>1)annotationLayer(a.slot).append(annotationElement(preview));
+},true);
+function annotationFinish(event){
+ const a=annotationStroke;if(!a||a.id!==event.pointerId)return;
+ event.preventDefault();event.stopPropagation();annotationStroke=null;
+ if(a.points.length===1)a.points.push(annotationPoint(event,a.slot));
+ annotationItems.push({type:a.tool,page:Number(a.slot.dataset.page),color:a.color,points:a.points});
+ annotationStore();
+ if($('page-area').hasPointerCapture(event.pointerId))$('page-area').releasePointerCapture(event.pointerId);
+}
+$('page-area').addEventListener('pointerup',annotationFinish,true);
+$('page-area').addEventListener('pointercancel',event=>{if(annotationStroke?.id===event.pointerId){annotationStroke=null;annotationDrawAll();}},true);
+
 // Continuous reader: lightweight page placeholders, serialized rendering, bounded canvas memory.
 let slots=[],renderQueue=[],renderBusy=false,pageObserver=null;
 const dimensions=new Map(),renderedSlots=new Set();
@@ -509,6 +616,7 @@ async function rebuild(){if(!documentPDF)return;cancelAllSharpImages();$('pages'
  $('pages').classList.toggle('book-layout',mode==='book');
  $('reader').classList.toggle('book-mode',mode==='book');
  $('pages').append(fragment);
+ annotationDrawAll();
  pageObserver=new IntersectionObserver(entries=>{for(const e of entries)if(e.isIntersecting)enqueue(e.target);},{root:$('page-area'),rootMargin:readerPrefetchMargin()});slots.forEach(s=>pageObserver.observe(s));
  layoutReady=true;const target=slots.find(s=>+s.dataset.page===page);
  if(target){$('page-area').scrollTop=mode==='scroll'?target.offsetTop-20:0;enqueue(target);}
@@ -625,7 +733,7 @@ async function openMagazine(item,start){
   history.pushState({pishelfReader:true},'',location.href);
   readerHistoryActive=true;
  }
- clearMagazinePrefetches();cancelAllSharpImages();current=item;const g=++generation;const reading=saved[item.id]||{};
+ clearMagazinePrefetches();cancelAllSharpImages();current=item;annotationLoad(item.id);const g=++generation;const reading=saved[item.id]||{};
  zoom=1;rotation=reading.rotation||0;dimensions.clear();
  $('reader').hidden=false;document.body.classList.add('reader-open');setReaderFocus(true);
  $('library').hidden=true;$('reader-title').textContent=item.title;
@@ -702,7 +810,7 @@ function turnBook(direction){
 }
 /** close Reader: Support the PiShelf reader or library interface. */
 async function closeReader({fromHistory=false}={}){
- clearCurl();
+ annotationToggle(false);annotationStroke=null;clearCurl();
  if(!fromHistory&&readerHistoryActive){
   readerHistoryActive=false;
   // Back triggers popstate and returns to the existing library history entry.
