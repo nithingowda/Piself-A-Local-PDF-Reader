@@ -72,6 +72,12 @@ class AuthHttpTests(unittest.TestCase):
             status,_,_=self.request('POST',route,{},cookie=reader_cookie,csrf=reader['csrf'])
             self.assertEqual(status,403)
         connection=http.client.HTTPConnection('127.0.0.1',self.server.server_port,timeout=10)
+        for filename,body in [('notes.txt',b'notes'),('renamed.pdf',b'notes containing %PDF-1.4')]:
+            connection.request('POST','/api/upload?filename='+filename,body=body,
+                               headers={'Content-Type':'application/pdf','Cookie':admin_cookie,'X-PiShelf-CSRF':me['csrf']})
+            rejected=connection.getresponse()
+            self.assertEqual(rejected.status,400)
+            rejected.read()
         connection.request('POST','/api/upload?filename=sample.pdf',body=b'%PDF-1.4 temporary test document',
                            headers={'Content-Type':'application/pdf','Cookie':admin_cookie,'X-PiShelf-CSRF':me['csrf']})
         response=connection.getresponse()
