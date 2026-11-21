@@ -926,6 +926,23 @@ async function readPdfFromTap(event){
  pdfSpeech.play();
 }
 $('pages').addEventListener('click',event=>{void readPdfFromTap(event);});
+// A one-page lookahead cache avoids extracting and sorting the same PDF text
+// again at a page turn. The document/rotation keys prevent stale geometry.
+let pdfSpeechPageCache=null;
+async function preparedPdfSpeechPage(n){
+ const doc=documentPDF,angle=rotation;
+ if(!doc||n<1||n>doc.numPages)return null;
+ const cached=pdfSpeechPageCache;
+ if(cached?.doc===doc&&cached.n===n&&cached.angle===angle)return cached;
+ const pdfPage=await doc.getPage(n);
+ const content=await pdfPage.getTextContent();
+ if(doc!==documentPDF||angle!==rotation)return null;
+ const {orderPdfSpeechItems,pdfSpeechText}=await import('./pdf-reading-order.js');
+ const ordered=orderPdfSpeechItems(content.items,pdfPage.getViewport({scale:1,rotation:angle}));
+ const result={doc,n,angle,ordered,text:pdfSpeechText(ordered)};
+ pdfSpeechPageCache=result;
+ return result;
+}
 async function startPdfSpeech(){
  const {createReadAloud}=await speechEngine();
  if(pdfSpeech)return;
@@ -934,25 +951,24 @@ async function startPdfSpeech(){
   async getText(){
    if(!documentPDF)return '';
    const speechPage=pdfSpeechCurrentPage();
-   const pdfPage=await documentPDF.getPage(speechPage);
-   const content=await pdfPage.getTextContent();
+   const prepared=await preparedPdfSpeechPage(speechPage);
+   if(!prepared)return '';
    // Read from the tapped page, not the first page of a book spread.
-   const {orderPdfSpeechItems,pdfSpeechText}=await import('./pdf-reading-order.js');
-   const ordered=orderPdfSpeechItems(content.items,pdfPage.getViewport({scale:1,rotation}));
+   const {ordered}=prepared;
    const start=pdfSpeechStart?.page===speechPage
     ?Math.max(0,ordered.findIndex(item=>item.sourceIndex===pdfSpeechStart.index)):0;
    pdfSpeechStart=null;
    pdfSpeechItemsPage=speechPage;pdfSpeechItems=ordered;
    pdfSpeechStartIndex=start;pdfSpeechHighlightSpans=null;pdfSpeechSpansPage=0;
+   if(!start)return prepared.text;
+   const {pdfSpeechText}=await import('./pdf-reading-order.js');
    return pdfSpeechText(ordered.slice(start));
   },
   async peekNextText(){
    const upcoming=pdfSpeechCurrentPage()+1;
    if(!documentPDF||upcoming>documentPDF.numPages)return null;
-   const pdfPage=await documentPDF.getPage(upcoming);
-   const content=await pdfPage.getTextContent();
-   const {orderPdfSpeechItems,pdfSpeechText}=await import('./pdf-reading-order.js');
-   return pdfSpeechText(orderPdfSpeechItems(content.items,pdfPage.getViewport({scale:1,rotation})));
+   const prepared=await preparedPdfSpeechPage(upcoming);
+   return prepared?.text||null;
   },
   async next(){
    const currentPage=pdfSpeechCurrentPage();
@@ -1168,7 +1184,7 @@ function turnBook(direction){
 }
 /** close Reader: Support the PiShelf reader or library interface. */
 async function closeReader({fromHistory=false}={}){
- cancelSpeechPick();pdfSpeech?.stop();pdfSpeechPage=null;
+ cancelSpeechPick();pdfSpeech?.stop();pdfSpeechPageCache=null;pdfSpeechPage=null;
  annotationToggle(false);annotationStroke=null;clearCurl();
  if(!fromHistory&&readerHistoryActive){
   readerHistoryActive=false;
