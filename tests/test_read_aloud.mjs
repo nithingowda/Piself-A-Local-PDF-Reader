@@ -21,3 +21,16 @@ test('speech cancels on closing and uses local browser voices',()=>{
  assert.match(speech,/window.speechSynthesis/);
  assert.match(speech,/SpeechSynthesisUtterance/);
 });
+
+test('compact immersive player provides seek and playback controls for both formats',()=>{
+ const css=readFileSync(new URL('style.css',root),'utf8');
+ for(const kind of ['pdf','epub']){
+  assert.match(html,new RegExp('id="'+kind+'-speech-player"'));
+  for(const control of ['toggle','back','main','forward','close','more'])
+   assert.match(html,new RegExp('id="'+kind+'-read-'+control+'"'));
+  assert.match(app,new RegExp("speechPlayer\\('"+kind+"'"));
+ }
+ assert.match(css,/speech-immersive/);
+ assert.match(speech,/function seek\(seconds\)/);
+ assert.match(speech,/audio\.currentTime/);
+});
