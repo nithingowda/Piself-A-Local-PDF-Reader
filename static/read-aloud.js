@@ -13,6 +13,8 @@ export function normalizeSpeechText(text){
   .replace(/ *\n */g,'\n')
   .replace(/ +([,;:.!?…%°)\]}”’])/g,'$1')
   .replace(/([(\[{“‘]) +/g,'$1')
+  .replace(/(^|[\s([{])" +/g,'$1"') // ASCII opening quotation
+  .replace(/ +(["”’])(?=[,.;:!?]|\s|$)/g,'$1') // quoted closing punctuation
   .replace(/(\d)\. +(\d)/g,'$1.$2')
   .replace(/ *([—–]) */g,' $1 ')
   .replace(/ {2,}/g,' ')
