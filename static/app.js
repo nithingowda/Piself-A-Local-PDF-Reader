@@ -679,7 +679,7 @@ function move(n){
  const target=Math.max(1,Math.min(documentPDF.numPages,Number(n)||1));
  page=isBookSpread()?spreadStart(target):target;
  if(page===oldPage)return;
- automaticFit='page';
+ automaticFit=defaultPagedFit();
  updatePageUI();
  rebuild();
 }
@@ -802,10 +802,10 @@ async function zoomWithControls(targetZoom){
   x:Math.max(0,Math.min(1,(centerX-rect.left)/Math.max(1,rect.width))),
   y:Math.max(0,Math.min(1,(centerY-rect.top)/Math.max(1,rect.height)))
  };
- const minimum=!spreadMode&&$('view-mode').value==='scroll'&&typeof fitWidthZoom==='function'?fitWidthZoom():fitEntirePageZoom(anchor.number);
+ const minimum=!spreadMode&&$('view-mode').value==='scroll'?fitWidthZoom():fitEntirePageZoom(anchor.number);
  const next=Math.max(minimum,Math.min(3,Number(targetZoom)));
  if(!Number.isFinite(next))return;
- const fits=spreadMode&&next<=minimum+0.001;
+ const fits=next<=minimum+0.001;
  // Re-center even when the user is already at minimum and has panned sideways.
  if(Math.abs(next-zoom)<0.001&&!fits)return;
  const original=documentPDF,g=generation;
@@ -838,12 +838,12 @@ $('fit-height').onclick=()=>{
 };
 function fitWidthZoom(){
  const area=$('page-area');
- if(!isBookSpread())return area.clientWidth/Math.min(Math.max(200,area.clientWidth-40),1100);
+ if(!isBookSpread())return Math.max(.1,area.clientWidth/Math.min(Math.max(200,area.clientWidth-40),1100));
  const count=spreadPages(page).length,compact=matchMedia('(max-width:600px)').matches;
  return (area.clientWidth-(compact?10:32)-(count-1)*(compact?4:8))/(count*bookPageBaseWidth());
 }
 $('fit').onclick=()=>zoomWithControls(fitWidthZoom());
-$('fit-page').onclick=()=>zoomWithControls(fitEntirePageZoom(page));$('rotate').onclick=()=>{rotation=(rotation+90)%360;rebuild();};$('view-mode').onchange=()=>{prefs.mode=$('view-mode').value;automaticFit=defaultPagedFit();storePrefs();if(documentPDF){if(isBookSpread())page=spreadStart(page);zoom=fitEntirePageZoom(page);rebuild();}};
+$('fit-page').onclick=()=>zoomWithControls($('view-mode').value==='scroll'?fitWidthZoom():fitEntirePageZoom(page));$('rotate').onclick=()=>{rotation=(rotation+90)%360;rebuild();};$('view-mode').onchange=()=>{prefs.mode=$('view-mode').value;automaticFit=defaultPagedFit();storePrefs();if(documentPDF){if(isBookSpread())page=spreadStart(page);zoom=automaticFit==='width'?fitWidthZoom():fitEntirePageZoom(page);rebuild();}};
 $('bookmark').onclick=()=>{if(!documentPDF)return;const marks=saved[current.id]?.bookmarks||[];persist(current.id,{bookmarks:marks.includes(page)?marks.filter(n=>n!==page):[...marks,page].sort((a,b)=>a-b)});updatePageUI();updateBookmarks();};$('bookmarks').onchange=e=>{if(e.target.value)move(+e.target.value);e.target.value='';};
 $('fullscreen').onclick=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await $('reader').requestFullscreen();}catch{toast('Fullscreen is unavailable in this browser.');}};
 let searchTimer;$('search').oninput=()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>{visibleLimit=60;drawLibrary();},150);};$('sort').onchange=e=>{prefs.sort=e.target.value;storePrefs();drawLibrary();};$('refresh').onclick=()=>refresh();document.querySelectorAll('[data-filter]').forEach(b=>b.onclick=()=>{filter=b.dataset.filter;category=collectionFilter='';visibleLimit=60;document.querySelectorAll('.tab,.category').forEach(t=>t.classList.toggle('active',t===b));drawLibrary();});
