@@ -763,15 +763,31 @@ function resetNumberedParagraphs(kind){
  if(kind==='pdf')renderNumberedMarkers();
 }
 function renderNumberedMarkers(){
- if(!$('pages'))return;
- $('pages').querySelectorAll('.numbered-pick-overlay').forEach(node=>node.remove());
+ const pages=$('pages');
+ if(!pages)return;
+ const stale=new Map(Array.from(pages.querySelectorAll('.numbered-pick-overlay'),
+  overlay=>[overlay.dataset.paragraphKey,overlay]));
+ const slots=new Map();
+ if(numberedParagraphs.pdf.length){
+  for(const slot of pages.querySelectorAll('.pdf-slot[data-page]'))slots.set(+slot.dataset.page,slot);
+ }
  numberedParagraphs.pdf.forEach((entry,index)=>{
   if(numberedPlayback.pdf&&index<numberedCursor.pdf)return;
-  const slot=Array.from($('pages').querySelectorAll('[data-page]')).find(el=>+el.dataset.page===entry.page);
+  const slot=slots.get(entry.page);
   if(!slot)return;
+  const active=numberedPlayback.pdf&&numberedCursor.pdf===index;
+  const existing=stale.get(entry.key);
+  if(existing?.parentNode===slot){
+   stale.delete(entry.key);
+   existing.classList.toggle('is-active',active);
+   const badge=existing.lastElementChild;
+   if(badge.textContent!==String(index+1))badge.textContent=String(index+1);
+   return;
+  }
   const overlay=document.createElement('div');
+  overlay.dataset.paragraphKey=entry.key;
   overlay.className='numbered-pick-overlay';
-  if(numberedPlayback.pdf&&numberedCursor.pdf===index)overlay.classList.add('is-active');
+  if(active)overlay.classList.add('is-active');
   for(const box of entry.boxes.slice(0,110)){
    const mark=document.createElement('span');mark.className='numbered-pick-line';
    mark.style.left=Math.max(0,box.x*100)+'%';
@@ -785,6 +801,7 @@ function renderNumberedMarkers(){
   badge.style.top=Math.max(0,entry.anchor.y*100)+'%';
   overlay.append(badge);slot.append(overlay);
  });
+ for(const overlay of stale.values())overlay.remove();
 }
 function renderNumberedPanel(kind){
  const panel=$(kind+'-numbered-paragraphs');if(!panel)return;
@@ -859,6 +876,7 @@ async function playNumberedParagraphs(kind){
   controller.play();
  }finally{numberedPlayPending[kind]=false;}
 }
+const paragraphLayouts=new WeakMap();
 async function pickNumberedPdfParagraph(event,slot){
  const ticket=++numberedTapSerial,pageNumber=+slot.dataset.page;
  const rect=slot.getBoundingClientRect();
@@ -869,8 +887,15 @@ async function pickNumberedPdfParagraph(event,slot){
  const y=(event.clientY-rect.top)*viewport.height/rect.height;
  const {orderPdfSpeechItems}=await import('./pdf-reading-order.js');
  const {numberedPdfParagraphs,paragraphAtPoint}=await import('./paragraph-queue.js');
- const ordered=orderPdfSpeechItems((await pdfPage.getTextContent()).items,viewport);
- const candidate=paragraphAtPoint(numberedPdfParagraphs(ordered,viewport),x,y,viewport);
+ let layout=paragraphLayouts.get(slot);
+ if(layout?.page!==pdfPage||layout.rotation!==viewport.rotation){
+  const paragraphs=pdfPage.getTextContent().then(({items})=>
+   numberedPdfParagraphs(orderPdfSpeechItems(items,viewport),viewport));
+  layout={page:pdfPage,rotation:viewport.rotation,paragraphs};
+  paragraphLayouts.set(slot,layout);
+  paragraphs.catch(()=>{if(paragraphLayouts.get(slot)===layout)paragraphLayouts.delete(slot);});
+ }
+ const candidate=paragraphAtPoint(await layout.paragraphs,x,y,viewport);
  if(!numberedPickMode.pdf||!candidate||!slot.isConnected)return;
  addNumberedParagraph('pdf',{...candidate,page:pageNumber,key:pageNumber+':'+candidate.id,ticket});
 }
