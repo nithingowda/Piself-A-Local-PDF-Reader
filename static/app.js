@@ -725,12 +725,20 @@ function showThumbnailRange(begin){
  previous.disabled=begin===1;next.disabled=end===count;
  previous.onclick=()=>showThumbnailRange(begin-60);
  next.onclick=()=>showThumbnailRange(begin+60);
- nav.append(previous,document.createTextNode('Pages '+begin+'–'+end+' of '+count),next);
+ const jump=document.createElement('input');
+ jump.type='number';jump.min='1';jump.max=String(count);jump.value=String(page);
+ jump.setAttribute('aria-label','Jump to thumbnail page');jump.className='thumbnail-jump';
+ jump.addEventListener('change',()=>{
+  const target=Math.max(1,Math.min(count,Math.trunc(Number(jump.value)||page)));
+  showThumbnailRange(Math.floor((target-1)/60)*60+1);
+ });
+ nav.append(previous,document.createTextNode('Pages '+begin+'–'+end+' of '+count),jump,next);
  grid.append(nav);
  for(let n=begin;n<=end;n++){
   const button=document.createElement('button');
   button.type='button';button.setAttribute('aria-label','Go to page '+n);
   if(n===page)button.setAttribute('aria-current','page');
+  button.title='Open page '+n;
   const img=document.createElement('img');
   img.loading='lazy';img.decoding='async';img.alt='';
   // Assign src only near the visible thumbnail grid; Safari's lazy loading
