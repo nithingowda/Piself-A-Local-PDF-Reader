@@ -1041,6 +1041,9 @@ function cancelSpeechPick(){
 function beginSpeechPick(kind){
  numberedPlayback.pdf=false;numberedPlayback.epub=false;
  numberedPickMode[kind]=false;
+ const paragraphPanel=$(kind+'-numbered-paragraphs');
+ if(paragraphPanel)paragraphPanel.hidden=true;
+ $(kind+'-read-paragraphs').setAttribute('aria-expanded','false');
  pdfSpeech?.stop();epubSpeech?.stop();
  pdfSpeechPage=null;pdfSpeechStart=null;
  speechPickMode=kind;
