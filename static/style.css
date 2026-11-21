@@ -271,3 +271,8 @@ body.epub-open{overflow:hidden}
 .read-aloud-controls button,.read-aloud-controls select{font:inherit}
 .read-aloud-controls label{display:inline-flex;align-items:center;gap:4px}
 @media(max-width:650px){.read-aloud-controls{gap:4px}.read-aloud-controls button{padding:5px 7px}.read-aloud-controls select{max-width:115px}}
+
+/* Keep read aloud compact until the reader expands its controls. */
+.read-aloud-controls{position:relative}
+.read-aloud-panel:not([hidden]){display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.read-aloud-panel[hidden]{display:none!important}
