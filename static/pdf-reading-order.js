@@ -54,6 +54,26 @@ export function orderPdfSpeechItems(items,viewport){
  return groups.flatMap(columnSorted);
 }
 
+// PDF.js hasEOL marks visual line wraps, not paragraph breaks.
+// Join nearby lines within each column, but separate headings and paragraph gaps.
 export function pdfSpeechText(items){
- return items.map(item=>(item.str||'')+(item.hasEOL?'\n':' ')).join('').trim();
+ const result=[];let previous=null;
+ for(const item of items){
+  const text=String(item.str||'').trim();
+  if(!text)continue;
+  if(previous){
+   const lineGap=Math.abs(item.y-previous.y);
+   const height=Math.max(8,previous.boxHeight||12,item.boxHeight||12);
+   const xJump=item.x-previous.x;
+   const newColumn=xJump>Math.max(35,(previous.boxWidth||0)*.8)&&item.y<previous.y+height*2;
+   const paragraphBreak=newColumn||lineGap>height*1.8||lineGap< -height*.7;
+   const hyphenated=/[A-Za-z]-$/.test(previous.str||'');
+   if(paragraphBreak)result.push('\\n');
+   else if(hyphenated){const last=result.pop();result.push(last.slice(0,-1));}
+   else result.push(' ');
+  }
+  result.push(text);
+  previous=item;
+ }
+ return result.join('').trim();
 }
