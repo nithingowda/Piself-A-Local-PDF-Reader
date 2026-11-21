@@ -302,3 +302,7 @@ body.epub-open{overflow:hidden}
 .speech-spoken-text{display:block;max-width:min(420px,80vw);font-size:12px;line-height:1.35;color:rgba(255,255,255,.9);text-align:center;max-height:3.9em;overflow:hidden}
 #reader.speech-immersive #page-area{overflow:auto!important;touch-action:pan-x pan-y;min-height:0}
 #epub-reader.speech-immersive #epub-page{min-height:0;flex:1}
+
+/* Temporary read-aloud pointer, independent of saved annotations. */
+.speech-page-highlight{position:absolute;z-index:8;pointer-events:none;background:rgba(251,247,25,.52);border-radius:2px;mix-blend-mode:multiply;transition:opacity .2s}
+::highlight(pishelf-reading){background:rgba(251,247,25,.65);color:inherit}

@@ -373,7 +373,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.auth_post(route);return
             # Readers may save their reading position, bookmarks and favourites.
             # All other write endpoints remain administrator-only.
-            self.require_session(admin=route not in ('/api/progress','/api/annotations','/api/tts/alba','/api/tts/edge'),mutation=True)
+            self.require_session(admin=route not in ('/api/progress','/api/annotations','/api/tts/edge'),mutation=True)
             if route == '/api/tts/edge':
                 length=int(self.headers.get('Content-Length','0'))
                 if self.headers.get_content_type()!='application/json' or not 0<length<=2048:
@@ -385,10 +385,13 @@ class Handler(BaseHTTPRequestHandler):
                 phrase=data.get('text') if isinstance(data,dict) else None
                 if not isinstance(phrase,str) or not phrase.strip() or len(phrase)>500:
                     raise APIError(400,'Speech text must be 1–500 characters.')
+                selected_voice=data.get('voice','en-IN-NeerjaNeural')
+                allowed_voices={'en-IN-NeerjaNeural','en-IN-PrabhatNeural','en-US-AriaNeural','en-US-GuyNeural','en-GB-SoniaNeural','en-GB-RyanNeural','en-AU-NatashaNeural'}
+                if selected_voice not in allowed_voices: raise APIError(400,'Unsupported Edge voice.')
                 try:
                     import edge_tts
                     async def generate_edge():
-                        speech=edge_tts.Communicate(phrase,voice='en-IN-NeerjaNeural')
+                        speech=edge_tts.Communicate(phrase,voice=selected_voice)
                         audio=bytearray()
                         async for part in speech.stream():
                             if part['type']=='audio':
@@ -404,40 +407,6 @@ class Handler(BaseHTTPRequestHandler):
                     raise APIError(503,'Online Edge voice returned no audio.')
                 self.send_response(200)
                 self.send_header('Content-Type','audio/mpeg')
-                self.send_header('Content-Length',str(len(body)))
-                self.send_header('Cache-Control','no-store')
-                self.security_headers()
-                self.end_headers()
-                self.wfile.write(body)
-                return
-            if route == '/api/tts/alba':
-                length=int(self.headers.get('Content-Length','0'))
-                if self.headers.get_content_type()!='application/json' or not 0<length<=2048:
-                    raise APIError(400,'Invalid speech request.')
-                try:
-                    data=json.loads(self.rfile.read(length))
-                except (ValueError,UnicodeDecodeError):
-                    raise APIError(400,'Invalid speech JSON.')
-                phrase=data.get('text') if isinstance(data,dict) else None
-                if not isinstance(phrase,str) or not phrase.strip() or len(phrase)>500:
-                    raise APIError(400,'Speech text must be 1–500 characters.')
-                model=os.environ.get('PISHELF_PIPER_MODEL','/data/voices/en_GB-alba-medium.onnx')
-                if not Path(model).is_file():
-                    raise APIError(503,'Piper Alba model is not installed.')
-                with tempfile.TemporaryDirectory() as temp:
-                    output=Path(temp)/'speech.wav'
-                    try:
-                        subprocess.run(['piper','--model',model,'--output_file',str(output)],
-                                       input=phrase.encode('utf-8'),capture_output=True,timeout=35,check=True,
-                                       env={**os.environ,'OMP_NUM_THREADS':'1','OPENBLAS_NUM_THREADS':'1','MKL_NUM_THREADS':'1'},
-                                       **({'preexec_fn':lambda: os.nice(10)} if os.name=='posix' else {}))
-                    except (OSError,subprocess.SubprocessError):
-                        raise APIError(503,'Piper speech engine unavailable.')
-                    if not output.is_file() or output.stat().st_size>8*1024*1024:
-                        raise APIError(503,'Piper audio generation failed.')
-                    body=output.read_bytes()
-                self.send_response(200)
-                self.send_header('Content-Type','audio/wav')
                 self.send_header('Content-Length',str(len(body)))
                 self.send_header('Cache-Control','no-store')
                 self.security_headers()
