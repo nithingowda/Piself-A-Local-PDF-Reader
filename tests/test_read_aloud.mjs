@@ -112,3 +112,16 @@ test('headlines are preserved in speech extraction',async()=>{
  assert.match(app,/item\.hasEOL/);
  assert.match(epub,/h1,h2,h3,h4,h5,h6,p,blockquote,li/);
 });
+
+test('tap to read starts PDF at a selected text item',()=>{
+ assert.match(app,/async function readPdfFromTap\(event\)/);
+ assert.match(app,/pdfSpeechStart=\{page:targetPage,index\}/);
+ assert.match(app,/content\.items\.slice\(start\)/);
+ assert.match(app,/pdfSpeech\.play\(\)/);
+});
+test('EPUB text taps choose a heading or paragraph and preserve later content',()=>{
+ assert.match(epub,/onTextTap/);
+ assert.match(epub,/speechStartNode=block/);
+ assert.match(epub,/visible\.slice\(Math\.max\(0,start\)\)/);
+ assert.match(app,/onTextTap:async/);
+});

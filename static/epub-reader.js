@@ -26,7 +26,7 @@ const readerColors={
  night:{body:{background:'#1c1c1c',color:'#eee3d3'},a:{color:'#b7cdfa'}},
  amoled:{body:{background:'#000000',color:'#e6e6e6'},a:{color:'#a9cfff'}}
 };
-export async function createEpubReader({url,container,cfi,theme='light',fontSize=100,onLocation,onChapters,onStatus}){
+export async function createEpubReader({url,container,cfi,theme='light',fontSize=100,onLocation,onChapters,onStatus,onTextTap}){
  await loadEngine();
  const book=window.ePub(url);
  let dead=false,locationsReady=false,latestCfi='',lastPercentage=0;
@@ -51,6 +51,22 @@ export async function createEpubReader({url,container,cfi,theme='light',fontSize
   }
   onLocation({...progress,percentage:lastPercentage,locationsReady});
  }
+ // EPUB is rendered inside an iframe. Attach listeners when each chapter is displayed.
+ let speechStartNode=null;
+ rendition.on('rendered',()=>{
+  for(const content of rendition.getContents()||[]){
+   const doc=content.document;
+   if(!doc?.body||doc.body.dataset.pishelfTapToRead)return;
+   doc.body.dataset.pishelfTapToRead='1';
+   doc.addEventListener('click',event=>{
+    if(!event.isTrusted||event.target.closest('a,button,input,select,textarea'))return;
+    const block=event.target.closest('h1,h2,h3,h4,h5,h6,p,blockquote,li');
+    if(!block||!block.textContent?.trim())return;
+    speechStartNode=block;
+    onTextTap?.();
+   });
+  }
+ });
  rendition.on('relocated',emitLocation);
  setTheme(theme);setFontSize(fontSize);
  try{await rendition.display(cfi||undefined);}
@@ -80,8 +96,10 @@ export async function createEpubReader({url,container,cfi,theme='light',fontSize
     // DOM order includes h1–h6, which innerText can omit in some EPUB layouts.
     const blocks=body.querySelectorAll('h1,h2,h3,h4,h5,h6,p,blockquote,li');
     if(!blocks.length)return body.textContent||'';
-    return Array.from(blocks).filter(node=>!node.closest('nav,[hidden],[aria-hidden="true"]'))
-     .map(node=>node.textContent?.trim()||'').filter(Boolean).join('\n');
+    const visible=Array.from(blocks).filter(node=>!node.closest('nav,[hidden],[aria-hidden="true"]'));
+    const start=speechStartNode?visible.indexOf(speechStartNode):0;
+    speechStartNode=null;
+    return visible.slice(Math.max(0,start)).map(node=>node.textContent?.trim()||'').filter(Boolean).join('\n');
    }).filter(Boolean).join('\n').trim();
   },
   prev(){return rendition.prev();},

@@ -812,6 +812,36 @@ function speechState(kind,state){
  $(kind+'-read-pause').textContent=state.paused?'Resume':'Pause';
  // Keep the mini-player visible after errors or natural completion; only Close dismisses it.
 }
+// One-shot starting positions. Subsequent pages read from the beginning.
+let pdfSpeechStart=null;
+async function readPdfFromTap(event){
+ if(!documentPDF||!event.isTrusted||event.target.closest('button,a,input,select,textarea'))return;
+ const slot=event.target.closest('[data-page]');
+ if(!slot||!$('reader').contains(slot))return;
+ const targetPage=Number(slot.dataset.page);
+ if(!Number.isInteger(targetPage)||targetPage<1)return;
+ const rect=slot.getBoundingClientRect();
+ const pdfPage=await documentPDF.getPage(targetPage);
+ const viewport=pdfPage.getViewport({scale:1,rotation});
+ const items=(await pdfPage.getTextContent()).items.filter(item=>item.str?.trim());
+ if(!items.length){toast('This page has no selectable text for Read Aloud.');return;}
+ // Choose the nearest text line by vertical distance, then horizontal position.
+ const x=(event.clientX-rect.left)/rect.width*viewport.width;
+ const y=(event.clientY-rect.top)/rect.height*viewport.height;
+ let index=0,best=Infinity;
+ items.forEach((item,i)=>{
+  const pt=viewport.convertToViewportPoint(item.transform[4],item.transform[5]);
+  const distance=Math.abs(pt[1]-y)*2+Math.max(0,pt[0]-x,x-pt[0]-item.width);
+  if(distance<best){best=distance;index=i;}
+ });
+ pdfSpeech?.stop();
+ pdfSpeechStart={page:targetPage,index};
+ if(page!==targetPage)move(targetPage);
+ await startPdfSpeech();
+ speechPlayer('pdf',true);
+ pdfSpeech.play();
+}
+$('pages').addEventListener('click',event=>{void readPdfFromTap(event);});
 async function startPdfSpeech(){
  const {createReadAloud}=await speechEngine();
  if(pdfSpeech)return;
@@ -822,7 +852,9 @@ async function startPdfSpeech(){
    const pdfPage=await documentPDF.getPage(page);
    const content=await pdfPage.getTextContent();
    // PDF.js marks line endings; preserve them so headlines are read separately.
-   return content.items.map(item=>(item.str||'')+(item.hasEOL?'\n':' ')).join('').trim();
+   const start=pdfSpeechStart?.page===page?pdfSpeechStart.index:0;
+   pdfSpeechStart=null;
+   return content.items.slice(start).map(item=>(item.str||'')+(item.hasEOL?'\n':' ')).join('').trim();
   },
   async next(){if(!documentPDF||page>=documentPDF.numPages)return false;move(page+1);return true;},
   onState:state=>speechState('pdf',state)
@@ -876,6 +908,13 @@ async function openEpubBook(item,start){
    url:pdfURL(item),container:$('epub-page'),
    cfi:start===1?'':initial.epubCfi||'',
    theme:prefs.epubTheme||'light',fontSize:prefs.epubFontSize||100,
+   onTextTap:async()=>{
+    if(g!==epubGeneration)return;
+    await startEpubSpeech();
+    epubSpeech.stop();
+    speechPlayer('epub',true);
+    epubSpeech.play();
+   },
    onLocation:update=>{
     if(g!==epubGeneration)return;
     const {percentage,locationsReady,...patch}=update;
