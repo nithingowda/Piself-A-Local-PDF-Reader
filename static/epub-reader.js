@@ -68,6 +68,8 @@ export async function createEpubReader({url,container,cfi,theme='light',fontSize
    });
    doc.addEventListener('click',event=>{
     if(!canSelectSpeechText()||!event.isTrusted||event.target.closest('a,button,input,select,textarea'))return;
+    // A drag-selected phrase wins over the clicked paragraph.
+    if(doc.defaultView?.getSelection()?.toString()?.trim())return;
     const block=event.target.closest('h1,h2,h3,h4,h5,h6,p,blockquote,li');
     if(!block||!block.textContent?.trim())return;
     selectedSpeechBlock?.classList.remove('pishelf-tap-selected');
