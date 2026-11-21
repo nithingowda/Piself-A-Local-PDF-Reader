@@ -183,3 +183,14 @@ test('a wrapped sentence continues into the next column but stops at a sidebar',
  assert.equal(passage.id,'0,1,2');
  assert.equal(passage.text.includes('The debate'),false);
 });
+
+test('selection crosses a full stop and a capitalized start in the next article column',()=>{
+ const body=(str,x,y,id,column,region)=>({...line(str,x,y,id),fontName:'body',readingColumn:column,readingRegion:region});
+ const groups=numberedPdfParagraphs([
+  body('Solar generation doubled.',30,580,0,0,0),
+  body('India added new capacity.',220,110,1,1,0),
+  body('2025 saw further growth.',420,65,2,2,0),
+  body('The debate over global warming',420,110,3,2,1)
+ ],viewport);
+ assert.equal(paragraphAtPoint(groups,40,576,viewport).id,'0,1,2');
+});
