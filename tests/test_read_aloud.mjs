@@ -422,7 +422,11 @@ test('stacked Physics and Health articles read separately before advancing down-
  assert.ok(physicsLast<healthStart,'finish all four Physics columns before starting Health');
  assert.ok(healthStart<healthBody);
  assert.ok(body.indexOf('Physics column 1 line 25.')<body.indexOf('Physics column 2 line 1.'));
+ assert.ok(body.indexOf('Physics column 2 line 25.')<body.indexOf('Physics column 3 line 1.'));
+ assert.ok(body.indexOf('Physics column 3 line 25.')<body.indexOf('Physics column 4 line 1.'));
  assert.ok(body.indexOf('Health column 1 line 9.')<body.indexOf('Health column 2 line 1.'));
+ assert.ok(body.indexOf('Health column 2 line 9.')<body.indexOf('Health column 3 line 1.'));
+ assert.ok(body.indexOf('Health column 3 line 9.')<body.indexOf('Health column 4 line 1.'));
  const distinct=new Set(ordered.map(part=>part.readingRegion));
  assert.ok(distinct.size>=2,'stacked stories must have separate reading regions');
  const measured=raw.map((fragment,sourceIndex)=>({
