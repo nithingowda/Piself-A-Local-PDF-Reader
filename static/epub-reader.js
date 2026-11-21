@@ -26,7 +26,7 @@ const readerColors={
  night:{body:{background:'#1c1c1c',color:'#eee3d3'},a:{color:'#b7cdfa'}},
  amoled:{body:{background:'#000000',color:'#e6e6e6'},a:{color:'#a9cfff'}}
 };
-export async function createEpubReader({url,container,cfi,theme='light',fontSize=100,onLocation,onChapters,onStatus,onTextTap,canSelectSpeechText=()=>false}){
+export async function createEpubReader({url,container,cfi,theme='light',fontSize=100,onLocation,onChapters,onStatus,onTextTap,onSelection,canSelectSpeechText=()=>false}){
  await loadEngine();
  const book=window.ePub(url);
  let dead=false,locationsReady=false,latestCfi='',lastPercentage=0;
@@ -52,7 +52,7 @@ export async function createEpubReader({url,container,cfi,theme='light',fontSize
   onLocation({...progress,percentage:lastPercentage,locationsReady});
  }
  // EPUB is rendered inside an iframe. Attach listeners when each chapter is displayed.
- let speechStartNode=null,selectedSpeechBlock=null;
+ let selectedSpeechBlock=null;
  rendition.on('rendered',()=>{
   for(const content of rendition.getContents()||[]){
    const doc=content.document;
@@ -61,6 +61,11 @@ export async function createEpubReader({url,container,cfi,theme='light',fontSize
    const style=doc.createElement('style');
    style.textContent='.pishelf-tap-selected{outline:2px solid #ed9a19!important;background:rgba(255,193,54,.3)!important;border-radius:3px}';
    doc.head?.append(style);
+   doc.addEventListener('selectionchange',()=>{
+    if(!canSelectSpeechText())return;
+    const selected=doc.defaultView?.getSelection()?.toString()?.trim();
+    if(selected)onSelection?.(selected);
+   });
    doc.addEventListener('click',event=>{
     if(!canSelectSpeechText()||!event.isTrusted||event.target.closest('a,button,input,select,textarea'))return;
     const block=event.target.closest('h1,h2,h3,h4,h5,h6,p,blockquote,li');
@@ -68,8 +73,7 @@ export async function createEpubReader({url,container,cfi,theme='light',fontSize
     selectedSpeechBlock?.classList.remove('pishelf-tap-selected');
     selectedSpeechBlock=block;
     block.classList.add('pishelf-tap-selected');
-    speechStartNode=block;
-    onTextTap?.();
+    onTextTap?.(block.textContent.trim());
    });
   }
  });
@@ -94,20 +98,6 @@ export async function createEpubReader({url,container,cfi,theme='light',fontSize
  }).catch(()=>{if(!dead)onStatus('Reading is available; percentage navigation is unavailable for this EPUB.');});
  return {
   next(){return rendition.next();},
-  async readAloudNext(){const before=rendition.currentLocation()?.start?.cfi;await rendition.next();const after=rendition.currentLocation()?.start?.cfi;return Boolean(after&&after!==before);},
-  readAloudText(){
-   const contents=rendition.getContents();
-   return (contents||[]).map(c=>{
-    const body=c.document?.body;if(!body)return '';
-    // DOM order includes h1–h6, which innerText can omit in some EPUB layouts.
-    const blocks=body.querySelectorAll('h1,h2,h3,h4,h5,h6,p,blockquote,li');
-    if(!blocks.length)return body.textContent||'';
-    const visible=Array.from(blocks).filter(node=>!node.closest('nav,[hidden],[aria-hidden="true"]'));
-    const start=speechStartNode?visible.indexOf(speechStartNode):0;
-    if(speechStartNode&&start>=0){speechStartNode.classList.add('pishelf-tap-selected');speechStartNode=null;}
-    return visible.slice(Math.max(0,start)).map(node=>node.textContent?.trim()||'').filter(Boolean).join('\n');
-   }).filter(Boolean).join('\n').trim();
-  },
   prev(){return rendition.prev();},
   display(location){return rendition.display(location);},
   goPercent(percent){
