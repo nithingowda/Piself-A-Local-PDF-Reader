@@ -59,7 +59,7 @@ export async function createEpubReader({url,container,cfi,theme='light',fontSize
    if(!doc?.body||doc.body.dataset.pishelfTapToRead)return;
    doc.body.dataset.pishelfTapToRead='1';
    const style=doc.createElement('style');
-   style.textContent='.pishelf-tap-selected{outline:2px solid #ed9a19!important;background:rgba(255,193,54,.3)!important;border-radius:3px}.pishelf-numbered-paragraph{position:relative;outline:2px solid #f0a620!important;background:rgba(255,193,54,.19)!important}.pishelf-numbered-paragraph::before{content:attr(data-pishelf-paragraph-number);position:absolute;top:0;left:0;transform:translate(-95%,-25%);background:#e6a017;color:#111;padding:1px 6px;border-radius:99px;font-size:12px;line-height:18px;font-weight:700}';
+   style.textContent='.pishelf-tap-selected{outline:2px solid #ed9a19!important;background:rgba(255,193,54,.3)!important;border-radius:3px}.pishelf-numbered-paragraph{position:relative;outline:2px solid #f0a620!important;background:rgba(255,193,54,.19)!important}.pishelf-numbered-paragraph.pishelf-speaking{outline-color:#2697bc!important;background:rgba(44,190,242,.42)!important}.pishelf-numbered-paragraph::before{content:attr(data-pishelf-paragraph-number);position:absolute;top:0;left:0;transform:translate(-95%,-25%);background:#e6a017;color:#111;padding:1px 6px;border-radius:99px;font-size:12px;line-height:18px;font-weight:700}';
    doc.head?.append(style);
    doc.addEventListener('click',event=>{
     if(!canSelectSpeechText()||!event.isTrusted||event.target.closest('a,button,input,select,textarea'))return;

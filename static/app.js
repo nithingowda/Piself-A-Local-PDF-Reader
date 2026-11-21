@@ -747,7 +747,7 @@ function numberedPanel(kind){
  panel.querySelector('.numbered-clear').onclick=()=>{
   (kind==='pdf'?pdfSpeech:epubSpeech)?.stop();
   numberedPlayback[kind]=false;
-  for(const entry of numberedParagraphs[kind])if(entry.node){entry.node.classList.remove('pishelf-numbered-paragraph');entry.node.removeAttribute('data-pishelf-paragraph-number');}
+  for(const entry of numberedParagraphs[kind])if(entry.node){entry.node.classList.remove('pishelf-numbered-paragraph','pishelf-speaking');entry.node.removeAttribute('data-pishelf-paragraph-number');}
   numberedParagraphs[kind]=[];numberedCursor[kind]=0;
   renderNumberedPanel(kind);
  };
@@ -755,7 +755,7 @@ function numberedPanel(kind){
 }
 function resetNumberedParagraphs(kind){
  numberedPlayback[kind]=false;numberedPickMode[kind]=false;
- for(const entry of numberedParagraphs[kind])if(entry.node){entry.node.classList.remove('pishelf-numbered-paragraph');entry.node.removeAttribute('data-pishelf-paragraph-number');}
+ for(const entry of numberedParagraphs[kind])if(entry.node){entry.node.classList.remove('pishelf-numbered-paragraph','pishelf-speaking');entry.node.removeAttribute('data-pishelf-paragraph-number');}
  numberedParagraphs[kind]=[];numberedCursor[kind]=0;
  const panel=$(kind+'-numbered-paragraphs');
  if(panel)panel.hidden=true;
@@ -766,6 +766,7 @@ function renderNumberedMarkers(){
  if(!$('pages'))return;
  $('pages').querySelectorAll('.numbered-pick-overlay').forEach(node=>node.remove());
  numberedParagraphs.pdf.forEach((entry,index)=>{
+  if(numberedPlayback.pdf&&index<numberedCursor.pdf)return;
   const slot=Array.from($('pages').querySelectorAll('[data-page]')).find(el=>+el.dataset.page===entry.page);
   if(!slot)return;
   const overlay=document.createElement('div');
@@ -791,7 +792,8 @@ function renderNumberedPanel(kind){
  const items=numberedParagraphs[kind];
  items.forEach((entry,index)=>{
   if(entry.node){
-   entry.node.classList.add('pishelf-numbered-paragraph');
+   entry.node.classList.toggle('pishelf-numbered-paragraph',!numberedPlayback[kind]||index>=numberedCursor[kind]);
+   entry.node.classList.toggle('pishelf-speaking',numberedPlayback[kind]&&index===numberedCursor[kind]);
    entry.node.setAttribute('data-pishelf-paragraph-number',String(index+1));
   }
   const li=document.createElement('li');
@@ -811,7 +813,7 @@ function renderNumberedPanel(kind){
   action('✕',false,()=>{
    (kind==='pdf'?pdfSpeech:epubSpeech)?.stop();
    numberedPlayback[kind]=false;
-   if(entry.node){entry.node.classList.remove('pishelf-numbered-paragraph');entry.node.removeAttribute('data-pishelf-paragraph-number');}
+   if(entry.node){entry.node.classList.remove('pishelf-numbered-paragraph','pishelf-speaking');entry.node.removeAttribute('data-pishelf-paragraph-number');}
    items.splice(index,1);renderNumberedPanel(kind);
   });
   li.append(label,text,controls);list.append(li);
@@ -850,7 +852,7 @@ async function playNumberedParagraphs(kind){
  try{
   if(kind==='pdf')await startPdfSpeech();else await startEpubSpeech();
   const controller=kind==='pdf'?pdfSpeech:epubSpeech;
-  controller.stop();numberedPlayback[kind]=true;numberedCursor[kind]=0;
+  numberedPlayback[kind]=false;controller.stop();numberedPlayback[kind]=true;numberedPickMode[kind]=true;numberedCursor[kind]=0;
   const first=numberedParagraphs[kind][0];
   if(kind==='pdf'){pdfSpeechPage=first.page;showPdfSpeechPage(first.page);}
   speechPlayer(kind,true);renderNumberedPanel(kind);
@@ -987,7 +989,7 @@ function speechState(kind,state){
     'Reading paragraph '+(numberedCursor[kind]+1)+' of '+numberedParagraphs[kind].length;
    return;
   }
-  if(state.active===false){numberedPlayback[kind]=false;renderNumberedPanel(kind);}
+  if(state.active===false){resetNumberedParagraphs(kind);renderNumberedPanel(kind);}
  }
  if(state.spokenText!==undefined){
   if(kind==='pdf')void markPdfReading(state.spokenText,state.readingOffset||0,state.readingLength||0);
