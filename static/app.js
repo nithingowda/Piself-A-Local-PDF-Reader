@@ -768,6 +768,20 @@ $('back').onclick=closeReader;$('prev').onclick=()=>turnFromControl(-1);$('next'
  * a fractional anchor afterwards to avoid jumping left or losing the paragraph.
  * Two-finger pinch geometry is intentionally separate and unchanged.
  */
+// A lightweight overlay: update text only when the rounded percentage changes.
+// A single timeout handles dismissal; no reflow or PDF redraw is needed.
+let zoomBadgeTimer=0,zoomBadgePercent=null;
+function showZoomBadge(value=zoom){
+ if(!documentPDF)return;
+ const badge=$('reader-zoom-badge');
+ if(!badge)return;
+ const percent=Math.round(value*100);
+ if(!Number.isFinite(percent))return;
+ if(percent!==zoomBadgePercent){badge.textContent=percent+'%';zoomBadgePercent=percent;}
+ badge.classList.add('visible');
+ clearTimeout(zoomBadgeTimer);
+ zoomBadgeTimer=setTimeout(()=>{badge.classList.remove('visible');zoomBadgeTimer=0;},2000);
+}
 async function zoomWithControls(targetZoom){
  automaticFit=null;
  if(!documentPDF||pinch||!layoutReady)return;
@@ -795,6 +809,7 @@ async function zoomWithControls(targetZoom){
  if(Math.abs(next-zoom)<0.001&&!fits)return;
  const original=documentPDF,g=generation;
  page=anchor.number;zoom=next;
+ if(typeof showZoomBadge==='function')showZoomBadge(next);
  pinchScrollLockUntil=performance.now()+500;
  await rebuild();
  if(g!==generation||documentPDF!==original)return;
@@ -818,6 +833,7 @@ $('fit-height').onclick=()=>{
  if(!documentPDF)return;
  if($('view-mode').value!=='single')$('view-mode').value='single';
  automaticFit='height';rebuild();
+ showZoomBadge(heightFitZoom(page));
 };
 function fitWidthZoom(){
  const area=$('page-area');
@@ -912,6 +928,7 @@ function finishPinch(cancelled=false){
  // Capture the PDF point under the fingers before modifying layout.
  const fx=state.fx,fy=state.fy;
  automaticFit=null;zoom=next;page=isBookSpread()?spreadStart(state.page):state.page;
+ showZoomBadge(next);
  // Resize the actual page boxes. CSS zoom on the entire pages wrapper
  // creates a large scrollable gutter in iOS Safari and breaks pinch-out.
  $('pages').style.zoom='';
@@ -956,6 +973,7 @@ $('page-area').addEventListener('touchmove',e=>{
  const point=touchPair(e.touches);pinch.nextZoom=Math.max(fitEntirePageZoom(pinch.page),Math.min(Math.max(3,pinch.startZoom),pinch.startZoom*point.distance/pinch.distance));pinch.x=point.x;pinch.y=point.y;
  if(!pinchFrame)pinchFrame=requestAnimationFrame(()=>{
   pinchFrame=0;if(!pinch)return;
+  showZoomBadge(pinch.nextZoom);
   const slot=pinch.slot,area=$('page-area');
   const scale=pinch.nextZoom/pinch.startZoom;
   let dx=pinch.x-pinch.startX,dy=pinch.y-pinch.startY;
