@@ -391,7 +391,9 @@ class Handler(BaseHTTPRequestHandler):
                     output=Path(temp)/'speech.wav'
                     try:
                         subprocess.run(['piper','--model',model,'--output_file',str(output)],
-                                       input=phrase.encode('utf-8'),capture_output=True,timeout=35,check=True)
+                                       input=phrase.encode('utf-8'),capture_output=True,timeout=35,check=True,
+                                       env={**os.environ,'OMP_NUM_THREADS':'1','OPENBLAS_NUM_THREADS':'1','MKL_NUM_THREADS':'1'},
+                                       **({'preexec_fn':lambda: os.nice(10)} if os.name=='posix' else {}))
                     except (OSError,subprocess.SubprocessError):
                         raise APIError(503,'Piper speech engine unavailable.')
                     if not output.is_file() or output.stat().st_size>8*1024*1024:
