@@ -303,6 +303,7 @@ body.epub-open{overflow:hidden}
 #epub-reader.speech-immersive #epub-page{min-height:0;flex:1}
 
 /* Temporary read-aloud pointer, independent of saved annotations. */
+.speech-page-highlight{position:absolute;z-index:8;pointer-events:none;background:rgba(251,247,25,.52);border-radius:2px;mix-blend-mode:multiply;transition:opacity .2s}
 ::highlight(pishelf-reading){background:rgba(251,247,25,.65);color:inherit}
 
 /* Liquid-glass controls: compositor-only blur, no animated backdrop or expensive filters. */
@@ -326,30 +327,13 @@ body.epub-open{overflow:hidden}
 .speech-floating-player .read-aloud-panel{color:#fff;background:rgba(15,24,36,.85);border-radius:12px;padding:8px}
 
 /* Visible tap-to-read selection; does not block clicks or swipes. */
+.speech-tap-selection{position:absolute;z-index:9;pointer-events:none;border-radius:3px;background:rgba(255,192,45,.38);outline:2px solid rgba(255,153,0,.95);box-shadow:0 0 0 3px rgba(255,255,255,.35)}
 
 /* Small prompt shown only while choosing where Read Aloud should begin. */
+.speech-pick-notice:not([hidden]){position:fixed;z-index:9999;left:50%;top:16px;transform:translateX(-50%);max-width:calc(100vw - 24px);display:flex;align-items:center;gap:12px;padding:10px 14px;border:1px solid rgba(255,255,255,.35);border-radius:16px;background:rgba(28,36,48,.88);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);color:#fff;font-size:13px;box-shadow:0 6px 24px #0004}
+.speech-pick-notice button{background:rgba(255,255,255,.18);color:inherit;border:1px solid #ffffff55;border-radius:9px;padding:5px 10px;cursor:pointer}
+.speech-picking #pages [data-page]{cursor:text}
 
 /* The spoken paragraph spans several PDF text items on top of the WebP page. */
-
-
-
-/* Manual, user-controlled read-aloud queue; visible on PDF and EPUB readers. */
-.speech-queue-panel[hidden]{display:none!important}
-.speech-queue-panel:not([hidden]){position:fixed;top:60px;right:12px;z-index:125;display:flex;flex-direction:column;gap:9px;width:min(390px,calc(100vw - 24px));max-height:min(72vh,680px);overflow:auto;padding:14px;border:1px solid rgba(255,255,255,.35);border-radius:18px;background:rgba(23,30,42,.91);color:#fff;box-shadow:0 12px 40px rgba(0,0,0,.3);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);font-size:13px}
-.speech-queue-panel .speech-queue-heading,.speech-queue-panel .speech-queue-actions,.speech-queue-entry-actions{display:flex;align-items:center;justify-content:space-between;gap:7px}
-.speech-queue-panel button{border:1px solid rgba(255,255,255,.32);background:rgba(255,255,255,.13);color:inherit;border-radius:9px;padding:5px 9px;cursor:pointer;font:inherit}
-.speech-queue-panel button:disabled{opacity:.38;cursor:default}
-.speech-queue-panel textarea{display:block;width:100%;box-sizing:border-box;resize:vertical;background:rgba(4,10,20,.62);border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:9px;padding:8px;font:inherit;line-height:1.5}
-.speech-queue-panel textarea:focus-visible,.speech-queue-panel button:focus-visible{outline:2px solid #ffc940;outline-offset:2px}
-.speech-queue-panel .speech-queue-instructions,.speech-queue-panel .speech-queue-status{margin:0;line-height:1.45;color:rgba(255,255,255,.85)}
-.speech-queue-panel .speech-queue-draft-label{display:block}
-.speech-queue-list{list-style:none;margin:0;padding:0;display:grid;gap:7px;max-height:29vh;overflow:auto}
-.speech-queue-entry{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.2);border-radius:10px;padding:8px;display:grid;gap:6px}
-.speech-queue-entry.is-current{border-color:#ffc940}
-.speech-queue-entry-actions{justify-content:flex-end}
-.speech-queue-entry-actions strong{margin-right:auto;font-size:12px}
-.speech-queue-entry textarea{min-height:46px}
-.speech-manual-selection{position:absolute;z-index:9;pointer-events:none;border:2px solid rgba(255,188,33,.95);border-radius:3px;background:rgba(255,195,42,.3);box-sizing:border-box}
-.speech-selecting-pdf #page-area{touch-action:none!important;user-select:none;-webkit-user-select:none}
-.speech-selecting-pdf #page-area .pdf-slot{cursor:crosshair}
-@media(max-width:600px){.speech-queue-panel:not([hidden]){top:10px;right:8px;padding:10px;width:min(330px,calc(100vw - 16px));max-height:48vh}.speech-queue-list{max-height:19vh}}
+.speech-paragraph-overlay{position:absolute;inset:0;z-index:8;pointer-events:none}
+.speech-paragraph-overlay .speech-page-highlight{background:rgba(251,247,25,.32);transition:none}
