@@ -284,12 +284,19 @@ class Handler(BaseHTTPRequestHandler):
                 salt=secrets.token_bytes(24)
                 db.execute('INSERT INTO library_path_pin VALUES (1,?,?)',(salt,hashlib.pbkdf2_hmac('sha256',pin.encode(),salt,600000)))
             self.json_response({'ok':True});return
+        if route in ('/api/admin/paths/verify','/api/admin/paths'):
+            ip=self.client_address[0]
+            with self.server.auth_lock:
+                attempts=[t for t in self.server.auth_attempts.get('pin:'+ip,[]) if t>time.time()-900]
+                self.server.auth_attempts['pin:'+ip]=attempts
+                if len(attempts)>=5: raise APIError(429,'Too many incorrect PIN attempts. Try again in 15 minutes.')
         if route=='/api/admin/paths/verify':
             with sqlite3.connect(self.server.state_db) as db:
                 db.execute('CREATE TABLE IF NOT EXISTS library_path_pin (id INTEGER PRIMARY KEY CHECK(id=1),salt BLOB NOT NULL,hash BLOB NOT NULL)')
                 row=db.execute('SELECT salt,hash FROM library_path_pin WHERE id=1').fetchone()
                 pin=data.get('pin')
                 if not row or not isinstance(pin,str) or not re.fullmatch(r'[0-9]{6}',pin) or not hmac.compare_digest(hashlib.pbkdf2_hmac('sha256',pin.encode(),row[0],600000),row[1]):
+                    with self.server.auth_lock: self.server.auth_attempts['pin:'+self.client_address[0]].append(time.time())
                     raise APIError(403,'Invalid access PIN.')
             self.json_response({'ok':True});return
         if route=='/api/admin/paths':
