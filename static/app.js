@@ -225,7 +225,7 @@ function bookPageBaseWidth(){
 let automaticFit=null;
 function defaultPagedFit(){
  const mode=$('view-mode').value;
- return mode==='single'||mode==='book'?'page':null;
+ return mode==='scroll'?'width':'page';
 }
 function heightFitZoom(n){
  const d=dimensions.get(n)||dimensions.get(1);
@@ -472,7 +472,7 @@ async function rebuild(){if(!documentPDF)return;cancelAllSharpImages();$('pages'
   const fittedPage=page;
   await primeSpreadDimensions(isBookSpread()?spreadPages(page):[page]);
   if(g!==generation||epoch!==layoutEpoch||page!==fittedPage)return;
-  zoom=automaticFit==='height'?heightFitZoom(page):fitEntirePageZoom(page);
+  zoom=automaticFit==='height'?heightFitZoom(page):automaticFit==='width'?fitWidthZoom():fitEntirePageZoom(page);
   cssZoomBase=zoom;updateTouchMode();
  }
  if(g!==generation||epoch!==layoutEpoch)return;
@@ -646,7 +646,7 @@ async function openMagazine(item,start){
   if(isBookSpread())await primeSpreadDimensions(spreadPages(page),doc,g);
   if(g!==generation||documentPDF!==doc)return;
   // Start with the entire page visible and a small margin on every side.
-  automaticFit=defaultPagedFit();zoom=fitEntirePageZoom(page);
+  automaticFit=defaultPagedFit();zoom=automaticFit==='width'?fitWidthZoom():fitEntirePageZoom(page);
   await rebuild();$('page-area').focus({preventScroll:true});
   // Read remaining dimensions in the background. Adjust slot heights while
   // preserving the reader's current scroll anchor when pages above it change.
@@ -802,7 +802,7 @@ async function zoomWithControls(targetZoom){
   x:Math.max(0,Math.min(1,(centerX-rect.left)/Math.max(1,rect.width))),
   y:Math.max(0,Math.min(1,(centerY-rect.top)/Math.max(1,rect.height)))
  };
- const minimum=fitEntirePageZoom(anchor.number);
+ const minimum=!spreadMode&&$('view-mode').value==='scroll'&&typeof fitWidthZoom==='function'?fitWidthZoom():fitEntirePageZoom(anchor.number);
  const next=Math.max(minimum,Math.min(3,Number(targetZoom)));
  if(!Number.isFinite(next))return;
  const fits=spreadMode&&next<=minimum+0.001;
@@ -928,7 +928,7 @@ function finishPinch(cancelled=false){
  suppressTapUntil=performance.now()+500;
  lastTap=null;gestureStart=null;gesturePointers.clear();
  if(cancelled||!documentPDF||state.g!==generation)return;
- const minimum=fitEntirePageZoom(state.page);
+ const minimum=$('view-mode').value==='scroll'?fitWidthZoom():fitEntirePageZoom(state.page);
  const next=Math.max(minimum,Math.min(Math.max(3,state.startZoom),Math.round(state.nextZoom*100)/100));
  const slot=slots.find(s=>+s.dataset.page===state.page),area=$('page-area');
  if(!slot)return;
@@ -986,7 +986,7 @@ $('page-area').addEventListener('touchstart',e=>{
 },{passive:false});
 $('page-area').addEventListener('touchmove',e=>{
  if(!pinch)return;e.preventDefault();if(e.touches.length!==2)return;
- const point=touchPair(e.touches);pinch.nextZoom=Math.max(fitEntirePageZoom(pinch.page),Math.min(Math.max(3,pinch.startZoom),pinch.startZoom*point.distance/pinch.distance));pinch.x=point.x;pinch.y=point.y;
+ const point=touchPair(e.touches);pinch.nextZoom=Math.max($('view-mode').value==='scroll'?fitWidthZoom():fitEntirePageZoom(pinch.page),Math.min(Math.max(3,pinch.startZoom),pinch.startZoom*point.distance/pinch.distance));pinch.x=point.x;pinch.y=point.y;
  if(!pinchFrame)pinchFrame=requestAnimationFrame(()=>{
   pinchFrame=0;if(!pinch)return;
   showZoomBadge(pinch.nextZoom);
