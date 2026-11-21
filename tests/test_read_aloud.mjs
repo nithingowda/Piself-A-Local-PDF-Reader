@@ -252,3 +252,33 @@ test('PDF overlays highlight a complete spoken passage without per-word DOM upda
  assert.match(app,/overlay\.childElementCount>=120/);
  assert.match(css,/\.speech-paragraph-overlay/);
 });
+
+test('punctuation cleanup preserves quotes, commas, stops and decimal numbers',async()=>{
+ const {normalizeSpeechText,splitSpeechChunks}=await import('../static/read-aloud.js');
+ const original='  “ Hello , world ! ”  Dr. Rao said , “ The value is 3 . 14 . ” \n\n Next paragraph , really ?  ';
+ const expected='“Hello, world!” Dr. Rao said, “The value is 3.14.”\nNext paragraph, really?';
+ assert.equal(normalizeSpeechText(original),expected);
+ assert.deepEqual(splitSpeechChunks(original),[
+  '“Hello, world!” Dr. Rao said, “The value is 3.14.”',
+  'Next paragraph, really?'
+ ]);
+});
+test('punctuation-aware chunks never insert spaces inside abbreviations or decimals',async()=>{
+ const {normalizeSpeechText,splitSpeechChunks}=await import('../static/read-aloud.js');
+ const paragraph=('Dr. Rao measured 3.14 metres, then said, “It is correct.” ').repeat(12).trim();
+ const chunks=splitSpeechChunks(paragraph);
+ assert.ok(chunks.length>1);
+ assert.ok(chunks.every(chunk=>chunk.length<=440&&chunk.length>0));
+ assert.equal(chunks.join(' '),normalizeSpeechText(paragraph));
+ assert.ok(chunks.every(chunk=>!chunk.endsWith('Dr.')));
+ assert.ok(chunks.some(chunk=>chunk.endsWith('.”')));
+});
+test('full paragraphs group several sentences into a single naturally paced clip',async()=>{
+ const {splitSpeechChunks}=await import('../static/read-aloud.js');
+ const speech='The headline is here.\nBREAK open the bubbly, light the candles, and get ready to party. “New Scientist is 70 years old!” This is its first issue in 1956.\nThe next paragraph starts now.';
+ assert.deepEqual(splitSpeechChunks(speech),[
+  'The headline is here.',
+  'BREAK open the bubbly, light the candles, and get ready to party. “New Scientist is 70 years old!” This is its first issue in 1956.',
+  'The next paragraph starts now.'
+ ]);
+});
