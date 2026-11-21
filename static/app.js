@@ -703,7 +703,7 @@ async function startPdfSpeech(){
    const content=await pdfPage.getTextContent();
    return content.items.map(x=>x.str||'').join(' ');
   },
-  async next(){return false;},
+  async next(){if(!documentPDF||page>=documentPDF.numPages)return false;move(page+1);return true;},
   onState:state=>speechState('pdf',state)
  });
  wireSpeech('pdf',pdfSpeech);
@@ -713,7 +713,7 @@ async function startEpubSpeech(){
  if(epubSpeech)return;
  epubSpeech=createReadAloud({
   getText(){return epubController?.readAloudText()||'';},
-  next(){return false;},
+  next(){return epubController?.readAloudNext()||false;},
   onState:state=>speechState('epub',state)
  });
  wireSpeech('epub',epubSpeech);
