@@ -3,7 +3,13 @@ import {pdfSpeechLayout} from './pdf-reading-order.js';
 // Turn the existing PDF.js text layout into independent selectable passages.
 // Coordinates are normalized to the PDF viewport and work on WebP previews.
 export function numberedPdfParagraphs(ordered,viewport){
- const {text,spans}=pdfSpeechLayout(ordered);
+ const measured=ordered.map((item,index)=>{
+  if(Number.isFinite(item.x)&&Number.isFinite(item.y))return item;
+  const [x,y]=viewport.convertToViewportPoint(item.transform[4],item.transform[5]);
+  return {...item,x,y,sourceIndex:item.sourceIndex??index,boxHeight:Math.abs(item.height||12),
+   boxWidth:Math.abs(item.width||20),readingColumn:item.readingColumn??0,readingRegion:item.readingRegion??0};
+ });
+ const {text,spans}=pdfSpeechLayout(measured);
  if(!text.trim()||!viewport.width||!viewport.height)return [];
  const groups=[];
  let start=0;
