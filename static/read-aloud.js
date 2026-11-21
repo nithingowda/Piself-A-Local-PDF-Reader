@@ -1,9 +1,9 @@
 /* Local browser text-to-speech. No audio or document content is sent to PiShelf. */
 export function createReadAloud({getText,next,onState}){
  const synth=window.speechSynthesis;
- let active=false,paused=false,token=0,voice='piper-alba',rate=1,utterance=null,audio=null,abort=null;
+ let active=false,paused=false,token=0,voice='piper-alba',rate=1,utterance=null,audio=null,abort=null,seekAudio=null;
  const notify=()=>onState?.({active,paused,rate,voice});
- function stop(){++token;active=false;paused=false;utterance=null;abort?.abort();abort=null;if(audio){audio.pause();audio.src='';audio=null;}synth?.cancel();notify();}
+ function stop(){++token;active=false;paused=false;utterance=null;abort?.abort();abort=null;if(audio){audio.pause();audio.src='';audio=null;}seekAudio=null;synth?.cancel();notify();}
  async function speakNext(t){
   if(!active||t!==token)return;
   let text='';
@@ -25,6 +25,7 @@ export function createReadAloud({getText,next,onState}){
      if(!response.ok)throw Error('Piper Alba unavailable');
      const blob=await response.blob();if(!active||t!==token)return;
      const url=URL.createObjectURL(blob);const player=new Audio(url);audio=player;player.playbackRate=rate;
+     if(seekAudio!==null){player.addEventListener('loadedmetadata',()=>{player.currentTime=Math.max(0,Math.min(player.duration||0,seekAudio));seekAudio=null;},{once:true});}
      player.onended=()=>{URL.revokeObjectURL(url);audio=null;if(active&&t===token)void say();};
      player.onerror=()=>{URL.revokeObjectURL(url);stop();onState?.({error:'Could not play Piper audio.'});};
      await player.play();return;
@@ -45,7 +46,18 @@ export function createReadAloud({getText,next,onState}){
   active=true;paused=false;const t=++token;notify();void speakNext(t);
  }
  function pause(){if(!active||paused)return;if(audio)audio.pause();else synth.pause();paused=true;notify();}
+ function seek(seconds){
+  if(!active)return;
+  if(audio&&Number.isFinite(audio.duration)){
+   const target=audio.currentTime+seconds;
+   if(target>=0&&target<audio.duration){audio.currentTime=target;return;}
+   if(target<0){audio.currentTime=0;return;}
+   audio.currentTime=Math.max(0,audio.duration-.05);return;
+  }
+  // Browser SpeechSynthesis has no reliable time-based seek API.
+  onState?.({error:'10-second seeking requires the Piper AI voice.'});
+ }
  function setRate(value){rate=Math.max(.5,Math.min(2,Number(value)||1));if(active){stop();play();}else notify();}
  function setVoice(value){voice=value;if(active){stop();play();}else notify();}
- return {play,pause,stop,setRate,setVoice,get active(){return active;},get paused(){return paused;}};
+ return {play,pause,stop,seek,setRate,setVoice,get active(){return active;},get paused(){return paused;}};
 }
