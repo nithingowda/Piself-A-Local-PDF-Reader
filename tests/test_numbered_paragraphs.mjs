@@ -154,3 +154,17 @@ test('one tap selects all remaining contiguous body paragraphs before a sidebar'
  assert.deepEqual(passage.text.split('\n'),lines.slice(2,10).map(item=>item.str));
  assert.equal(passage.boxes.length,8);
 });
+
+test('opening Read prepares selection without starting narration',async()=>{
+ const source=app.slice(app.indexOf('async function beginSpeechPick(kind)'),app.indexOf('async function readPdfFromTap'));
+ for(const kind of ['pdf','epub']){
+  const picks={pdf:false,epub:false},events=[];
+  const controller={stop(){events.push('stop')},play(){assert.fail('unexpected playback')}};
+  const open=new Function('$','current','cancelSpeechPick','startPdfSpeech','startEpubSpeech','pdfSpeech','epubSpeech','resetNumberedParagraphs','numberedPickMode','speechPlayer','refreshNumberedSelection','toast',source+'return beginSpeechPick;')(
+   ()=>({hidden:false,setAttribute(){}}),{id:'book'},()=>{},async()=>{},async()=>{},controller,controller,
+   ()=>{},picks,()=>events.push('show player'),()=>{},message=>assert.match(message,/Play selected/));
+  await open(kind);
+  assert.equal(picks[kind],true);
+  assert.deepEqual(events,['stop','show player']);
+ }
+});

@@ -941,14 +941,20 @@ function wireSpeech(kind,controller){
  $(kind+'-read-toggle').onclick=()=>beginSpeechPick(kind);
  $(kind+'-play-selected').onclick=()=>playNumberedParagraphs(kind);
  $(kind+'-read-paragraphs').onclick=()=>enableNumberedParagraphs(kind);
- $(kind+'-read-main').onclick=()=>controller.paused?controller.play():controller.pause();
+ const play=()=>{
+  if(controller.active)return controller.play();
+  if(numberedParagraphs[kind].length)return playNumberedParagraphs(kind);
+  if(numberedPickMode[kind])return toast('Select a passage first.');
+  controller.play();
+ };
+ $(kind+'-read-main').onclick=()=>controller.active&&!controller.paused?controller.pause():play();
  $(kind+'-read-back').onclick=()=>controller.seek(-10);
  $(kind+'-read-forward').onclick=()=>controller.seek(10);
  const closePlayer=()=>{controller.stop();speechPlayer(kind,false);};
  $(kind+'-read-close').onclick=closePlayer;
  $(kind+'-read-more').onclick=()=>{panel.hidden=!panel.hidden;};
- $(kind+'-read-play').onclick=()=>controller.play();
- $(kind+'-read-pause').onclick=()=>controller.paused?controller.play():controller.pause();
+ $(kind+'-read-play').onclick=play;
+ $(kind+'-read-pause').onclick=()=>controller.paused?play():controller.pause();
  $(kind+'-read-stop').onclick=closePlayer;
  $(kind+'-read-rate').onchange=e=>controller.setRate(e.target.value);
  $(kind+'-read-voice').onchange=e=>{const selected=e.target.value;try{localStorage.setItem(VOICE_STORAGE_KEY,selected);}catch{}controller.setVoice(selected);speechVoices(kind==='pdf'?'epub':'pdf');};
@@ -1097,16 +1103,22 @@ function cancelSpeechPick(){
  if(notice)notice.hidden=true;
  document.body.classList.remove('speech-picking');
 }
-function beginSpeechPick(kind){
- numberedPlayback.pdf=false;numberedPlayback.epub=false;
- numberedPickMode[kind]=false;
- $(kind+'-play-selected').hidden=true;
- $(kind+'-read-paragraphs').setAttribute('aria-pressed','false');
- pdfSpeech?.stop();epubSpeech?.stop();
- pdfSpeechPage=null;pdfSpeechStart=null;
- speechPickMode=kind;
- document.body.classList.add('speech-picking');
- speechPickNotice(kind);
+async function beginSpeechPick(kind){
+ cancelSpeechPick();
+ const reader=$(kind==='pdf'?'reader':'epub-reader');
+ const documentId=current?.id;
+ try{
+  if(kind==='pdf')await startPdfSpeech();else await startEpubSpeech();
+  if(reader.hidden||current?.id!==documentId)return;
+  const controller=kind==='pdf'?pdfSpeech:epubSpeech;
+  controller.stop();
+  resetNumberedParagraphs(kind);
+  numberedPickMode[kind]=true;
+  $(kind+'-read-paragraphs').setAttribute('aria-pressed','true');
+  speechPlayer(kind,true);
+  refreshNumberedSelection(kind);
+  toast('Select passages in reading order, then tap Play selected.');
+ }catch(error){toast('Read aloud: '+error.message);}
 }
 async function readPdfFromTap(event){
  if(speechPickMode!=='pdf'||!documentPDF||!event.isTrusted||event.target.closest('button,a,input,select,textarea'))return;
