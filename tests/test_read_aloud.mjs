@@ -58,7 +58,7 @@ test('Edge Neerja defaults with bounded buffered next segment',()=>{
  assert.match(speech,/DEFAULT_VOICE='en-IN-NeerjaNeural'/);
  assert.match(speech,/\/api\/tts\/edge/);
  assert.doesNotMatch(speech,/\/api\/tts\/alba/);
- assert.match(speech,/prefetch=requestSpeech\(chunks\[index\],voice\)/);
+ assert.match(speech,/prefetch=prepare\(chunks\[index\]\)/);
  assert.match(server,/en-IN-NeerjaNeural/);
  assert.match(server,/audio\/mpeg/);
  assert.match(docker,/edge-tts/);
@@ -102,7 +102,7 @@ test('speech chunker handles long text without oversized chunks',async()=>{
  const {splitSpeechChunks}=await import('../static/read-aloud.js');
  const chunks=splitSpeechChunks('First sentence. '+'long '.repeat(140)+'Final sentence!');
  assert.ok(chunks.length>2);
- assert.ok(chunks.every(chunk=>chunk.length<=240));
+ assert.ok(chunks.every(chunk=>chunk.length<=440));
  assert.equal(chunks.join(' ').replace(/\s+/g,' '),('First sentence. '+'long '.repeat(140)+'Final sentence!').trim().replace(/\s+/g,' '));
 });
 
@@ -215,4 +215,40 @@ test('magazine body reads down each column despite overlapping PDF text boxes',a
   'middle top','middle middle','middle bottom',
   'right top','right middle','right bottom'
  ]);
+});
+
+test('wrapped PDF lines merge into natural paragraphs before Edge synthesis',async()=>{
+ const {pdfSpeechText}=await import('../static/pdf-reading-order.js');
+ const line=(str,y,x=25)=>({str,x,y,boxHeight:12,boxWidth:180});
+ const paragraphs=pdfSpeechText([
+  line('BREAK open the bubbly, light',600),
+  line('the candles and get ready to party.',615),
+  line('New Scientist is 70 years old!',630),
+  line('The second paragraph starts here.',675)
+ ]);
+ assert.equal(paragraphs,
+  'BREAK open the bubbly, light the candles and get ready to party. New Scientist is 70 years old!\nThe second paragraph starts here.');
+ const {splitSpeechChunks}=await import('../static/read-aloud.js');
+ assert.deepEqual(splitSpeechChunks(paragraphs),[
+  'BREAK open the bubbly, light the candles and get ready to party. New Scientist is 70 years old!',
+  'The second paragraph starts here.'
+ ]);
+});
+test('paragraph synthesis batches short sentences and preloads upcoming audio',async()=>{
+ const {splitSpeechChunks}=await import('../static/read-aloud.js');
+ const short=Array.from({length:10},(_,i)=>'Sentence '+(i+1)+'.').join(' ');
+ assert.equal(splitSpeechChunks(short).length,1);
+ const many=splitSpeechChunks('Long paragraph. '.repeat(80));
+ assert.ok(many.every(part=>part.length<=440));
+ assert.ok(many.length<8);
+ assert.match(speech,/player\.preload='auto'/);
+ assert.match(speech,/prefetch=prepare\(chunks\[index\]\)/);
+ assert.match(speech,/prepared\.clear\(\)/);
+});
+test('PDF overlays highlight a complete spoken passage without per-word DOM updates',()=>{
+ const css=readFileSync(new URL('style.css',root),'utf8');
+ assert.match(app,/speech-paragraph-overlay/);
+ assert.match(app,/overlay\.append\(highlight\)/);
+ assert.match(app,/overlay\.childElementCount>=120/);
+ assert.match(css,/\.speech-paragraph-overlay/);
 });
