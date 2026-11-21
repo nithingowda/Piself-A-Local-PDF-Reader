@@ -247,14 +247,14 @@ function fitEntirePageZoom(n){
  if(isBookSpread()){
   const pages=spreadPages(n),base=bookPageBaseWidth();
   const compact=matchMedia('(max-width:600px)').matches;
-  const gap=compact?4:8,paddingX=compact?10:24,paddingY=compact?12:24;
+  const gap=compact?4:8,paddingX=compact?10:32,paddingY=compact?16:36;
   const maxHeight=Math.max(...pages.map(p=>{
    const d=dimensions.get(p)||dimensions.get(1)||{width:420,height:580};
    const w=swapped?d.height:d.width,h=swapped?d.width:d.height;
    return base*h/Math.max(1,w);
   }));
-  const availableWidth=Math.max(80,area.clientWidth-8);
-  const availableHeight=Math.max(80,area.clientHeight-8);
+  const availableWidth=Math.max(80,area.clientWidth-12);
+  const availableHeight=Math.max(80,area.clientHeight-12);
   const widthScale=(availableWidth-paddingX-gap*(pages.length-1))/(base*pages.length);
   const heightScale=(availableHeight-paddingY)/maxHeight;
   return Math.max(.1,Math.min(widthScale,heightScale));
