@@ -693,7 +693,7 @@ function turnBook(direction){
 }
 /** close Reader: Support the PiShelf reader or library interface. */
 async function closeReader({fromHistory=false}={}){
- clearCurl();clearTimeout(zoomIndicatorTimer);$('zoom-indicator')?.remove();
+ clearCurl();
  if(!fromHistory&&readerHistoryActive){
   readerHistoryActive=false;
   // Back triggers popstate and returns to the existing library history entry.
@@ -810,7 +810,7 @@ async function zoomWithControls(targetZoom){
    area.scrollTop+=changed.top+changed.height*anchor.y-centerY;
   }
  }
- updatePageUI();showZoomIndicator();remember();
+ updatePageUI();remember();
 }
 $('minus').onclick=()=>zoomWithControls(zoom-.25);
 $('plus').onclick=()=>zoomWithControls(zoom+.25);
@@ -875,28 +875,6 @@ async function reloadCollections(){collections=await api('/api/collections');col
 function drawCollectionManager(){const box=$('collection-manager');box.replaceChildren();if(!collections.length)box.append(el('p','hint','Create a collection in the library sidebar, then add issues using Edit issue.'));for(const collection of collections){const row=el('div','collection-row'),input=el('input');input.value=collection.name;input.maxLength=80;input.setAttribute('aria-label','Collection name: '+collection.name);const save=el('button','','Rename'),remove=el('button','danger','Remove');save.onclick=async()=>{try{await api('/api/collections',{action:'rename',id:collection.id,name:input.value});await reloadCollections();}catch(error){toast(error.message);}};remove.onclick=async()=>{if(!await confirmAction('Remove collection?','Only this shelf is removed. Your PDFs and reading progress are kept.','Remove collection'))return;try{await api('/api/collections',{action:'delete',id:collection.id});await reloadCollections();}catch(error){toast(error.message);}};row.append(input,save,remove);box.append(row);}}
 // Double-tap controls remain available even when swipe/pinch gestures are disabled.
 const gesturePointers=new Set();let gestureStart=null,lastTap=null,lastTouchTime=-Infinity,pinch=null,pinchFrame=0,suppressTapUntil=0;
-let zoomIndicatorTimer=null;
-function showZoomIndicator(){
- if(!documentPDF)return;
- let badge=$('zoom-indicator');
- if(!badge){
-  badge=document.createElement('output');badge.id='zoom-indicator';
-  badge.setAttribute('aria-label','Current PDF zoom');
-  document.getElementById('reader').append(badge);
- }
- badge.textContent=Math.round(zoom*100)+'%';
- badge.classList.add('visible');
- clearTimeout(zoomIndicatorTimer);
- zoomIndicatorTimer=setTimeout(()=>badge.classList.remove('visible'),2000);
-}
-function canSwipeAtZoom(){
- return !!documentPDF&&prefs.gestures&&$('view-mode').value!=='scroll'&&zoom<=fitEntirePageZoom(page)+.35;
-}
-function canTurnZoomedSwipe(dx){
- const area=$('page-area'),max=area.scrollWidth-area.clientWidth;
- // Panning takes priority until the content reaches the horizontal edge.
- return max<=3||(dx<0?area.scrollLeft>=max-3:area.scrollLeft<=3);
-}
 /** update Touch Mode: Handle touch zoom while maintaining the reader position. */
 function updateTouchMode(){const area=$('page-area');area.classList.toggle('gesture-navigation',!!prefs.gestures&&!!documentPDF&&zoom<=fitEntirePageZoom(page)+.04);area.classList.toggle('zoomed-in',!!documentPDF&&zoom>fitEntirePageZoom(page)+.01);}
 /** toggle Reader Controls: Support the PiShelf reader or library interface. */
@@ -961,7 +939,7 @@ function finishPinch(cancelled=false){
   const url='/api/page-image/'+encodeURIComponent(current.id)+'/'+state.page+'?width='+width;
   if(!image.src.endsWith(url))image.src=url;
  }
- updatePageUI();showZoomIndicator();remember();
+ updatePageUI();remember();
 }
 $('page-area').addEventListener('touchstart',e=>{
  if(e.touches.length!==2||!prefs.gestures||!documentPDF||!layoutReady)return;
@@ -1127,7 +1105,7 @@ $('page-area').addEventListener('pointerup',e=>{
  const start=gestureStart;gestureStart=null;
  const dx=e.clientX-start.x,dy=e.clientY-start.y,elapsed=performance.now()-start.time;
  if(curl){settleCurl(curl.progress>=.32||(curl.progress>.08&&elapsed<300));lastTap=null;return;}
- if(canSwipeAtZoom()&&canTurnZoomedSwipe(dx)
+ if(prefs.gestures&&documentPDF&&zoom<=fitEntirePageZoom(page)+.04
     &&Math.abs(dx)>70&&Math.abs(dx)>Math.abs(dy)*2&&elapsed<700){
   turnBook(dx<0?1:-1);lastTap=null;return;
  }
