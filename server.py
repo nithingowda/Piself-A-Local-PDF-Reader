@@ -20,6 +20,7 @@ import datetime
 import zipfile
 import auth
 import secrets
+import hmac
 
 # Optional raster engine is installed in Docker; errors are reported per request.
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -272,9 +273,26 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps({'ok':True,'role':user['role'],'csrf':csrf}).encode())
             return
         user=self.require_session(admin=route.startswith('/api/admin/'),mutation=True)
+        if route=='/api/admin/paths/pin':
+            with sqlite3.connect(self.server.state_db) as db:
+                db.execute('CREATE TABLE IF NOT EXISTS library_path_pin (id INTEGER PRIMARY KEY CHECK(id=1),salt BLOB NOT NULL,hash BLOB NOT NULL)')
+                existing=db.execute('SELECT id FROM library_path_pin WHERE id=1').fetchone()
+                pin=data.get('pin')
+                if existing: raise APIError(409,'Access PIN is already configured.')
+                if not auth.authenticate(db,user['username'],data.get('password')): raise APIError(403,'Administrator password is incorrect.')
+                if not isinstance(pin,str) or not re.fullmatch(r'[0-9]{6}',pin): raise APIError(400,'Enter a 6-digit PIN.')
+                salt=secrets.token_bytes(24)
+                db.execute('INSERT INTO library_path_pin VALUES (1,?,?)',(salt,hashlib.pbkdf2_hmac('sha256',pin.encode(),salt,600000)))
+            self.json_response({'ok':True});return
         if route=='/api/admin/paths':
             with sqlite3.connect(self.server.state_db) as db:
-                save_library_paths(db,data,self.server.roots,self.server.state_db.parent)
+                db.execute('CREATE TABLE IF NOT EXISTS library_path_pin (id INTEGER PRIMARY KEY CHECK(id=1),salt BLOB NOT NULL,hash BLOB NOT NULL)')
+                row=db.execute('SELECT salt,hash FROM library_path_pin WHERE id=1').fetchone()
+                if not row: raise APIError(403,'Set a folder access PIN before editing library paths.')
+                pin=data.get('pin')
+                if not isinstance(pin,str) or not re.fullmatch(r'[0-9]{6}',pin) or not hmac.compare_digest(hashlib.pbkdf2_hmac('sha256',pin.encode(),row[0],600000),row[1]):
+                    raise APIError(403,'Invalid access PIN.')
+                save_library_paths(db,{k:v for k,v in data.items() if k!='pin'},self.server.roots,self.server.state_db.parent)
             self.json_response({'ok':True})
             return
         if route=='/api/auth/change-password':
@@ -641,6 +659,12 @@ class Handler(BaseHTTPRequestHandler):
                     raise
                 if path == '/api/auth/me':
                     self.json_response({'username':user['username'],'role':user['role'],'csrf':user['csrf']},head=head);return
+                if path == '/api/admin/paths/pin':
+                    self.require_session(admin=True)
+                    with sqlite3.connect(self.server.state_db) as db:
+                        db.execute('CREATE TABLE IF NOT EXISTS library_path_pin (id INTEGER PRIMARY KEY CHECK(id=1),salt BLOB NOT NULL,hash BLOB NOT NULL)')
+                        configured=db.execute('SELECT 1 FROM library_path_pin WHERE id=1').fetchone() is not None
+                    self.json_response({'configured':configured},head=head);return
                 if path == '/api/admin/paths':
                     self.require_session(admin=True)
                     with sqlite3.connect(self.server.state_db) as db:
