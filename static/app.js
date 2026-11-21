@@ -802,7 +802,7 @@ async function zoomWithControls(targetZoom){
   x:Math.max(0,Math.min(1,(centerX-rect.left)/Math.max(1,rect.width))),
   y:Math.max(0,Math.min(1,(centerY-rect.top)/Math.max(1,rect.height)))
  };
- const minimum=!spreadMode&&$('view-mode').value==='scroll'?fitWidthZoom():fitEntirePageZoom(anchor.number);
+ const minimum=!spreadMode&&typeof fitWidthZoom==='function'&&document.getElementById('view-mode')?.value==='scroll'?fitWidthZoom():fitEntirePageZoom(anchor.number);
  const next=Math.max(minimum,Math.min(3,Number(targetZoom)));
  if(!Number.isFinite(next))return;
  const fits=next<=minimum+0.001;
