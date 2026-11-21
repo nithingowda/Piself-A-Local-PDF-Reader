@@ -196,3 +196,23 @@ test('a magazine headline continues into bottom article columns on the same page
  assert.ok(remainder.indexOf('Happy 70th birthday')<remainder.indexOf('left paragraph one'));
  assert.ok(remainder.indexOf('left paragraph two')<remainder.indexOf('middle paragraph one'));
 });
+
+test('magazine body reads down each column despite overlapping PDF text boxes',async()=>{
+ const {orderPdfSpeechItems}=await import('../static/pdf-reading-order.js');
+ const viewport={width:600,height:800,convertToViewportPoint:(x,y)=>[x,y]};
+ const item=(str,x,y)=>({str,transform:[1,0,0,1,x,y],width:210,height:12,hasEOL:true});
+ const source=[
+  item('left top',25,585),item('middle top',225,585),item('right top',425,585),
+  item('left middle',25,610),item('middle middle',225,610),item('right middle',425,610),
+  item('left bottom',25,635),item('middle bottom',225,635),item('right bottom',425,635),
+  item('Happy 70th birthday',170,90),
+  item('Join us as we look to the past',170,120)
+ ];
+ const ordered=orderPdfSpeechItems(source,viewport).map(item=>item.str);
+ assert.deepEqual(ordered,[
+  'Happy 70th birthday','Join us as we look to the past',
+  'left top','left middle','left bottom',
+  'middle top','middle middle','middle bottom',
+  'right top','right middle','right bottom'
+ ]);
+});
