@@ -6,6 +6,24 @@ PiShelf turns PDF magazines, PDF newspapers and PDF/EPUB books into a personal r
 
 Built for self-hosting on your home network, with local storage and a lightweight Python server.
 
+## Project folders
+
+| Path | Purpose |
+| --- | --- |
+| `server.py`, `auth.py`, `epub_covers.py` | Python HTTP application, authentication and EPUB cover processing |
+| `static/` | Browser-served HTML, CSS and JavaScript. **Static** is the standard term for files sent directly to browsers; it is intentionally retained to avoid breaking asset URLs and existing integrations |
+| `tests/` | Automated regression checks; these are development files, not content for the book library |
+| `.github/workflows/` | GitHub Actions that run tests on pull requests |
+| `deploy/systemd/` | Optional native Linux service example, for installs without Docker |
+| `Dockerfile`, `compose.yaml`, `docker-entrypoint.py` | Docker build, deployment and startup |
+| `magazines/`, `data/` | Example local library and generated app data paths; actual sources can live on NAS volumes |
+
+**Why `tests/` exists:** tests verify reader behavior, security boundaries, PDF/EPUB support and regressions before merging changes. They are not needed by a running browser and should not be renamed to `static/`.
+
+**Why `static/` stays:** renaming the directory alone would break the HTTP server's asset routing, Docker `COPY` instructions, HTML imports and CI tests. A future asset split into `static/css/` and `static/js/` should be done as a separate, fully tested migration.
+
+For non-Docker installs, customize `deploy/systemd/pishelf.service.example` and copy it to `/etc/systemd/system/pishelf.service`. The sample uses `/opt/pishelf` as a placeholder installation path; adjust paths, ownership and write permissions for your setup.
+
 ## Reader speed and memory management
 
 PiShelf uses WebP previews and sharper images on demand. The reader cancels stale high-resolution upgrades when you navigate away, change layout, or close the reader. Thumbnail requests are restricted to thumbnails near the visible scroll area to reduce Safari memory and network usage. Pinch-zoom geometry and the PDF.js fallback are unchanged.
