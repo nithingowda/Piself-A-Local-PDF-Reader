@@ -49,3 +49,9 @@ test('spoken sentence indicator and scrollable immersive reader',()=>{
  assert.match(css,/#reader\.speech-immersive #page-area\{overflow:auto!important/);
  assert.doesNotMatch(css,/#reader\.speech-immersive,#epub-reader\.speech-immersive\{position:relative\}/);
 });
+
+test('Piper groups short sentences and prefetches the next audio segment',()=>{
+ assert.match(speech,/buffer\.length\+word\.length\+1>440/);
+ assert.match(speech,/prefetch=generate\(chunks\[index\]\)/);
+ assert.match(speech,/const blob=prefetch\?await prefetch:await generate\(chunk\)/);
+});

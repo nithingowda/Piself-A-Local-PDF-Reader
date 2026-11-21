@@ -11,34 +11,52 @@ export function createReadAloud({getText,next,onState,getCsrfToken=()=>''}){
   catch(error){stop();onState?.({error:error.message});return;}
   if(!active||t!==token)return;
   if(!text){let more=false;try{more=await next();}catch{}if(more&&active&&t===token)return speakNext(t);stop();return;}
-  // Short utterances avoid browser speech synthesis silently stopping on long pages.
-  const chunks=(text.match(/[^.!?।！？]+[.!?।！？]*|[^.!?।！？]+$/g)||[text]).flatMap(sentence=>{const words=sentence.trim().split(/\s+/),parts=[];let part='';for(const word of words){if(part.length+word.length+1>240&&part){parts.push(part);part='';}part+=(part?' ':'')+word;}if(part)parts.push(part);return parts;});
-  let index=0;
+  // Keep sentence boundaries, but batch short sentences to avoid a Piper restart after every full stop.
+  const sentences=text.match(/[^.!?।！？]+[.!?।！？]*|[^.!?।！？]+$/g)||[text];
+  const chunks=[];let buffer='';
+  for(const sentence of sentences){
+   const words=sentence.trim().split(/\\s+/);
+   for(const word of words){
+    if(buffer&&buffer.length+word.length+1>440){chunks.push(buffer);buffer='';}
+    buffer+=(buffer?' ':'')+word;
+   }
+  }
+  if(buffer)chunks.push(buffer);
+  let index=0,prefetch=null;
+  async function generate(chunk){
+   const request=new AbortController();abort=request;
+   const response=await fetch('/api/tts/alba',{method:'POST',headers:{'Content-Type':'application/json','X-PiShelf-CSRF':getCsrfToken()},credentials:'same-origin',body:JSON.stringify({text:chunk}),signal:request.signal});
+   if(!response.ok){let detail='Piper server returned HTTP '+response.status;try{const payload=await response.json();detail=payload.error||payload.message||detail;}catch{}throw Error(detail);}
+   return response.blob();
+  }
   async function say(){
    if(!active||t!==token)return;
    if(index>=chunks.length){Promise.resolve(next()).then(more=>{if(more&&active&&t===token)speakNext(t);else stop();}).catch(()=>stop());return;}
-   const chunk=chunks[index++];onState?.({spokenText:chunk});
+   const chunk=chunks[index];
    if(voice==='piper-alba'){
-    const request=new AbortController();abort=request;
     try{
-     const response=await fetch('/api/tts/alba',{method:'POST',headers:{'Content-Type':'application/json','X-PiShelf-CSRF':getCsrfToken()},credentials:'same-origin',body:JSON.stringify({text:chunk}),signal:request.signal});
-     if(!response.ok){let detail='Piper server returned HTTP '+response.status;try{const payload=await response.json();detail=payload.error||payload.message||detail;}catch{}throw Error(detail);}
-     const blob=await response.blob();if(!active||t!==token)return;
+     const blob=prefetch?await prefetch:await generate(chunk);
+     prefetch=null;
+     if(!active||t!==token)return;
+     index++;
+     if(index<chunks.length)prefetch=generate(chunks[index]);
+     onState?.({spokenText:chunk});
      const url=URL.createObjectURL(blob);const player=new Audio(url);audio=player;player.playbackRate=rate;
-     if(seekAudio!==null){player.addEventListener('loadedmetadata',()=>{player.currentTime=Math.max(0,Math.min(player.duration||0,seekAudio));seekAudio=null;},{once:true});}
      player.onended=()=>{URL.revokeObjectURL(url);audio=null;if(active&&t===token)void say();};
      player.onerror=()=>{URL.revokeObjectURL(url);stop();onState?.({error:'Could not play Piper audio.'});};
-     await player.play();return;
+     await player.play();if(paused)player.pause();return;
     }catch(error){if(!active||t!==token)return;voice='';onState?.({error:'Piper AI failed: '+error.message+'. Switching to browser voice.'});}
-   }
-   const u=new SpeechSynthesisUtterance(chunk);
-   utterance=u;u.rate=rate;
-   const voices=synth.getVoices();const selected=voices.find(v=>v.voiceURI===voice)||(!voice?voices.find(v=>v.localService&&/premium|enhanced|natural|neural/i.test(v.name))||voices.find(v=>v.default)||null:null);if(selected){u.voice=selected;u.lang=selected.lang;}
-   u.onend=()=>{if(active&&t===token)say();};
+   }else index++;
+   onState?.({spokenText:chunk});
+   const u=new SpeechSynthesisUtterance(chunk);utterance=u;u.rate=rate;
+   const voices=synth?.getVoices()||[];
+   const selected=voices.find(v=>v.voiceURI===voice)||(!voice?voices.find(v=>v.localService&&/premium|enhanced|natural|neural/i.test(v.name))||voices.find(v=>v.default)||null:null);
+   if(selected){u.voice=selected;u.lang=selected.lang;}
+   u.onend=()=>{if(active&&t===token)void say();};
    u.onerror=e=>{if(e.error!=='interrupted'&&e.error!=='canceled')stop();};
    synth.speak(u);
   }
-  say();
+  void say();
  }
  function play(){if(!synth){onState?.({error:'Speech synthesis is unavailable in this browser.'});return;}
   if(active&&paused){if(audio)void audio.play();else synth.resume();paused=false;notify();return;}
