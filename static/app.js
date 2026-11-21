@@ -295,8 +295,7 @@ $('annotation-export').onclick=()=>{
  if(!current)return;
  const lines=['# Notes: '+current.title,''];
  for(const item of annotationItems){lines.push('## Page '+item.page);lines.push(item.type==='note'?item.text:'- '+item.type+' mark ('+(item.color||'')+')');lines.push('');}
- const blob=new Blob([lines.join('
-')],{type:'text/markdown;charset=utf-8'});
+ const blob=new Blob([lines.join('\n')],{type:'text/markdown;charset=utf-8'});
  const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='pishelf-notes-'+String(current.title).replace(/[^a-z0-9_-]+/gi,'-').slice(0,60)+'.md';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 };
 $('page-area').addEventListener('pointerdown',event=>{
