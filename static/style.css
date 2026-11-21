@@ -150,3 +150,7 @@ body.epub-open{overflow:hidden}
 #reader .reader-zoom-badge.visible{opacity:1;visibility:visible;transform:translate3d(-50%,0,0)}
 #reader.focused .reader-zoom-badge{bottom:calc(18px + env(safe-area-inset-bottom,0px))}
 @media(prefers-reduced-motion:reduce){#reader .reader-zoom-badge{transition:none}}
+
+/* Responsive paged fit: center full PDF pages without cropping or stretching. */
+#pages.paged-layout{min-width:100%;min-height:100%;align-items:center;justify-content:center}
+#pages.paged-layout:not(.book-layout){width:100%}

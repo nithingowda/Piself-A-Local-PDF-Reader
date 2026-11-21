@@ -225,7 +225,7 @@ function bookPageBaseWidth(){
 let automaticFit=null;
 function defaultPagedFit(){
  const mode=$('view-mode').value;
- return mode==='single'?'height':mode==='book'?'page':null;
+ return mode==='single'||mode==='book'?'page':null;
 }
 function heightFitZoom(n){
  const d=dimensions.get(n)||dimensions.get(1);
@@ -262,8 +262,9 @@ function fitEntirePageZoom(n){
  const d=dimensions.get(n)||dimensions.get(1);
  if(!d)return 1;
  const width=swapped?d.height:d.width,height=swapped?d.width:d.height;
- const availableWidth=Math.max(100,area.clientWidth-32);
- const availableHeight=Math.max(100,area.clientHeight-32);
+ const inset=Math.min(16,Math.max(4,Math.round(area.clientWidth*.015)));
+ const availableWidth=Math.max(100,area.clientWidth-inset*2);
+ const availableHeight=Math.max(100,area.clientHeight-inset*2);
  const baseWidth=Math.min(Math.max(200,area.clientWidth-40),1100);
  return Math.max(.1,Math.min(availableWidth/baseWidth,availableHeight*width/(baseWidth*height)));
 }
@@ -847,9 +848,15 @@ $('bookmark').onclick=()=>{if(!documentPDF)return;const marks=saved[current.id]?
 $('fullscreen').onclick=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await $('reader').requestFullscreen();}catch{toast('Fullscreen is unavailable in this browser.');}};
 let searchTimer;$('search').oninput=()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>{visibleLimit=60;drawLibrary();},150);};$('sort').onchange=e=>{prefs.sort=e.target.value;storePrefs();drawLibrary();};$('refresh').onclick=()=>refresh();document.querySelectorAll('[data-filter]').forEach(b=>b.onclick=()=>{filter=b.dataset.filter;category=collectionFilter='';visibleLimit=60;document.querySelectorAll('.tab,.category').forEach(t=>t.classList.toggle('active',t===b));drawLibrary();});
 document.addEventListener('keydown',e=>{if($('reader').hidden||document.querySelector('dialog[open]')||/INPUT|SELECT/.test(e.target.tagName))return;if(e.key==='ArrowRight'){e.preventDefault();turnFromControl(1);}if(e.key==='ArrowLeft'){e.preventDefault();turnFromControl(-1);}if(e.key==='Escape'&&!document.fullscreenElement)closeReader();if(e.key.toLowerCase()==='b')$('bookmark').click();if(e.key.toLowerCase()==='c'){e.preventDefault();toggleReaderControls();}});
-new ResizeObserver(()=>{
+let lastReaderWidth=0,lastReaderHeight=0;
+new ResizeObserver(entries=>{
+ const rect=entries[0]?.contentRect;
+ if(!rect)return;
+ const width=Math.round(rect.width),height=Math.round(rect.height);
+ if(width===lastReaderWidth&&height===lastReaderHeight)return;
+ lastReaderWidth=width;lastReaderHeight=height;
  clearTimeout(resizeTimer);
- resizeTimer=setTimeout(()=>{if(documentPDF&&layoutReady&&!pinch)rebuild();},100);
+ resizeTimer=setTimeout(()=>{if(documentPDF&&layoutReady&&!pinch)rebuild();},120);
 }).observe($('page-area'));
 document.addEventListener('visibilitychange',()=>{if(document.hidden)remember();else{for(const [id,patch] of [...pendingSaves])persist(id,patch);refresh(true);}});window.addEventListener('pagehide',remember);
 // Library editing and backup controls.
