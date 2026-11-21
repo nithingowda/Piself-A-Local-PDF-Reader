@@ -166,3 +166,5 @@ body.epub-open{overflow:hidden}
 .category-manager-label{flex:1;min-width:120px;overflow-wrap:anywhere;font-size:12px;align-self:center}
 .collection-row button:disabled{opacity:.45;cursor:not-allowed}
 @media(max-width:650px){.settings-tabs{margin-inline:-4px}.settings-tabs button{padding:10px;font-size:11px}}
+
+.settings-paths{max-width:620px}.settings-paths label,.category-dropdown-manager>label{display:flex;flex-direction:column;gap:8px;margin:14px 0;font-size:12px;font-weight:550}.settings-paths input,.category-dropdown-manager select{width:100%;background:var(--surface);color:var(--ink)}.settings-paths button{margin:10px 0}.settings-paths form[hidden],.settings-paths div[hidden]{display:none}

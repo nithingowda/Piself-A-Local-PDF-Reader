@@ -163,7 +163,7 @@ function applyPrefs(){const sortOptions=[...$('sort').options].map(o=>o.value);i
 /** store Prefs: Support the PiShelf reader or library interface. */
 function storePrefs(){try{localStorage.setItem('pishelf-settings',JSON.stringify(prefs));}catch{toast('Browser settings storage is unavailable.');}applyPrefs();}
 /** open Settings: Support the PiShelf reader or library interface. */
-function openSettings(){$('pref-comfort').value=prefs.comfort||'custom';$('pref-readerBrightness').value=prefs.readerBrightness;$('reader-brightness-value').textContent=prefs.readerBrightness+'%';for(const k of ['siteTheme','theme','mode','quality','density'])$('pref-'+k).value=prefs[k];$('pref-gestures').checked=prefs.gestures;if(!uploading)populateUploadSources();drawCollectionManager();drawCategoryManager();activateSettingsTab('upload');$('settings').showModal();loadTrash();loadWebPCacheStats();}
+function openSettings(){$('pref-comfort').value=prefs.comfort||'custom';$('pref-readerBrightness').value=prefs.readerBrightness;$('reader-brightness-value').textContent=prefs.readerBrightness+'%';for(const k of ['siteTheme','theme','mode','quality','density'])$('pref-'+k).value=prefs[k];$('pref-gestures').checked=prefs.gestures;if(!uploading)populateUploadSources();drawCollectionManager();drawCategoryManager();activateSettingsTab('upload');prepareFolderPathSettings();$('settings').showModal();loadTrash();loadWebPCacheStats();}
 // Reading comfort presets are display-only and never alter PDF bytes.
 const comfortPresets={daylight:{theme:'light',readerBrightness:100},bedtime:{theme:'night',readerBrightness:55},amoled:{theme:'amoled',readerBrightness:80}};
 $('pref-comfort').onchange=e=>{
@@ -190,7 +190,7 @@ $('pref-readerBrightness').oninput=e=>{
  applyPrefs();
 };
 $('pref-readerBrightness').onchange=()=>storePrefs();
-$('settings-open').onclick=openSettings;$('reader-settings').onclick=openSettings;$('settings-close').onclick=()=>$('settings').close();
+$('settings-open').onclick=openSettings;$('reader-settings').onclick=openSettings;$('settings-close').onclick=()=>{folderAccessPin='';$('settings').close();};
 for(const k of ['siteTheme','theme','mode','quality','density'])$('pref-'+k).onchange=e=>{prefs[k]=e.target.value;if(k==='theme'){prefs.comfort='custom';$('pref-comfort').value='custom';}if(k==='theme'&&['light','sepia','dark'].includes(prefs.theme))lastDayTheme=prefs.theme;storePrefs();if(documentPDF&&(k==='mode'||k==='quality')){$('view-mode').value=prefs.mode;rebuild();}};
 $('pref-gestures').onchange=e=>{prefs.gestures=e.target.checked;storePrefs();updateTouchMode();};
 $('clear-all').onclick=()=>{if(documentPDF){toast('Return to the library before clearing all progress.');return;}clearProgress();};$('rescan').onclick=()=>{if(documentPDF){toast('Return to the library to rescan.');return;}refresh();toast('Library scan requested.');};
@@ -895,12 +895,55 @@ $('collection-form').onsubmit=async e=>{e.preventDefault();e.submitter.disabled=
 /** reload Collections: Support the PiShelf reader or library interface. */
 async function reloadCollections(){collections=await api('/api/collections');collectionSets=new Map(collections.map(c=>[c.id,new Set(c.items)]));if(collectionFilter&&!collectionSets.has(collectionFilter))collectionFilter='';updateFilterOptions();if($('reader').hidden)drawLibrary();drawCollectionManager();}
 /** draw Collection Manager: Support the PiShelf reader or library interface. */
+let folderAccessPin='';
+async function prepareFolderPathSettings(){
+ const tab=$('settings-tab-paths');tab.hidden=signedInUser?.role!=='admin';if(tab.hidden)return;
+ folderAccessPin='';$('settings-paths-form').hidden=true;$('settings-paths-pin').value='';
+ $('settings-paths-pin-status').textContent='';$('settings-paths-status').textContent='';
+ try{const status=await api('/api/admin/paths/pin');$('settings-paths-setup').hidden=status.configured;$('settings-paths-locked').hidden=!status.configured;}
+ catch(error){$('settings-paths-pin-status').textContent=error.message;}
+}
+$('settings-paths-set-pin').onclick=async()=>{const password=$('settings-paths-password').value,pin=$('settings-paths-new-pin').value;
+ try{await api('/api/admin/paths/pin',{password,pin});$('settings-paths-password').value='';$('settings-paths-new-pin').value='';await prepareFolderPathSettings();toast('Access PIN configured.');}catch(error){toast(error.message);}
+};
+$('settings-paths-unlock').onclick=async()=>{const pin=$('settings-paths-pin').value;
+ try{await api('/api/admin/paths/verify',{pin});folderAccessPin=pin;const paths=await api('/api/admin/paths');const form=$('settings-paths-form');for(const key of ['magazines','newspapers','books'])form.elements[key].value=paths[key]||'';form.hidden=false;$('settings-paths-locked').hidden=true;$('settings-paths-pin').value='';}catch(error){$('settings-paths-pin-status').textContent=error.message;}
+};
+$('settings-paths-form').onsubmit=async event=>{event.preventDefault();const form=event.currentTarget;const button=form.querySelector('[type=submit]');button.disabled=true;
+ try{await api('/api/admin/paths',{...Object.fromEntries(new FormData(form)),pin:folderAccessPin});$('settings-paths-status').textContent='Saved. Restart PiShelf to apply new folders.';}catch(error){$('settings-paths-status').textContent=error.message;}finally{button.disabled=false;}
+};
 function activateSettingsTab(name){
  document.querySelectorAll('[data-settings-tab]').forEach(button=>{const active=button.dataset.settingsTab===name;button.setAttribute('aria-selected',String(active));button.tabIndex=active?0:-1;});
  document.querySelectorAll('.settings-panel').forEach(panel=>{panel.hidden=panel.id!=='settings-panel-'+name;});
 }
 document.querySelectorAll('[data-settings-tab]').forEach(button=>{button.addEventListener('click',()=>activateSettingsTab(button.dataset.settingsTab));button.addEventListener('keydown',event=>{if(!['ArrowRight','ArrowLeft','Home','End'].includes(event.key))return;event.preventDefault();const tabs=[...document.querySelectorAll('[data-settings-tab]')];const index=tabs.indexOf(button);const next=event.key==='Home'?0:event.key==='End'?tabs.length-1:(index+(event.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;activateSettingsTab(tabs[next].dataset.settingsTab);tabs[next].focus();});});
-function drawCategoryManager(){const box=$('category-manager');if(!box)return;box.replaceChildren();const entries=categories.filter(c=>c.path!=='.');if(!entries.length)box.append(el('p','hint','No custom categories yet.'));for(const cat of entries){const row=el('div','collection-row');const label=el('span','',cat.source+' / '+cat.path);label.className='category-manager-label';const remove=el('button','danger','Delete');const used=library.some(item=>item.source===cat.source&&(item.category===cat.path||item.category.startsWith(cat.path+'/')));const nested=entries.some(item=>item.source===cat.source&&item.path.startsWith(cat.path+'/'));remove.disabled=used||nested;remove.title=remove.disabled?'Move documents and remove subcategories before deleting.':'Delete empty category';remove.onclick=async()=>{if(!await confirmAction('Delete empty category?','The empty category folder will be removed from storage. Files will never be deleted.','Delete category'))return;try{await api('/api/categories',{action:'delete',source:cat.source,path:cat.path});await refresh();drawCategoryManager();populateUploadSources();toast('Category removed.');}catch(error){toast(error.message);}};row.append(label,remove);box.append(row);}}
+function drawCategoryManager(){
+ const box=$('category-manager'),select=$('category-manage-select');if(!box||!select)return;
+ const previous=select.value,entries=categories.filter(c=>c.path!=='.');
+ select.replaceChildren(new Option('Choose a category…',''),...entries.map(c=>new Option(c.source+' / '+c.path,c.source+'|'+c.path)));
+ if(entries.some(c=>c.source+'|'+c.path===previous))select.value=previous;
+ const render=()=>{
+  box.replaceChildren();const cat=entries.find(c=>c.source+'|'+c.path===select.value);if(!cat)return;
+  const used=library.some(item=>item.source===cat.source&&(item.category===cat.path||item.category.startsWith(cat.path+'/')));
+  const nested=entries.some(item=>item.source===cat.source&&item.path.startsWith(cat.path+'/'));
+  const blocked=used||nested;
+  const row=el('div','collection-row'),name=el('input');name.value=cat.path.split('/').pop();name.maxLength=200;name.setAttribute('aria-label','New category name');
+  const edit=el('button','','Rename'),remove=el('button','danger','Delete');edit.type=remove.type='button';
+  edit.disabled=remove.disabled=blocked;
+  const warning=blocked?'Move all documents and remove subcategories before editing or deleting.':'Only the empty category folder will change; no documents are affected.';
+  edit.title=remove.title=warning;
+  edit.onclick=async()=>{const nextName=name.value.trim();if(!nextName||nextName==='.'||nextName==='..'||nextName.includes('/')||nextName.includes('\\\\')){toast('Enter a valid category name without slashes.');return;}
+   const parent=cat.path.includes('/')?cat.path.slice(0,cat.path.lastIndexOf('/')+1):'';const newPath=parent+nextName;
+   if(newPath===cat.path)return;
+   try{await api('/api/categories',{action:'rename',source:cat.source,path:cat.path,newPath});await refresh();populateUploadSources();drawCategoryManager();select.value=cat.source+'|'+newPath;select.dispatchEvent(new Event('change'));toast('Category renamed.');}catch(error){toast(error.message);}
+  };
+  remove.onclick=async()=>{if(!await confirmAction('Delete empty category?','Only the empty category folder will be removed. Your PDFs and EPUB books are safe.','Delete category'))return;
+   try{await api('/api/categories',{action:'delete',source:cat.source,path:cat.path});await refresh();populateUploadSources();drawCategoryManager();toast('Category removed.');}catch(error){toast(error.message);}
+  };
+  row.append(name,edit,remove);box.append(row,el('p','hint',warning));
+ };
+ select.onchange=render;render();
+}
 function drawCollectionManager(){const box=$('collection-manager');box.replaceChildren();if(!collections.length)box.append(el('p','hint','Create a collection in the library sidebar, then add issues using Edit issue.'));for(const collection of collections){const row=el('div','collection-row'),input=el('input');input.value=collection.name;input.maxLength=80;input.setAttribute('aria-label','Collection name: '+collection.name);const save=el('button','','Rename'),remove=el('button','danger','Remove');save.onclick=async()=>{try{await api('/api/collections',{action:'rename',id:collection.id,name:input.value});await reloadCollections();}catch(error){toast(error.message);}};remove.onclick=async()=>{if(!await confirmAction('Remove collection?','Only this shelf is removed. Your PDFs and reading progress are kept.','Remove collection'))return;try{await api('/api/collections',{action:'delete',id:collection.id});await reloadCollections();}catch(error){toast(error.message);}};row.append(input,save,remove);box.append(row);}}
 // Double-tap controls remain available even when swipe/pinch gestures are disabled.
 const gesturePointers=new Set();let gestureStart=null,lastTap=null,lastTouchTime=-Infinity,pinch=null,pinchFrame=0,suppressTapUntil=0;

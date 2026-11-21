@@ -20,6 +20,7 @@ import datetime
 import zipfile
 import auth
 import secrets
+import hmac
 
 # Optional raster engine is installed in Docker; errors are reported per request.
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -272,9 +273,42 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps({'ok':True,'role':user['role'],'csrf':csrf}).encode())
             return
         user=self.require_session(admin=route.startswith('/api/admin/'),mutation=True)
+        if route=='/api/admin/paths/pin':
+            with sqlite3.connect(self.server.state_db) as db:
+                db.execute('CREATE TABLE IF NOT EXISTS library_path_pin (id INTEGER PRIMARY KEY CHECK(id=1),salt BLOB NOT NULL,hash BLOB NOT NULL)')
+                existing=db.execute('SELECT id FROM library_path_pin WHERE id=1').fetchone()
+                pin=data.get('pin')
+                if existing: raise APIError(409,'Access PIN is already configured.')
+                if not auth.authenticate(db,user['username'],data.get('password')): raise APIError(403,'Administrator password is incorrect.')
+                if not isinstance(pin,str) or not re.fullmatch(r'[0-9]{6}',pin): raise APIError(400,'Enter a 6-digit PIN.')
+                salt=secrets.token_bytes(24)
+                db.execute('INSERT INTO library_path_pin VALUES (1,?,?)',(salt,hashlib.pbkdf2_hmac('sha256',pin.encode(),salt,600000)))
+            self.json_response({'ok':True});return
+        if route in ('/api/admin/paths/verify','/api/admin/paths'):
+            ip=self.client_address[0]
+            with self.server.auth_lock:
+                attempts=[t for t in self.server.auth_attempts.get('pin:'+ip,[]) if t>time.time()-900]
+                self.server.auth_attempts['pin:'+ip]=attempts
+                if len(attempts)>=5: raise APIError(429,'Too many incorrect PIN attempts. Try again in 15 minutes.')
+        if route=='/api/admin/paths/verify':
+            with sqlite3.connect(self.server.state_db) as db:
+                db.execute('CREATE TABLE IF NOT EXISTS library_path_pin (id INTEGER PRIMARY KEY CHECK(id=1),salt BLOB NOT NULL,hash BLOB NOT NULL)')
+                row=db.execute('SELECT salt,hash FROM library_path_pin WHERE id=1').fetchone()
+                pin=data.get('pin')
+                if not row or not isinstance(pin,str) or not re.fullmatch(r'[0-9]{6}',pin) or not hmac.compare_digest(hashlib.pbkdf2_hmac('sha256',pin.encode(),row[0],600000),row[1]):
+                    with self.server.auth_lock: self.server.auth_attempts['pin:'+self.client_address[0]].append(time.time())
+                    raise APIError(403,'Invalid access PIN.')
+            self.json_response({'ok':True});return
         if route=='/api/admin/paths':
             with sqlite3.connect(self.server.state_db) as db:
-                save_library_paths(db,data,self.server.roots,self.server.state_db.parent)
+                db.execute('CREATE TABLE IF NOT EXISTS library_path_pin (id INTEGER PRIMARY KEY CHECK(id=1),salt BLOB NOT NULL,hash BLOB NOT NULL)')
+                row=db.execute('SELECT salt,hash FROM library_path_pin WHERE id=1').fetchone()
+                if not row: raise APIError(403,'Set a folder access PIN before editing library paths.')
+                pin=data.get('pin')
+                if not isinstance(pin,str) or not re.fullmatch(r'[0-9]{6}',pin) or not hmac.compare_digest(hashlib.pbkdf2_hmac('sha256',pin.encode(),row[0],600000),row[1]):
+                    with self.server.auth_lock: self.server.auth_attempts['pin:'+self.client_address[0]].append(time.time())
+                    raise APIError(403,'Invalid access PIN.')
+                save_library_paths(db,{k:v for k,v in data.items() if k!='pin'},self.server.roots,self.server.state_db.parent)
             self.json_response({'ok':True})
             return
         if route=='/api/auth/change-password':
@@ -426,6 +460,20 @@ class Handler(BaseHTTPRequestHandler):
             if root is None: raise ValueError()
             path = safe_relative(data['path'])
             folder = checked_path(root, path)
+            if data.get('action') == 'rename':
+                if path == '.' or folder == root: raise APIError(400,'Cannot rename a library root.')
+                new_path = safe_relative(data.get('newPath',''))
+                if new_path == '.' or new_path == path or Path(new_path).parent != Path(path).parent:
+                    raise APIError(400,'Choose a different category name within the same parent folder.')
+                destination = checked_path(root, new_path)
+                if destination.exists(): raise APIError(409,'A category with that name already exists.')
+                if not folder.is_dir(): raise APIError(404,'Category not found.')
+                try:
+                    if any(folder.iterdir()): raise APIError(409,'Only empty categories can be renamed.')
+                    folder.rename(destination)
+                except OSError: raise APIError(409,'Unable to rename this category.')
+                self.server.scan_time=float('-inf')
+                return {'ok': True}
             if data.get('action') == 'delete':
                 if path == '.' or folder == root: raise APIError(400,'Cannot remove a library root.')
                 try: folder.rmdir()
@@ -627,6 +675,12 @@ class Handler(BaseHTTPRequestHandler):
                     raise
                 if path == '/api/auth/me':
                     self.json_response({'username':user['username'],'role':user['role'],'csrf':user['csrf']},head=head);return
+                if path == '/api/admin/paths/pin':
+                    self.require_session(admin=True)
+                    with sqlite3.connect(self.server.state_db) as db:
+                        db.execute('CREATE TABLE IF NOT EXISTS library_path_pin (id INTEGER PRIMARY KEY CHECK(id=1),salt BLOB NOT NULL,hash BLOB NOT NULL)')
+                        configured=db.execute('SELECT 1 FROM library_path_pin WHERE id=1').fetchone() is not None
+                    self.json_response({'configured':configured},head=head);return
                 if path == '/api/admin/paths':
                     self.require_session(admin=True)
                     with sqlite3.connect(self.server.state_db) as db:
