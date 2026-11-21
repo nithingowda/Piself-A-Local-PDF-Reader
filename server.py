@@ -1,3 +1,4 @@
+import zlib
 # server.py: PiShelf HTTP server, library APIs, file access, and reading progress.
 # Comments explain responsibilities and non-obvious behavior; keep runtime logic unchanged.
 
@@ -369,7 +370,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.auth_post(route);return
             # Readers may save their reading position, bookmarks and favourites.
             # All other write endpoints remain administrator-only.
-            self.require_session(admin=route!='/api/progress',mutation=True)
+            self.require_session(admin=route not in ('/api/progress','/api/annotations'),mutation=True)
             if urlsplit(self.path).path == '/api/webp-cache/clear':
                 # No body is required; reject unexpected or oversized requests.
                 if self.headers.get('Transfer-Encoding') or self.headers.get('Content-Length','0') not in ('0','2'):
@@ -573,6 +574,25 @@ class Handler(BaseHTTPRequestHandler):
                 for field in ('page','total','lastRead','completed'): value.pop(field,None)
                 db.execute('UPDATE progress SET value=? WHERE id=?',(json.dumps(value),id_))
             return {'ok':True}
+        if route == '/api/annotations':
+            user=self.require_session(mutation=True)
+            key=data.get('id');items=data.get('items')
+            if not isinstance(key,str) or not re.fullmatch('[a-f0-9]{20}',key): raise ValueError()
+            if not isinstance(items,list) or len(items)>3000: raise APIError(400,'Too many annotations.')
+            if not any(item['id']==key for item in self.library_items()): raise APIError(404,'PDF not found.')
+            for mark in items:
+                if not isinstance(mark,dict) or mark.get('type') not in ('pen','highlight') or type(mark.get('page')) is not int or not 1<=mark['page']<=100000: raise ValueError()
+                if not isinstance(mark.get('color'),str) or not re.fullmatch('#[a-fA-F0-9]{6}',mark['color']): raise ValueError()
+                points=mark.get('points')
+                if not isinstance(points,list) or not 2<=len(points)<=1000: raise ValueError()
+                if any(not isinstance(p,list) or len(p)!=2 or any(type(v) is not int or not 0<=v<=1000 for v in p) for p in points): raise ValueError()
+                if set(mark)-{'type','page','color','points'}: raise ValueError()
+            raw=json.dumps(items,separators=(',',':')).encode('utf-8')
+            if len(raw)>262144: raise APIError(413,'Annotations exceed 256 KB for this PDF.')
+            if items:
+                db.execute('INSERT INTO annotations(user_id,document_id,payload) VALUES (?,?,?) ON CONFLICT(user_id,document_id) DO UPDATE SET payload=excluded.payload',(user['id'],key,zlib.compress(raw,6)))
+            else: db.execute('DELETE FROM annotations WHERE user_id=? AND document_id=?',(user['id'],key))
+            return {'ok':True}
         if route == '/api/progress':
             key=data.pop('id')
             if not isinstance(key,str) or not re.fullmatch('[a-f0-9]{20}',key): raise ValueError()
@@ -607,6 +627,7 @@ class Handler(BaseHTTPRequestHandler):
             destination=trash/(token+Path(item['path']).suffix.lower())
             source.rename(destination)
             try:
+                db.execute('DELETE FROM annotations WHERE document_id=?',(key,))
                 db.execute('INSERT INTO trash (token,path,title,deleted,source) VALUES (?,?,?,?,?)',(token,item['path'],item['title'],time.time(),item['source']))
                 db.commit()
             except Exception:
@@ -792,6 +813,15 @@ class Handler(BaseHTTPRequestHandler):
                         metadata={k:json.loads(v) for k,v in db.execute('SELECT id,value FROM metadata')},categories=self.categories(),collections=read_collections(db))
                 self.json_response(value,head=head); return
 
+            if path == '/api/annotations':
+                user=self.require_session()
+                query=parse_qs(urlsplit(self.path).query)
+                key=query.get('id',[''])[0]
+                if not re.fullmatch('[a-f0-9]{20}',key): raise APIError(400,'Invalid PDF ID.')
+                if not any(item['id']==key for item in self.library_items()): raise APIError(404,'PDF not found.')
+                with sqlite3.connect(self.server.state_db) as db:
+                    row=db.execute('SELECT payload FROM annotations WHERE user_id=? AND document_id=?',(user['id'],key)).fetchone()
+                self.json_response(json.loads(zlib.decompress(row[0])) if row else [],head=head);return
             if path in ('/api/progress','/api/trash'):
                 with sqlite3.connect(self.server.state_db) as db:
                     if path.endswith('progress'):
@@ -1027,6 +1057,7 @@ def validate_collections(collections):
 
 # remove reading state: handle this step of the server request or library workflow.
 def remove_reading_state(db,key):
+    db.execute('DELETE FROM annotations WHERE document_id=?',(key,))
     db.execute('DELETE FROM progress WHERE id=?',(key,))
     db.execute('DELETE FROM metadata WHERE id=?',(key,))
     db.execute('DELETE FROM collection_items WHERE item_id=?',(key,))
@@ -1083,6 +1114,8 @@ def make_server(host,port,library,data,newspapers=None,books=None):
         db.execute('CREATE INDEX IF NOT EXISTS collection_item_lookup ON collection_items(item_id)')
         db.execute('CREATE TABLE IF NOT EXISTS metadata (id TEXT PRIMARY KEY,value TEXT NOT NULL)')
         db.execute('CREATE TABLE IF NOT EXISTS progress (id TEXT PRIMARY KEY,value TEXT NOT NULL)')
+        db.execute('CREATE TABLE IF NOT EXISTS annotations (user_id INTEGER NOT NULL,document_id TEXT NOT NULL,payload BLOB NOT NULL,PRIMARY KEY(user_id,document_id),FOREIGN KEY(user_id) REFERENCES auth_users(id) ON DELETE CASCADE)')
+        db.execute('CREATE INDEX IF NOT EXISTS annotations_document_idx ON annotations(document_id)')
         db.execute('CREATE TABLE IF NOT EXISTS trash (token TEXT PRIMARY KEY,path TEXT NOT NULL,title TEXT NOT NULL,deleted REAL NOT NULL)')
     with sqlite3.connect(server.state_db) as db:
         if 'source' not in {row[1] for row in db.execute('PRAGMA table_info(trash)')}:
