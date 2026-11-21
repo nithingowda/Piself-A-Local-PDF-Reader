@@ -191,3 +191,7 @@ body.epub-open{overflow:hidden}
  #reader[data-page-theme=night] .reader-bar,#reader[data-page-theme=night] .controls,
  #reader[data-page-theme=amoled] .reader-bar,#reader[data-page-theme=amoled] .controls{background:#090909}
 }
+
+/* Mouse-only desktop PDF panning; touch gestures remain unchanged. */
+#page-area.zoomed-in{cursor:grab}
+#page-area.desktop-panning{cursor:grabbing;user-select:none;-webkit-user-select:none}
