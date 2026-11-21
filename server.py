@@ -24,6 +24,7 @@ import secrets
 import hmac
 import subprocess
 import tempfile
+import asyncio
 
 # Optional raster engine is installed in Docker; errors are reported per request.
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -372,7 +373,43 @@ class Handler(BaseHTTPRequestHandler):
                 self.auth_post(route);return
             # Readers may save their reading position, bookmarks and favourites.
             # All other write endpoints remain administrator-only.
-            self.require_session(admin=route not in ('/api/progress','/api/annotations','/api/tts/alba'),mutation=True)
+            self.require_session(admin=route not in ('/api/progress','/api/annotations','/api/tts/alba','/api/tts/edge'),mutation=True)
+            if route == '/api/tts/edge':
+                length=int(self.headers.get('Content-Length','0'))
+                if self.headers.get_content_type()!='application/json' or not 0<length<=2048:
+                    raise APIError(400,'Invalid speech request.')
+                try:
+                    data=json.loads(self.rfile.read(length))
+                except (ValueError,UnicodeDecodeError):
+                    raise APIError(400,'Invalid speech JSON.')
+                phrase=data.get('text') if isinstance(data,dict) else None
+                if not isinstance(phrase,str) or not phrase.strip() or len(phrase)>500:
+                    raise APIError(400,'Speech text must be 1–500 characters.')
+                try:
+                    import edge_tts
+                    async def generate_edge():
+                        speech=edge_tts.Communicate(phrase,voice='en-IN-NeerjaNeural')
+                        audio=bytearray()
+                        async for part in speech.stream():
+                            if part['type']=='audio':
+                                audio.extend(part['data'])
+                                if len(audio)>8*1024*1024:
+                                    raise ValueError('Speech audio too large.')
+                        return bytes(audio)
+                    body=asyncio.run(asyncio.wait_for(generate_edge(),timeout=30))
+                except Exception as error:
+                    logging.warning('Edge TTS unavailable: %s',type(error).__name__)
+                    raise APIError(503,'Online Edge voice unavailable; switching to offline Piper.')
+                if not body:
+                    raise APIError(503,'Online Edge voice returned no audio.')
+                self.send_response(200)
+                self.send_header('Content-Type','audio/mpeg')
+                self.send_header('Content-Length',str(len(body)))
+                self.send_header('Cache-Control','no-store')
+                self.security_headers()
+                self.end_headers()
+                self.wfile.write(body)
+                return
             if route == '/api/tts/alba':
                 length=int(self.headers.get('Content-Length','0'))
                 if self.headers.get_content_type()!='application/json' or not 0<length<=2048:
