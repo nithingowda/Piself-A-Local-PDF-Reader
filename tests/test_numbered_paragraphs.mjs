@@ -104,3 +104,16 @@ test('queue resets on document switch and close',()=>{
  assert.match(app,/resetNumberedParagraphs\('epub'\);epubSpeech\?\.stop\(\)/);
  assert.match(app,/function resetNumberedParagraphs\(kind\)/);
 });
+
+
+test('a column ending mid-sentence stays separate from the lower debate sidebar',()=>{
+ const groups=numberedPdfParagraphs([
+  line('This is a long way from the COP28',205,640,0),
+  {...line('The debate over how to reverse global warming',40,666,1),fontName:'heading'},
+  {...line('Electrification is not the only debate',40,682,2),fontName:'body'},
+  {...line('in the energy delivered',205,220,3),readingColumn:1}
+ ],viewport);
+ assert.equal(paragraphAtPoint(groups,210,636,viewport).text,'This is a long way from the COP28');
+ assert.equal(paragraphAtPoint(groups,48,663,viewport).text,'The debate over how to reverse global warming');
+ assert.equal(paragraphAtPoint(groups,210,216,viewport).text,'in the energy delivered');
+});
