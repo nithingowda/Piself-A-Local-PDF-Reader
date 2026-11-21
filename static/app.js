@@ -743,6 +743,8 @@ const speechQueues={pdf:[],epub:[]};
 const speechQueuePosition={pdf:0,epub:0};
 const speechDraft={pdf:'',epub:''};
 const speechSelecting={pdf:false,epub:false};
+const automaticQueueStartPending={pdf:false,epub:false};
+const speechControllerPending={pdf:null,epub:null};
 let pdfSpeechPage=null; // kept for reader teardown
 let pdfSelectionOverlay=null,pdfSelectionAnchor=null,pdfSelectionDrag=null;
 let pdfSelectionSerial=0;
@@ -784,11 +786,7 @@ function speechQueueUI(kind){
  panel.querySelector('.speech-queue-add').onclick=()=>{
   const text=speechDraft[kind].trim();
   if(!text){toast('Select text first, then add it to the reading queue.');return;}
-  if(speechQueues[kind].length>=150){toast('Reading queue limit is 150 selections.');return;}
-  if(kind==='pdf')pdfSpeech?.stop();else epubSpeech?.stop();
-  speechQueues[kind].push({text,source:kind==='pdf'?'PDF':'EPUB'});
-  speechDraft[kind]='';
-  renderSpeechQueue(kind);
+  void enqueueSelectedSpeech(kind,text);
  };
  panel.querySelector('.speech-queue-play').onclick=()=>{void playSpeechQueue(kind);};
  panel.querySelector('.speech-queue-clear').onclick=()=>{
@@ -798,19 +796,39 @@ function speechQueueUI(kind){
  };
  return panel;
 }
-function setSpeechDraft(kind,text){
- if(!speechSelecting[kind])return;
+// Selecting text adds it immediately. The first selection speaks now; later
+// selections join the same queue without interrupting the current audio.
+async function enqueueSelectedSpeech(kind,text){
+ // Selection gestures are gated at the PDF/EPUB event handlers. The Add
+ // button can also queue manually entered or edited text.
  const chosen=String(text||'').trim();
  if(!chosen)return;
- speechDraft[kind]=chosen;
+ const queue=speechQueues[kind];
+ if(queue.length>=150){toast('Reading queue limit is 150 selections.');return;}
+ const entry={text:chosen,source:kind==='pdf'?'PDF':'EPUB'};
+ queue.push(entry);
+ speechDraft[kind]='';
  const panel=speechQueueUI(kind);
  panel.hidden=false;renderSpeechQueue(kind);
+ const current=kind==='pdf'?pdfSpeech:epubSpeech;
+ if(current?.active||automaticQueueStartPending[kind])return;
+ automaticQueueStartPending[kind]=true;
+ try{
+  const controller=await ensureSpeechController(kind);
+  if(!speechQueues[kind].includes(entry)||controller.active)return;
+  speechQueuePosition[kind]=speechQueues[kind].indexOf(entry);
+  speechPlayer(kind,true);
+  controller.play();
+  renderSpeechQueue(kind);
+ }catch(error){toast('Read aloud: '+error.message);}
+ finally{automaticQueueStartPending[kind]=false;}
 }
+
 function renderSpeechQueue(kind){
  const panel=speechQueueUI(kind),items=speechQueues[kind];
  panel.querySelector('.speech-queue-instructions').textContent=kind==='pdf'
-  ?'Drag a box around text on the PDF/WebP page. On touchscreens, tap its first and last lines. Select one column at a time.'
-  :'Select text in the EPUB, or tap a headline or paragraph. Only added selections will be read.';
+  ?'Drag a box around text to start reading. On touchscreens, tap its first and last lines. More selections join the queue.'
+  :'Select text in the EPUB, or tap a headline or paragraph. It starts reading immediately; later selections are queued.';
  const draft=panel.querySelector('.speech-queue-draft');
  if(draft.value!==speechDraft[kind])draft.value=speechDraft[kind];
  const list=panel.querySelector('.speech-queue-list');
@@ -883,27 +901,36 @@ async function startEpubSpeech(){await ensureSpeechController('epub');}
 async function ensureSpeechController(kind){
  const existing=kind==='pdf'?pdfSpeech:epubSpeech;
  if(existing)return existing;
- const {createReadAloud}=await speechEngine();
- const controller=createReadAloud({
-  getCsrfToken:()=>signedInUser?.csrf||'',
-  getText(){return speechQueues[kind][speechQueuePosition[kind]]?.text||'';},
-  next(){
-   if(speechQueuePosition[kind]+1>=speechQueues[kind].length)return false;
-   speechQueuePosition[kind]++;renderSpeechQueue(kind);return true;
-  },
-  peekNextText(){return speechQueues[kind][speechQueuePosition[kind]+1]?.text||null;},
-  onState:state=>speechState(kind,state)
- });
- if(kind==='pdf')pdfSpeech=controller;else epubSpeech=controller;
- wireSpeech(kind,controller);
- return controller;
+ if(speechControllerPending[kind])return speechControllerPending[kind];
+ const creation=(async()=>{
+  const {createReadAloud}=await speechEngine();
+  const current=kind==='pdf'?pdfSpeech:epubSpeech;
+  if(current)return current;
+  const controller=createReadAloud({
+   getCsrfToken:()=>signedInUser?.csrf||'',
+   getText(){return speechQueues[kind][speechQueuePosition[kind]]?.text||'';},
+   next(){
+    if(speechQueuePosition[kind]+1>=speechQueues[kind].length)return false;
+    speechQueuePosition[kind]++;renderSpeechQueue(kind);return true;
+   },
+   peekNextText(){return speechQueues[kind][speechQueuePosition[kind]+1]?.text||null;},
+   onState:state=>speechState(kind,state)
+  });
+  if(kind==='pdf')pdfSpeech=controller;else epubSpeech=controller;
+  wireSpeech(kind,controller);
+  return controller;
+ })();
+ speechControllerPending[kind]=creation;
+ try{return await creation;}
+ finally{if(speechControllerPending[kind]===creation)speechControllerPending[kind]=null;}
 }
+
 async function playSpeechQueue(kind){
  const entries=speechQueues[kind];
  if(!entries.length){toast('Add some selected text to the queue first.');return;}
  const controller=await ensureSpeechController(kind);
  controller.stop();speechQueuePosition[kind]=0;
- clearSpeechSelection(kind);
+ // Keep selection active so new excerpts can join while the queue plays.
  renderSpeechQueue(kind);
  speechPlayer(kind,true);
  controller.play();
@@ -939,7 +966,7 @@ async function finishPdfSelection(slot,one,two){
     x2:two.x*viewport.width,y2:two.y*viewport.height};
   const chosen=extractPdfRegion(content.items,viewport,region);
   if(serial!==pdfSelectionSerial||!speechSelecting.pdf)return;
-  if(chosen.text)setSpeechDraft('pdf',chosen.text);
+  if(chosen.text)void enqueueSelectedSpeech('pdf',chosen.text);
   else toast('No selectable PDF text in that area. Select a text line, not an image.');
  }catch(error){if(serial===pdfSelectionSerial)toast('Cannot select PDF text: '+error.message);}
 }
@@ -1015,8 +1042,8 @@ async function openEpubBook(item,start){
    cfi:start===1?'':initial.epubCfi||'',
    theme:prefs.epubTheme||'light',fontSize:prefs.epubFontSize||100,
    canSelectSpeechText:()=>speechSelecting.epub,
-   onTextTap:text=>{if(g===epubGeneration)setSpeechDraft('epub',text);},
-   onSelection:text=>{if(g===epubGeneration)setSpeechDraft('epub',text);},
+   onTextTap:text=>{if(g===epubGeneration)void enqueueSelectedSpeech('epub',text);},
+   onSelection:text=>{if(g===epubGeneration)void enqueueSelectedSpeech('epub',text);},
    onLocation:update=>{
     if(g!==epubGeneration)return;
     const {percentage,locationsReady,...patch}=update;
