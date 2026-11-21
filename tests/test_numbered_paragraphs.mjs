@@ -1,0 +1,116 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import {readFileSync} from 'node:fs';
+import {numberedPdfParagraphs,paragraphAtPoint,reorderParagraphs} from '../static/paragraph-queue.js';
+
+const root=new URL('../static/',import.meta.url);
+const app=readFileSync(new URL('app.js',root),'utf8');
+const html=readFileSync(new URL('index.html',root),'utf8');
+const epub=readFileSync(new URL('epub-reader.js',root),'utf8');
+const css=readFileSync(new URL('style.css',root),'utf8');
+const viewport={width:600,height:800,convertToViewportPoint:(x,y)=>[x,y]};
+const line=(str,x,y,id)=>({
+ str,transform:[1,0,0,1,x,y],width:165,height:12,boxHeight:12,boxWidth:165,
+ readingColumn:0,readingRegion:0,sourceIndex:id
+});
+
+test('PDF paragraphs are grouped top-to-bottom from actual PDF text',()=>{
+ const paragraphs=numberedPdfParagraphs([
+  line('First sentence of paragraph one.',25,110,0),
+  line('The same paragraph continues.',25,125,1),
+  line('Second paragraph starts here.',25,175,2),
+  line('Third paragraph starts here.',25,235,3)
+ ],viewport);
+ assert.deepEqual(paragraphs.map(p=>p.text),[
+  'First sentence of paragraph one. The same paragraph continues.',
+  'Second paragraph starts here.',
+  'Third paragraph starts here.'
+ ]);
+ assert.equal(paragraphAtPoint(paragraphs,30,120,viewport)?.text,paragraphs[0].text);
+ assert.equal(paragraphAtPoint(paragraphs,40,180,viewport)?.text,paragraphs[1].text);
+ assert.equal(paragraphAtPoint(paragraphs,250,400,viewport),null);
+ assert.deepEqual(paragraphs[0].boxes.length,2);
+});
+
+test('paragraph choice supports arbitrary selected order 1,2,3,4,5,6,7',()=>{
+ const chosen=Array.from({length:7},(_,index)=>({text:'Paragraph '+(index+1)}));
+ const reordered=reorderParagraphs(chosen,6,-1);
+ assert.deepEqual(reordered.map(p=>p.text),[
+  'Paragraph 1','Paragraph 2','Paragraph 3','Paragraph 4',
+  'Paragraph 5','Paragraph 7','Paragraph 6'
+ ]);
+ assert.deepEqual(chosen.map(p=>p.text),Array.from({length:7},(_,i)=>'Paragraph '+(i+1)));
+ assert.deepEqual(reorderParagraphs(chosen,0,-1),chosen);
+});
+
+test('existing automatic PDF/EPUB Read Aloud remains available by default',()=>{
+ assert.match(app,/function beginSpeechPick\(kind\)/);
+ assert.match(app,/async function startPdfSpeech\(\)/);
+ assert.match(app,/orderPdfSpeechItems\(content\.items/);
+ assert.match(app,/pdfSpeechText\(ordered\.slice\(start\)\)/);
+ assert.match(app,/readAloudNext\(\)/);
+ assert.match(app,/function markPdfReading\(/);
+ assert.match(app,/function markEpubReading\(/);
+ assert.match(app,/if\(numberedPlayback\.pdf\)return numberedParagraphs\.pdf/);
+ assert.match(app,/if\(numberedPlayback\.epub\)/);
+});
+
+test('numbered queue buttons and readable preview use textContent',()=>{
+ for(const kind of ['pdf','epub']){
+  assert.match(html,new RegExp('id="'+kind+'-read-paragraphs"'));
+ }
+ assert.match(app,/function enableNumberedParagraphs\(kind\)/);
+ assert.match(app,/function renderNumberedPanel\(kind\)/);
+ assert.match(app,/function changeNumberedParagraph\(kind,index,direction\)/);
+ assert.match(app,/function playNumberedParagraphs\(kind\)/);
+ assert.match(app,/numberedParagraphs=\{pdf:\[\],epub:\[\]\}/);
+ assert.match(app,/text\.textContent=entry\.text/);
+ assert.match(app,/badge\.textContent=String\(index\+1\)/);
+ assert.match(app,/list\.replaceChildren\(\)/);
+ assert.match(css,/\.numbered-paragraph-panel/);
+ assert.match(css,/\.numbered-pick-badge/);
+ assert.match(css,/\.numbered-pick-line/);
+});
+
+test('selected paragraphs use the same Edge player and prefetch as automatic reading',()=>{
+ assert.match(app,/controller\.stop\(\);numberedPlayback\[kind\]=true/);
+ assert.match(app,/numberedCursor\[kind\]=0/);
+ assert.match(app,/speechPlayer\(kind,true\)/);
+ assert.match(app,/controller\.play\(\)/);
+ assert.match(app,/if\(numberedPlayback\.pdf\)return numberedParagraphs\.pdf\[numberedCursor\.pdf\+1\]/);
+ assert.match(app,/if\(numberedPlayback\.epub\)\{/);
+ assert.match(app,/if\(following>=numberedParagraphs\.pdf\.length\)return false/);
+});
+
+test('PDF picks while narration runs do not automatically interrupt playback',()=>{
+ const i=app.indexOf('async function pickNumberedPdfParagraph(event,slot)');
+ const j=app.indexOf("$('pages').addEventListener('click'",i);
+ const snippet=app.slice(i,j);
+ assert.match(snippet,/addNumberedParagraph\('pdf'/);
+ assert.doesNotMatch(snippet,/pdfSpeech\?\.stop\(\)/);
+ assert.doesNotMatch(snippet,/pdfSpeech\.play\(\)/);
+ assert.match(app,/event\.stopImmediatePropagation\(\)/);
+ assert.match(app,/const slot=event\.target\.closest\('\.pdf-slot'\)/);
+});
+
+test('WebP page replacement and book spread rebuild retain numbered markers',()=>{
+ assert.match(app,/querySelectorAll\('\.annotation-layer,\.numbered-pick-overlay'\)/);
+ assert.match(app,/for\(const overlay of overlays\)slot\.append\(overlay\)/);
+ assert.match(app,/renderNumberedMarkers\(\);\s*annotationDrawAll\(\)/);
+ assert.match(app,/slot\.append\(overlay\)/);
+});
+
+test('EPUB taps can select full headlines and paragraphs with visual numbers',()=>{
+ assert.match(epub,/onTextTap\?\.\(block\.textContent\.trim\(\),block\)/);
+ assert.match(epub,/pishelf-numbered-paragraph/);
+ assert.match(app,/canSelectSpeechText:\(\)=>speechPickMode==='epub'\|\|numberedPickMode\.epub/);
+ assert.match(app,/if\(numberedPickMode\.epub\)\{/);
+ assert.match(app,/node\.dataset\.pishelfParagraphChoiceId/);
+ assert.match(app,/entry\.node\.setAttribute\('data-pishelf-paragraph-number'/);
+});
+
+test('queue resets on document switch and close',()=>{
+ assert.match(app,/resetNumberedParagraphs\('pdf'\);pdfSpeech\?\.stop\(\)/);
+ assert.match(app,/resetNumberedParagraphs\('epub'\);epubSpeech\?\.stop\(\)/);
+ assert.match(app,/function resetNumberedParagraphs\(kind\)/);
+});
