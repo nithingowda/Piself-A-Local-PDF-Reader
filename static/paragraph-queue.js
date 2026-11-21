@@ -85,7 +85,8 @@ export function paragraphAtPoint(paragraphs,x,y,viewport){
  if(!chosen||nearest>Math.max(20,viewport.height*.02))return null;
  const parts=[chosen];
  const index=paragraphs.indexOf(chosen);
- for(const next of paragraphs.slice(index+1,index+3)){
+ for(let i=index+1;i<paragraphs.length;i++){
+  const next=paragraphs[i];
   const prev=parts.at(-1);
   const last=prev.boxes.at(-1),first=next.boxes[0];
   const height=Math.min(last.h,first.h);
