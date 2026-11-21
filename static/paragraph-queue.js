@@ -20,8 +20,12 @@ export function numberedPdfParagraphs(ordered,viewport){
    const gapX=Math.max(item.x-prev.x-prev.boxWidth,prev.x-item.x-item.boxWidth);
    const newLine=dy>height*.55;
    const headingChange=newLine&&prev.fontName&&item.fontName&&prev.fontName!==item.fontName;
+   // Allow a little extra leading on aligned lines of the same body text.
+   const aligned=Math.abs(item.x-prev.x)<=height*.65;
+   const sameStyle=item.fontName===prev.fontName&&Math.abs(item.boxHeight-prev.boxHeight)<=height*.1;
+   const maxLineGap=height*(aligned&&sameStyle?2.1:1.8);
    if(item.readingRegion!==prev.readingRegion||item.readingColumn!==prev.readingColumn||
-      dy < -height*.65||dy>height*1.8||gapX>height*1.4||headingChange)region++;
+      dy < -height*.65||dy>maxLineGap||gapX>height*1.4||headingChange)region++;
   }
   return {...item,readingRegion:region};
  });

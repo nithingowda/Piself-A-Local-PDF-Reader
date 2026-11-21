@@ -117,3 +117,15 @@ test('a column ending mid-sentence stays separate from the lower debate sidebar'
  assert.equal(paragraphAtPoint(groups,48,663,viewport).text,'The debate over how to reverse global warming');
  assert.equal(paragraphAtPoint(groups,210,216,viewport).text,'in the energy delivered');
 });
+
+
+test('slightly wider spacing includes the next aligned body line',()=>{
+ const groups=numberedPdfParagraphs([
+  line('The article continues',205,420,0),
+  line('on this slightly indented line.',209,444,1),
+  line('A separate paragraph.',205,478,2)
+ ],viewport);
+ assert.deepEqual(groups.map(group=>group.text),[
+  'The article continues on this slightly indented line.','A separate paragraph.'
+ ]);
+});
