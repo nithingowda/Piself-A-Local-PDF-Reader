@@ -68,7 +68,7 @@ export function pdfSpeechText(items){
    const newColumn=xJump>Math.max(35,(previous.boxWidth||0)*.8)&&item.y<previous.y+height*2;
    const paragraphBreak=newColumn||lineGap>height*1.8||lineGap< -height*.7;
    const hyphenated=/[A-Za-z]-$/.test(previous.str||'');
-   if(paragraphBreak)result.push('\\n');
+   if(paragraphBreak)result.push('\n');
    else if(hyphenated){const last=result.pop();result.push(last.slice(0,-1));}
    else result.push(' ');
   }
