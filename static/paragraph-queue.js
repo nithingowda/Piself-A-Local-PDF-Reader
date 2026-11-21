@@ -96,10 +96,10 @@ export function paragraphAtPoint(paragraphs,x,y,viewport){
    if(gap<0||gap>height*1.8||
       Math.abs(next.anchor.x-prev.anchor.x)*viewport.width>height*viewport.height*1.6)break;
   }else{
-   // Follow a wrapped sentence only into the adjacent column of this region.
+   // A new column can begin with a new sentence or a capitalized name.
+   // Use the shared article region, typography and column geometry above.
    const continuation=next.column===prev.column+1&&first.x>prev.anchor.x&&
-    first.y<last.y-height&&typeof prev.font==='string'&&
-    /[\p{L}\p{N},;–—-]$/u.test(prev.text.trimEnd())&&/^\p{Ll}/u.test(next.text.trimStart());
+    first.y<last.y-height&&typeof prev.font==='string';
    if(!continuation)break;
   }
   parts.push(next);
