@@ -64,9 +64,9 @@ export function pdfSpeechText(items){
   if(previous){
    const lineGap=Math.abs(item.y-previous.y);
    const height=Math.max(8,previous.boxHeight||12,item.boxHeight||12);
-   const xJump=item.x-previous.x;
-   const newColumn=xJump>Math.max(35,(previous.boxWidth||0)*.8)&&item.y<previous.y+height*2;
-   const paragraphBreak=newColumn||lineGap>height*1.8||lineGap< -height*.7;
+   // Ordinary line spacing is often ~1.2–1.6x the PDF text height.
+   // A true paragraph/column boundary usually has a much larger gap.
+   const paragraphBreak=lineGap>height*2.4||item.y<previous.y-height*.8;
    const hyphenated=/[A-Za-z]-$/.test(previous.str||'');
    if(paragraphBreak)result.push('\n');
    else if(hyphenated){const last=result.pop();result.push(last.slice(0,-1));}
