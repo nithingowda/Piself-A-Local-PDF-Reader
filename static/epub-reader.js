@@ -59,7 +59,7 @@ export async function createEpubReader({url,container,cfi,theme='light',fontSize
    if(!doc?.body||doc.body.dataset.pishelfTapToRead)return;
    doc.body.dataset.pishelfTapToRead='1';
    const style=doc.createElement('style');
-   style.textContent='.pishelf-tap-selected{outline:2px solid #ed9a19!important;background:rgba(255,193,54,.3)!important;border-radius:3px}.pishelf-numbered-paragraph{position:relative;outline:2px solid #f0a620!important;background:rgba(255,193,54,.20)!important}.pishelf-numbered-paragraph.pishelf-speaking{outline-color:#2697bc!important;background:rgba(44,190,242,.42)!important}.pishelf-numbered-paragraph::before{content:attr(data-pishelf-paragraph-number);position:absolute;top:0;left:0;transform:translate(-95%,-25%);background:#e6a017;color:#111;padding:1px 6px;border-radius:99px;font-size:12px;line-height:18px;font-weight:700}';
+   style.textContent='.pishelf-tap-selected{outline:2px solid #ed9a19!important;background:rgba(255,193,54,.3)!important;border-radius:3px}.pishelf-numbered-paragraph{position:relative;outline:2px solid #f0a620!important;background:rgba(255,193,54,.20)!important}.pishelf-numbered-paragraph.pishelf-speaking{outline:none!important;background:transparent!important}.pishelf-numbered-paragraph::before{content:attr(data-pishelf-paragraph-number);position:absolute;top:0;left:0;transform:translate(-95%,-25%);background:#e6a017;color:#111;padding:1px 6px;border-radius:99px;font-size:12px;line-height:18px;font-weight:700}';
    style.textContent+='@media(max-width:650px), (pointer:coarse) and (max-height:500px){.pishelf-numbered-paragraph{outline:none!important}.pishelf-numbered-paragraph.pishelf-speaking,.pishelf-tap-selected{background:transparent!important;outline:none!important}.pishelf-numbered-paragraph.pishelf-speaking::before{background:#69d2f3}.pishelf-numbered-paragraph::before{transform:translateY(-50%)}}';
    doc.head?.append(style);
    doc.addEventListener('click',event=>{
@@ -68,7 +68,6 @@ export async function createEpubReader({url,container,cfi,theme='light',fontSize
     if(!block||!block.textContent?.trim())return;
     selectedSpeechBlock?.classList.remove('pishelf-tap-selected');
     selectedSpeechBlock=block;
-    block.classList.add('pishelf-tap-selected');
     speechStartNode=block;
     onTextTap?.(block.textContent.trim(),block);
    });
@@ -111,7 +110,7 @@ export async function createEpubReader({url,container,cfi,theme='light',fontSize
     if(!blocks.length)return body.textContent||'';
     const visible=Array.from(blocks).filter(node=>!node.closest('nav,[hidden],[aria-hidden="true"]'));
     const start=speechStartNode?visible.indexOf(speechStartNode):0;
-    if(speechStartNode&&start>=0){speechStartNode.classList.add('pishelf-tap-selected');speechStartNode=null;}
+    if(speechStartNode&&start>=0)speechStartNode=null;
     return visible.slice(Math.max(0,start)).map(node=>node.textContent?.trim()||'').filter(Boolean).join('\n');
    }).filter(Boolean).join('\n').trim();
   },

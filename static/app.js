@@ -734,7 +734,6 @@ function enableSpeechDrag(kind){
 function speechPlayer(kind,visible){
  if(!visible){
   resetNumberedParagraphs(kind);
-  clearSpeechHighlight(kind);
   if(kind==='pdf'){
    const selection=window.getSelection();
    if(selection?.anchorNode&&$('pages').contains(selection.anchorNode))selection.removeAllRanges();
@@ -749,7 +748,6 @@ function speechPlayer(kind,visible){
  if(!visible)$(kind+'-read-panel').hidden=true;
 }
 // Optional numbered paragraph queue; legacy Read Aloud remains the default.
-const compactReader=window.matchMedia('(max-width:650px), (pointer:coarse) and (max-height:500px)');
 const numberedParagraphs={pdf:[],epub:[]};
 const numberedCursor={pdf:0,epub:0};
 const numberedPlayback={pdf:false,epub:false};
@@ -955,106 +953,9 @@ function wireSpeech(kind,controller){
  $(kind+'-read-voice').onchange=e=>{const selected=e.target.value;try{localStorage.setItem(VOICE_STORAGE_KEY,selected);}catch{}controller.setVoice(selected);speechVoices(kind==='pdf'?'epub':'pdf');};
  speechVoices(kind);
 }
-let readingMark=null,readingMarkText='',readingMarkPage=0,readingMarkIndex=-1;
-function clearReadingMark(){
- if(readingMark){readingMark.remove();readingMark=null;}
- if(window.CSS?.highlights)CSS.highlights.delete('pishelf-reading');
- readingMarkText='';readingMarkPage=0;readingMarkIndex=-1;
-}
-// PDF images have no selectable text layer; use PDF.js text item coordinates.
-let pdfSpeechItems=null,pdfSpeechItemsPage=0,pdfSpeechStartIndex=0,pdfSpeechHighlightSpans=null,pdfSpeechSpansPage=0;
-async function markPdfReading(text,offset=0,length=0){
- if(!documentPDF||!text||!length)return;
- const currentPage=pdfSpeechCurrentPage();
- const slot=Array.from($('pages').querySelectorAll('[data-page]')).find(el=>+el.dataset.page===currentPage);
- if(!slot)return;
- const key=currentPage+':'+offset+':'+length;
- if(readingMarkText===key)return;
- readingMark?.remove();readingMark=null;
- readingMarkText=key;readingMarkPage=currentPage;readingMarkIndex=offset;
- try{
-  const pdfPage=await documentPDF.getPage(currentPage);
-  if(pdfSpeechItemsPage!==currentPage||!pdfSpeechItems){
-   const {orderPdfSpeechItems}=await import('./pdf-reading-order.js');
-   pdfSpeechItems=orderPdfSpeechItems((await pdfPage.getTextContent()).items,pdfPage.getViewport({scale:1,rotation}));
-   pdfSpeechItemsPage=currentPage;
-  }
-  if(readingMarkText!==key||pdfSpeechCurrentPage()!==currentPage)return;
-  if(pdfSpeechSpansPage!==currentPage||!pdfSpeechHighlightSpans){
-   const {pdfSpeechLayout}=await import('./pdf-reading-order.js');
-   const {normalizeSpeechText}=await speechEngine();
-   const layout=pdfSpeechLayout(pdfSpeechItems.slice(pdfSpeechStartIndex));
-   pdfSpeechHighlightSpans=layout.spans.map(span=>({
-    item:span.item,
-    from:normalizeSpeechText(layout.text.slice(0,span.start)).length,
-    to:normalizeSpeechText(layout.text.slice(0,span.end)).length
-   }));
-   pdfSpeechSpansPage=currentPage;
-  }
-  const end=offset+length;
-  const viewport=pdfPage.getViewport({scale:1,rotation});
-  const overlay=document.createElement('div');
-  overlay.className='speech-paragraph-overlay';
-  for(const {item,from,to} of pdfSpeechHighlightSpans){
-   // Sentence positions share the exact normalized text used for synthesis.
-   if(to<=offset||from>=end)continue;
-   const characters=Math.max(1,to-from);
-   const first=Math.max(from,offset),last=Math.min(to,end);
-   const startFraction=Math.max(0,(first-from)/characters);
-   const fraction=Math.max(.01,(last-first)/characters);
-   const pt=viewport.convertToViewportPoint(item.transform[4],item.transform[5]);
-   const highlight=document.createElement('div');
-   highlight.className='speech-page-highlight';
-   highlight.style.left=Math.max(0,(pt[0]+Math.abs(item.width||20)*startFraction)/viewport.width*100)+'%';
-   highlight.style.top=Math.max(0,(pt[1]-Math.abs(item.height||12))/viewport.height*100)+'%';
-   highlight.style.width=Math.max(.4,Math.min(100,Math.abs(item.width||20)*fraction/viewport.width*100))+'%';
-   highlight.style.height=Math.max(1.5,Math.abs(item.height||12)/viewport.height*100)+'%';
-   overlay.append(highlight);
-   if(overlay.childElementCount>=120)break;
-  }
-  if(readingMarkText===key&&pdfSpeechCurrentPage()===currentPage){
-   slot.append(overlay);readingMark=overlay;
-  }
- }catch{}
-}
-
-function markEpubReading(text,progress=0){
- if(!epubController)return;
- const iframe=$('epub-page').querySelector('iframe'),doc=iframe?.contentDocument;
- if(!doc||!text)return;
- const view=doc.defaultView;
- if(!view?.CSS?.highlights||!view.Highlight)return;
- view.CSS.highlights.delete('pishelf-reading');
- const words=text.trim().split(/\s+/);
- const needle=words[Math.min(words.length-1,Math.floor(Math.max(0,Math.min(.999,progress))*words.length))]?.toLowerCase();
- if(!needle)return;
- const walker=doc.createTreeWalker(doc.body,NodeFilter.SHOW_TEXT);
- let node;
- while((node=walker.nextNode())){
-  const hay=node.textContent.toLowerCase(),idx=hay.indexOf(needle);
-  if(idx>=0){const range=doc.createRange();range.setStart(node,idx);range.setEnd(node,Math.min(node.length,idx+needle.length));view.CSS.highlights.set('pishelf-reading',new view.Highlight(range));break;}
- }
-}
-function clearSpeechHighlight(kind){
- if(kind==='pdf')clearReadingMark();
- else epubController?.clearReadingHighlight?.();
-}
 function speechState(kind,state){
- if(state.clipEnded){clearSpeechHighlight(kind);return;}
- if(state.active===false)clearSpeechHighlight(kind);
- if(state.notice){toast(state.notice);return;}
- if(numberedPlayback[kind]){
-  if(state.spokenText!==undefined){
-   return;
-  }
-  if(state.active===false){resetNumberedParagraphs(kind);refreshNumberedSelection(kind);}
- }
- if(state.spokenText!==undefined){
-  if(compactReader.matches)return;
-  if(kind==='pdf')void markPdfReading(state.spokenText,state.readingOffset||0,state.readingLength||0);
-  else markEpubReading(state.readingSentence||state.spokenText,0);
-  return;
- }
+ if(state.clipEnded||state.spokenText!==undefined)return;
+ if(numberedPlayback[kind]&&state.active===false)resetNumberedParagraphs(kind);
  if(state.error){toast('Read aloud: '+state.error);return;}
  $(kind+'-read-play').textContent=state.active?'Reading…':'▶ Read aloud';
  $(kind+'-read-main').textContent=state.paused||!state.active?'▶':'⏸';
@@ -1132,17 +1033,6 @@ async function readPdfFromTap(event){
   const distance=Math.abs(pt[1]-y)*2+Math.max(0,pt[0]-x,x-pt[0]-item.width);
   if(distance<best){best=distance;index=i;}
  });
- // Show the chosen text immediately, even while the network voice loads.
- clearReadingMark();
- const selection=document.createElement('div');
- selection.className='speech-tap-selection';
- const chosen=items[index],point=viewport.convertToViewportPoint(chosen.transform[4],chosen.transform[5]);
- selection.style.left=Math.max(0,point[0]/viewport.width*100)+'%';
- selection.style.top=Math.max(0,(point[1]-Math.abs(chosen.height||12))/viewport.height*100)+'%';
- selection.style.width=Math.max(3,Math.min(100,(chosen.width||40)/viewport.width*100))+'%';
- selection.style.height=Math.max(1.5,Math.abs(chosen.height||12)/viewport.height*100)+'%';
- slot.append(selection);
- readingMark=selection;
  cancelSpeechPick();
  pdfSpeech?.stop();
  pdfSpeechStart={page:targetPage,index:items[index].sourceIndex};
@@ -1171,8 +1061,6 @@ async function startPdfSpeech(){
    const start=pdfSpeechStart?.page===speechPage
     ?Math.max(0,ordered.findIndex(item=>item.sourceIndex===pdfSpeechStart.index)):0;
    pdfSpeechStart=null;
-   pdfSpeechItemsPage=speechPage;pdfSpeechItems=ordered;
-   pdfSpeechStartIndex=start;pdfSpeechHighlightSpans=null;pdfSpeechSpansPage=0;
    return pdfSpeechText(ordered.slice(start));
   },
   async peekNextText(){
