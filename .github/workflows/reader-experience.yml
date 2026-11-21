@@ -29,5 +29,7 @@ jobs:
         run: node --test tests/test_spread_size_stability.mjs
       - name: Book spread source checks
         run: python -m unittest discover -s tests -p 'test_book_spread_source.py' -v
+      - name: Restored PR99 read-aloud regression tests
+        run: node --test tests/test_pr99_read_aloud.mjs
       - name: Reader regression tests
         run: python -m unittest discover -s tests -p 'test_reader_experience_source.py' -v
