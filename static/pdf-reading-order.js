@@ -84,30 +84,36 @@ export function orderPdfSpeechItems(items,viewport){
 
 // PDF.js hasEOL marks visual line wraps, not paragraph breaks.
 // Join nearby lines within each column, but separate headings and paragraph gaps.
-export function pdfSpeechText(items){
- const result=[];let previous=null;
+export function pdfSpeechLayout(items){
+ let text='',previous=null;
+ const spans=[];
  for(const item of items){
-  const text=String(item.str||'').trim();
-  if(!text)continue;
+  const fragment=String(item.str||'').trim();
+  if(!fragment)continue;
   if(previous){
    const lineGap=Math.abs(item.y-previous.y);
    const height=Math.max(8,previous.boxHeight||12,item.boxHeight||12);
-   // Ordinary line spacing is often ~1.2–1.6x the PDF text height.
-   // A true paragraph/column boundary usually has a much larger gap.
    const changedRegion=item.readingRegion!==previous.readingRegion;
    const changedColumn=item.readingColumn!==previous.readingColumn;
    const completedSentence=/[.!?…]["”’)\]]*$/u.test(String(previous.str||'').trim());
-   // An unfinished sentence can run from the bottom of one column into the
-   // top of the next: "across our podcast and video channels".
+   // Continue unfinished sentences into the next newspaper column.
    const paragraphBreak=changedRegion||
     (changedColumn?completedSentence:lineGap>height*2.4||item.y<previous.y-height*.8);
    const hyphenated=/[A-Za-z]-$/.test(previous.str||'');
-   if(paragraphBreak)result.push('\n');
-   else if(hyphenated){const last=result.pop();result.push(last.slice(0,-1));}
-   else result.push(' ');
+   if(paragraphBreak)text+='\n';
+   else if(hyphenated){
+    text=text.slice(0,-1);
+    if(spans.length)spans[spans.length-1].end--;
+   }else text+=' ';
   }
-  result.push(text);
+  const start=text.length;
+  text+=fragment;
+  spans.push({item,start,end:text.length});
   previous=item;
  }
- return result.join('').trim();
+ return {text:text.trim(),spans};
+}
+
+export function pdfSpeechText(items){
+ return pdfSpeechLayout(items).text;
 }

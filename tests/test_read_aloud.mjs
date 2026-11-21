@@ -92,9 +92,9 @@ test('floating player can be dragged and Edge voice choice persists',()=>{
  assert.match(app,/preferredSpeechVoice\(\)/);
 });
 test('reading highlight updates by audio progress without a player transcript',()=>{
- assert.match(app,/readingMarkIndex=wordIndex/);
+ assert.match(app,/readingMarkIndex=offset/);
  assert.match(app,/pdfSpeechItemsPage/);
- assert.match(app,/markEpubReading\(state\.spokenText,state\.readingProgress\|\|0\)/);
+ assert.match(app,/markEpubReading\(state\.readingSentence\|\|state\.spokenText,0\)/);
  assert.match(speech,/ontimeupdate/);
 });
 
@@ -326,4 +326,56 @@ test('a dated sentence at the foot of a PDF page remains readable',async()=>{
   item('The experiment continues.',40,840)
  ],viewport);
  assert.equal(ordered.length,2);
+});
+
+
+test('Edge synthesis sends true sentence timings without changing the MP3 payload',()=>{
+ const server=readFileSync(new URL('../server.py',import.meta.url),'utf8');
+ assert.match(server,/boundary='SentenceBoundary'/);
+ assert.match(server,/part\['type'\]==='SentenceBoundary'/);
+ assert.match(server,/X-PiShelf-Sentences/);
+ assert.match(speech,/response\.headers\.get\('X-PiShelf-Sentences'\)/);
+});
+test('sentence highlights follow punctuation and exact Edge timestamp boundaries',async()=>{
+ const {speechSentenceRanges}=await import('../static/read-aloud.js');
+ const chunk='Happy 70th birthday. BREAK open the bubbly, light the candles. “Video channels,” she said. Now the story continues!';
+ const words=speechSentenceRanges(chunk,[
+  [0.1,2,'Happy 70th birthday.'],
+  [2.15,4,'BREAK open the bubbly, light the candles.'],
+  [6.3,3,'“Video channels,” she said.'],
+  [9.4,4,'Now the story continues!']
+ ]);
+ assert.equal(words.length,4);
+ assert.deepEqual(words.map(x=>x.text),[
+  'Happy 70th birthday.',
+  'BREAK open the bubbly, light the candles.',
+  '“Video channels,” she said.',
+  'Now the story continues!'
+ ]);
+ assert.deepEqual(words.map(x=>x.time),[0.1,2.15,6.3,9.4]);
+ assert.ok(words.every(x=>chunk.slice(x.start,x.end)===x.text));
+});
+test('sentence fallback remains usable without online boundary metadata',async()=>{
+ const {speechSentenceRanges}=await import('../static/read-aloud.js');
+ const chunk='First sentence. Second sentence! Third sentence?';
+ const ranges=speechSentenceRanges(chunk);
+ assert.deepEqual(ranges.map(x=>x.text),['First sentence.','Second sentence!','Third sentence?']);
+ assert.ok(ranges.every(x=>x.time===null));
+});
+test('next PDF page gets prefetched before the current audio ends',()=>{
+ assert.match(speech,/nextPagePrefetch=preloadNextPage\(\)/);
+ assert.match(speech,/peekNextText=\\(\\)=>null/);
+ assert.match(speech,/await next\(\)/);
+ assert.match(speech,/speakNext\(session,nextReady\)/);
+ assert.match(app,/async peekNextText\(\)/);
+ assert.match(app,/pdfSpeechCurrentPage\(\)\+1/);
+ assert.match(speech,/player\.preload='auto'/);
+});
+test('PDF highlighting uses contiguous sentence character spans rather than word counting',()=>{
+ const pdfOrder=readFileSync(new URL('pdf-reading-order.js',root),'utf8');
+ assert.match(app,/async function markPdfReading\(text,offset=0,length=0\)/);
+ assert.match(app,/const end=offset\+length/);
+ assert.match(app,/Math\.min\(to,end\)/);
+ assert.match(app,/readingMarkIndex=offset/);
+ assert.match(pdfOrder,/export function pdfSpeechLayout/);
 });
