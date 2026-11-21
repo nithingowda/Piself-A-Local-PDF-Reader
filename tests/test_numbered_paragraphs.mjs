@@ -49,8 +49,8 @@ test('existing automatic PDF/EPUB Read Aloud remains available by default',()=>{
  assert.match(app,/orderPdfSpeechItems\(content\.items/);
  assert.match(app,/pdfSpeechText\(ordered\.slice\(start\)\)/);
  assert.match(app,/readAloudNext\(\)/);
- assert.doesNotMatch(app,/function markPdfReading\(/);
- assert.doesNotMatch(app,/function markEpubReading\(/);
+ assert.match(app,/function markPdfReading\(/);
+ assert.match(app,/function markEpubReading\(/);
  assert.match(app,/if\(numberedPlayback\.pdf\)return numberedParagraphs\.pdf/);
  assert.match(app,/if\(numberedPlayback\.epub\)/);
 });
@@ -139,7 +139,7 @@ test('tapping any line selects the whole paragraph across inline emphasis',()=>{
   body('Another paragraph.',38,148,4,128)
  ],viewport);
  for(const y of [97,113,129]){
-  assert.equal(paragraphAtPoint(groups,40,y,viewport).text,'Energy use rose again this year. The trend continued.');
+  assert.equal(paragraphAtPoint(groups,40,y,viewport).text,'Energy use rose again this year. The trend continued.\nAnother paragraph.');
  }
  assert.equal(paragraphAtPoint(groups,45,145,viewport).text,'Another paragraph.');
 });

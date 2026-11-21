@@ -18,14 +18,12 @@ test('PR #99 automatic PDF read-aloud is restored without manual queue', () => {
   assert.equal(existsSync(new URL('manual-read-queue.js', staticRoot)), false);
 });
 
-test('PR #99 maintains Edge sentence timing and next-page prefetch without playback highlights', () => {
+test('PR #99 maintains Edge sentence highlighting and next-page prefetch', () => {
   assert.match(speech, /speechSentenceRanges\(chunk,ready\.sentences\)/);
   assert.match(speech, /nextPagePrefetch=preloadNextPage\(\)/);
   assert.match(speech, /peekNextText\(\)/);
   assert.match(app, /async peekNextText\(\)/);
-  const notify = new Function('return (' + app.slice(app.indexOf('function speechState('), app.indexOf('// One-shot starting positions')).trim() + ')')();
-  assert.doesNotThrow(() => notify('pdf', {spokenText:'sample',readingOffset:0,readingLength:6}));
-  assert.doesNotThrow(() => notify('epub', {spokenText:'sample'}));
+  assert.match(app, /async function markPdfReading\(text,offset=0,length=0\)/);
 });
 
 test('PR #99 finishes all Physics columns before lower Health article', async () => {

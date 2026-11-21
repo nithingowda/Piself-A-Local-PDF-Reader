@@ -14,7 +14,7 @@ test('closing the PDF player clears pending picks and the native text range',()=
  const window={getSelection:()=>({anchorNode:{},removeAllRanges:()=>calls.push('range')})};
  const run=new Function('$','window','resetNumberedParagraphs','clearSpeechHighlight','rangeAction',player+"speechPlayer('pdf',false);");
  run($,window,kind=>calls.push('reset '+kind),kind=>calls.push('clear '+kind),action);
- assert.deepEqual(calls,['reset pdf','range']);
+ assert.deepEqual(calls,['reset pdf','clear pdf','range']);
  assert.equal(action.hidden,true);
  assert.equal($('pdf-speech-player').hidden,true);
 });
