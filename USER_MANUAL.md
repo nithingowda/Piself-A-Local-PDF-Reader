@@ -125,6 +125,14 @@ Open a magazine cover. PiShelf resumes at the last saved page, if available.
 
 PiShelf initially shows a smaller WebP page preview and upgrades it to a sharper image when needed. It releases distant images to help mobile Safari memory usage.
 
+### Numbered paragraph Read Aloud
+
+Normal **🔊 Read** works as before. While it is speaking, tap **¶ 1–7** in the floating voice player to open an optional paragraph picker. Tap any paragraph on the PDF/WebP page or EPUB to mark it **1, 2, 3…** in the order you choose; the selected paragraphs are highlighted and numbered. The list shows each paragraph's text, with **↑ / ↓** to change order and **✕** to remove it. You may add selections from different PDF pages. Selecting them does not interrupt the ongoing automatic reading.
+
+Choose **▶ Play selected** to switch playback to **only** the numbered paragraphs in your chosen order. PiShelf retains the existing Edge Neural TTS voice, speed, and buffering. **Clear** deletes the selections. Return to normal **🔊 Read** to use automatic reading again. The queue is temporary and clears when you leave the document.
+
+PDF paragraph selection uses the original embedded PDF text even though the page displays a WebP image. Image-only/scanned text cannot be selected without a PDF text layer; some complex layouts may group adjacent lines as one paragraph.
+
 ## 6. Settings, cache and data
 
 Settings lets you change themes, reading mode, quality and cover density, manage collections, export/restore reading metadata, rescan the library and clear the WebP cache.
