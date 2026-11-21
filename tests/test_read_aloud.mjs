@@ -282,3 +282,48 @@ test('full paragraphs group several sentences into a single naturally paced clip
   'The next paragraph starts now.'
  ]);
 });
+
+test('New Scientist footer is skipped and an unfinished sentence continues into the next column',async()=>{
+ const {orderPdfSpeechItems,pdfSpeechText}=await import('../static/pdf-reading-order.js');
+ const viewport={width:700,height:890,convertToViewportPoint:(x,y)=>[x,y]};
+ const fragment=(str,x,y,width=165)=>({
+  str,transform:[1,0,0,1,x,y],width,height:12,hasEOL:true
+ });
+ // Simulate the magazine's PDF stream: its bottom-page footer and article
+ // fragments are interleaved rather than stored in visual reading order.
+ const source=[
+  fragment('video channels. That said, we also speculated',251,550),
+  fragment('that it might be possible to manipulate models.',251,569),
+  fragment('The anniversary continues in our magazine.',251,588),
+  fragment('A clear demonstration, if one were needed,',471,550),
+  fragment('is how far our predictions have come.',471,569),
+  fragment('You can read the full story here.',471,588),
+  fragment('BREAK open the bubbly, light the candles',35,550),
+  fragment('and get ready to party. New Scientist is 70!',35,569),
+  fragment('Our digital offering has expanded greatly',35,811),
+  fragment('with interviews available across our podcast and',35,830),
+  fragment('Happy 70th birthday',173,93,280),
+  fragment('Join us as we look to the past and future',173,126,310),
+  fragment('2 |',35,877,20),
+  fragment('New Scientist',61,877,90),
+  fragment('| 21 November 2026',157,877,135)
+ ];
+ const ordered=orderPdfSpeechItems(source,viewport);
+ const spoken=pdfSpeechText(ordered);
+ assert.equal(ordered.some(item=>item.str.includes('21 November 2026')),false);
+ assert.equal(spoken.includes('2 | New Scientist'),false);
+ assert.match(spoken,/across our podcast and video channels\. That said/);
+ assert.ok(spoken.indexOf('BREAK open the bubbly')<spoken.indexOf('across our podcast and'));
+ assert.ok(spoken.indexOf('video channels')<spoken.indexOf('A clear demonstration'));
+ assert.equal(spoken.includes('Happy 70th birthday'),true);
+});
+test('a dated sentence at the foot of a PDF page remains readable',async()=>{
+ const {orderPdfSpeechItems}=await import('../static/pdf-reading-order.js');
+ const viewport={width:700,height:890,convertToViewportPoint:(x,y)=>[x,y]};
+ const item=(str,x,y)=>({str,transform:[1,0,0,1,x,y],width:180,height:12});
+ const ordered=orderPdfSpeechItems([
+  item('Our 21 November 2026 report explains the result.',40,872),
+  item('The experiment continues.',40,840)
+ ],viewport);
+ assert.equal(ordered.length,2);
+});

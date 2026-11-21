@@ -3,14 +3,40 @@
  * Sort major vertical regions first, then read each column top-to-bottom.
  * No OCR or image analysis is performed.
  */
+// Skip running issue metadata printed in the bottom margin, not article copy.
+// PDF.js may return a footer as one text item or several separate fragments.
+function stripRunningFooters(items,viewport){
+ const bottom=items.filter(item=>item.y>=viewport.height*.94);
+ if(!bottom.length)return items;
+ const baselines=[],tolerance=Math.max(5,viewport.height*.008);
+ for(const item of bottom.sort((a,b)=>a.y-b.y||a.x-b.x)){
+  let line=baselines.find(line=>Math.abs(line.y-item.y)<=tolerance);
+  if(!line){line={y:item.y,parts:[]};baselines.push(line);}
+  line.parts.push(item);
+ }
+ const excluded=new Set();
+ for(const line of baselines){
+  const text=line.parts.sort((a,b)=>a.x-b.x).map(item=>item.str.trim()).join(' ').replace(/\s+/g,' ');
+  const date=/\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+(?:19|20)\d{2}\b/i.test(text);
+  const publication=/\bNew\s+Scientist\b/i.test(text);
+  const pageSeparator=/^\d{1,4}\s*[|•·–—]\s*/u.test(text);
+  // Constrain to short, bottom-margin metadata; don't drop an article line
+  // solely because its sentence mentions a date.
+  if(text.length<=110&&((date&&(publication||pageSeparator))||(publication&&pageSeparator)))
+   for(const item of line.parts)excluded.add(item.sourceIndex);
+ }
+ return excluded.size?items.filter(item=>!excluded.has(item.sourceIndex)):items;
+}
+
 export function orderPdfSpeechItems(items,viewport){
  const measured=items.map((item,sourceIndex)=>{
   const p=viewport.convertToViewportPoint(item.transform[4],item.transform[5]);
   return {...item,sourceIndex,x:p[0],y:p[1],boxWidth:Math.abs(item.width||0),boxHeight:Math.abs(item.height||12)};
  }).filter(item=>item.str?.trim()&&Number.isFinite(item.x)&&Number.isFinite(item.y));
- if(measured.length<2)return measured;
+ const content=stripRunningFooters(measured,viewport);
+ if(content.length<2)return content;
  // A large vertical gap separates the headline/image region from article copy.
- const byY=[...measured].sort((a,b)=>a.y-b.y||a.x-b.x);
+ const byY=[...content].sort((a,b)=>a.y-b.y||a.x-b.x);
  let cutoff=null,maxGap=Math.max(48,viewport.height*.10);
  for(let i=1;i<byY.length;i++){
   const gap=byY[i].y-byY[i-1].y;
@@ -18,12 +44,14 @@ export function orderPdfSpeechItems(items,viewport){
    cutoff=(byY[i].y+byY[i-1].y)/2;maxGap=gap;
   }
  }
- const groups=cutoff===null?[measured]:[
-  measured.filter(item=>item.y<cutoff),
-  measured.filter(item=>item.y>=cutoff)
+ const groups=cutoff===null?[content]:[
+  content.filter(item=>item.y<cutoff),
+  content.filter(item=>item.y>=cutoff)
  ];
- function columnSorted(group){
-  if(group.length<3)return [...group].sort((a,b)=>a.y-b.y||a.x-b.x);
+ function columnSorted(group,region){
+  // Keep reading-order metadata for paragraph continuation across columns.
+  const tagged=(sorted,getColumn)=>sorted.map(item=>({...item,readingRegion:region,readingColumn:getColumn(item)}));
+  if(group.length<3)return tagged([...group].sort((a,b)=>a.y-b.y||a.x-b.x),()=>0);
   // Determine column starts using repeated left-aligned text origins.
   // Bounding-box gutters fail when PDF text boxes overlap neighboring columns.
   const tolerance=Math.max(5,viewport.width*.018);
@@ -46,12 +74,12 @@ export function orderPdfSpeechItems(items,viewport){
   columns.sort((a,b)=>a.x-b.x);
   // If there are not enough repeated starts, preserve vertical order rather
   // than incorrectly reading a row across multiple columns.
-  if(columns.length<2)return [...group].sort((a,b)=>a.y-b.y||a.x-b.x);
+  if(columns.length<2)return tagged([...group].sort((a,b)=>a.y-b.y||a.x-b.x),()=>0);
   const boundaries=columns.slice(1).map((entry,i)=>(columns[i].x+entry.x)/2);
   const column=item=>boundaries.filter(boundary=>item.x>=boundary).length;
-  return [...group].sort((a,b)=>column(a)-column(b)||a.y-b.y||a.x-b.x);
+  return tagged([...group].sort((a,b)=>column(a)-column(b)||a.y-b.y||a.x-b.x),column);
  }
- return groups.flatMap(columnSorted);
+ return groups.flatMap((group,region)=>columnSorted(group,region));
 }
 
 // PDF.js hasEOL marks visual line wraps, not paragraph breaks.
@@ -66,7 +94,13 @@ export function pdfSpeechText(items){
    const height=Math.max(8,previous.boxHeight||12,item.boxHeight||12);
    // Ordinary line spacing is often ~1.2–1.6x the PDF text height.
    // A true paragraph/column boundary usually has a much larger gap.
-   const paragraphBreak=lineGap>height*2.4||item.y<previous.y-height*.8;
+   const changedRegion=item.readingRegion!==previous.readingRegion;
+   const changedColumn=item.readingColumn!==previous.readingColumn;
+   const completedSentence=/[.!?…]["”’)\]]*$/u.test(String(previous.str||'').trim());
+   // An unfinished sentence can run from the bottom of one column into the
+   // top of the next: "across our podcast and video channels".
+   const paragraphBreak=changedRegion||
+    (changedColumn?completedSentence:lineGap>height*2.4||item.y<previous.y-height*.8);
    const hyphenated=/[A-Za-z]-$/.test(previous.str||'');
    if(paragraphBreak)result.push('\n');
    else if(hyphenated){const last=result.pop();result.push(last.slice(0,-1));}
