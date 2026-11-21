@@ -704,7 +704,7 @@ function speechState(kind,state){
  $(kind+'-read-main').textContent=state.paused||!state.active?'▶':'⏸';
  $(kind+'-read-main').setAttribute('aria-label',state.paused||!state.active?'Resume reading':'Pause reading');
  $(kind+'-read-pause').textContent=state.paused?'Resume':'Pause';
- if(!state.active&&!state.error)speechPlayer(kind,false);
+ // Keep the mini-player visible after errors or natural completion; only Close dismisses it.
 }
 async function startPdfSpeech(){
  const {createReadAloud}=await speechEngine();

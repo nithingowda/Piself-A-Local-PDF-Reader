@@ -1,4 +1,4 @@
-/* Local browser text-to-speech. No audio or document content is sent to PiShelf. */
+/* Piper TTS runs on the local PiShelf server; browser speech is a fallback. */
 export function createReadAloud({getText,next,onState}){
  const synth=window.speechSynthesis;
  let active=false,paused=false,token=0,voice='piper-alba',rate=1,utterance=null,audio=null,abort=null,seekAudio=null;
@@ -22,14 +22,14 @@ export function createReadAloud({getText,next,onState}){
     const request=new AbortController();abort=request;
     try{
      const response=await fetch('/api/tts/alba',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({text:chunk}),signal:request.signal});
-     if(!response.ok)throw Error('Piper Alba unavailable');
+     if(!response.ok){let detail='Piper server returned HTTP '+response.status;try{const payload=await response.json();detail=payload.error||payload.message||detail;}catch{}throw Error(detail);}
      const blob=await response.blob();if(!active||t!==token)return;
      const url=URL.createObjectURL(blob);const player=new Audio(url);audio=player;player.playbackRate=rate;
      if(seekAudio!==null){player.addEventListener('loadedmetadata',()=>{player.currentTime=Math.max(0,Math.min(player.duration||0,seekAudio));seekAudio=null;},{once:true});}
      player.onended=()=>{URL.revokeObjectURL(url);audio=null;if(active&&t===token)void say();};
      player.onerror=()=>{URL.revokeObjectURL(url);stop();onState?.({error:'Could not play Piper audio.'});};
      await player.play();return;
-    }catch(error){if(!active||t!==token)return;voice='';onState?.({error:'Piper Alba is not configured; using browser voice.'});}
+    }catch(error){if(!active||t!==token)return;voice='';onState?.({error:'Piper AI failed: '+error.message+'. Switching to browser voice.'});}
    }
    const u=new SpeechSynthesisUtterance(chunk);
    utterance=u;u.rate=rate;
