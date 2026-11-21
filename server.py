@@ -284,6 +284,14 @@ class Handler(BaseHTTPRequestHandler):
                 salt=secrets.token_bytes(24)
                 db.execute('INSERT INTO library_path_pin VALUES (1,?,?)',(salt,hashlib.pbkdf2_hmac('sha256',pin.encode(),salt,600000)))
             self.json_response({'ok':True});return
+        if route=='/api/admin/paths/verify':
+            with sqlite3.connect(self.server.state_db) as db:
+                db.execute('CREATE TABLE IF NOT EXISTS library_path_pin (id INTEGER PRIMARY KEY CHECK(id=1),salt BLOB NOT NULL,hash BLOB NOT NULL)')
+                row=db.execute('SELECT salt,hash FROM library_path_pin WHERE id=1').fetchone()
+                pin=data.get('pin')
+                if not row or not isinstance(pin,str) or not re.fullmatch(r'[0-9]{6}',pin) or not hmac.compare_digest(hashlib.pbkdf2_hmac('sha256',pin.encode(),row[0],600000),row[1]):
+                    raise APIError(403,'Invalid access PIN.')
+            self.json_response({'ok':True});return
         if route=='/api/admin/paths':
             with sqlite3.connect(self.server.state_db) as db:
                 db.execute('CREATE TABLE IF NOT EXISTS library_path_pin (id INTEGER PRIMARY KEY CHECK(id=1),salt BLOB NOT NULL,hash BLOB NOT NULL)')
