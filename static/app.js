@@ -908,6 +908,13 @@ async function openEpubBook(item,start){
    url:pdfURL(item),container:$('epub-page'),
    cfi:start===1?'':initial.epubCfi||'',
    theme:prefs.epubTheme||'light',fontSize:prefs.epubFontSize||100,
+   onTextTap:async()=>{
+    if(g!==epubGeneration)return;
+    await startEpubSpeech();
+    epubSpeech.stop();
+    speechPlayer('epub',true);
+    epubSpeech.play();
+   },
    onLocation:update=>{
     if(g!==epubGeneration)return;
     const {percentage,locationsReady,...patch}=update;
