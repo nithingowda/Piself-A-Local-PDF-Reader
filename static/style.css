@@ -171,7 +171,7 @@ body.epub-open{overflow:hidden}
 
 /* Subtle floating reader chrome: translucent without blurring the PDF canvas. */
 #reader .reader-bar,#reader .controls{
- background:color-mix(in srgb,var(--card) 84%,transparent);
+ background:color-mix(in srgb,var(--card) 50%,transparent);
  -webkit-backdrop-filter:blur(10px);
  backdrop-filter:blur(10px);
  box-shadow:0 2px 12px #00000018;
@@ -181,7 +181,7 @@ body.epub-open{overflow:hidden}
 #reader[data-page-theme=amoled] .controls,
 #reader[data-page-theme=night] .reader-bar,
 #reader[data-page-theme=night] .controls{
- background:rgba(9,9,9,.84);
+ background:rgba(9,9,9,.5);
 }
 @media(prefers-reduced-transparency:reduce){
  #reader .reader-bar,#reader .controls{
