@@ -821,7 +821,7 @@ async function startPdfSpeech(){
    if(!documentPDF)return '';
    const pdfPage=await documentPDF.getPage(page);
    const content=await pdfPage.getTextContent();
-   return content.items.map(x=>x.str||'').join(' ');
+   // PDF.js marks line endings; preserve them so headlines are read separately.\n   return content.items.map(item=>(item.str||'')+(item.hasEOL?'\n':' ')).join('').trim();
   },
   async next(){if(!documentPDF||page>=documentPDF.numPages)return false;move(page+1);return true;},
   onState:state=>speechState('pdf',state)
