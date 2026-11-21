@@ -129,20 +129,49 @@ export function createReadAloud({getText,next,peekNextText=()=>null,onState,getC
   notify();
  }
 
+ // Short, abortable backoff for transient online TTS overloads. No retry is
+ // attempted for authentication, CSRF or invalid input errors.
+ function speechRetryDelay(milliseconds,signal){
+  return new Promise((resolve,reject)=>{
+   if(signal.aborted){reject(Error('Speech request cancelled.'));return;}
+   const onAbort=()=>{
+    clearTimeout(timer);signal.removeEventListener('abort',onAbort);
+    reject(Error('Speech request cancelled.'));
+   };
+   const timer=setTimeout(()=>{
+    signal.removeEventListener('abort',onAbort);resolve();
+   },milliseconds);
+   signal.addEventListener('abort',onAbort,{once:true});
+  });
+ }
  async function requestSpeech(chunk,selectedVoice){
   const request=new AbortController();
   requests.add(request);
   try{
-   const response=await fetch('/api/tts/edge',{
-    method:'POST',credentials:'same-origin',signal:request.signal,
-    headers:{'Content-Type':'application/json','X-PiShelf-CSRF':getCsrfToken()},
-    body:JSON.stringify({text:chunk,voice:selectedVoice})
-   });
-   if(!response.ok)throw Error('Edge voice unavailable (HTTP '+response.status+').');
-   let sentences=[];
-   try{sentences=JSON.parse(response.headers.get('X-PiShelf-Sentences')||'[]');}
-   catch{sentences=[];}
-   return {blob:await response.blob(),sentences:Array.isArray(sentences)?sentences:[]};
+   for(let attempt=0;attempt<3;attempt++){
+    let response;
+    try{
+     response=await fetch('/api/tts/edge',{
+      method:'POST',credentials:'same-origin',signal:request.signal,
+      headers:{'Content-Type':'application/json','X-PiShelf-CSRF':getCsrfToken()},
+      body:JSON.stringify({text:chunk,voice:selectedVoice})
+     });
+    }catch(error){
+     if(request.signal.aborted||attempt===2)throw error;
+     await speechRetryDelay(200*(attempt+1),request.signal);
+     continue;
+    }
+    if(response.ok){
+     let sentences=[];
+     try{sentences=JSON.parse(response.headers.get('X-PiShelf-Sentences')||'[]');}
+     catch{sentences=[];}
+     return {blob:await response.blob(),sentences:Array.isArray(sentences)?sentences:[]};
+    }
+    if(![429,502,503,504].includes(response.status)||attempt===2)
+     throw Error('Edge voice unavailable (HTTP '+response.status+').');
+    await speechRetryDelay(200*(attempt+1),request.signal);
+   }
+   throw Error('Edge voice unavailable.');
   }finally{requests.delete(request);}
  }
 
