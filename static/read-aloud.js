@@ -66,6 +66,49 @@ export function splitSpeechChunks(text){
 }
 
 
+// Preserve long audio clips but expose individual sentence ranges to the UI.
+// Prefer timestamps supplied by Edge; fall back to approximate timing only if
+// the service does not provide sentence metadata.
+export function speechSentenceRanges(chunk,marks=[]){
+ const segments=[];
+ if(typeof Intl.Segmenter==='function'){
+  const segmenter=new Intl.Segmenter(undefined,{granularity:'sentence'});
+  for(const part of segmenter.segment(chunk)){
+   const text=part.segment.trim();
+   if(text)segments.push({start:part.index+part.segment.indexOf(text),end:part.index+part.segment.indexOf(text)+text.length,text});
+  }
+ }
+ if(!segments.length)segments.push({start:0,end:chunk.length,text:chunk});
+ const timed=[];
+ let cursor=0;
+ for(const mark of marks){
+  if(!Array.isArray(mark)||mark.length<3||!Number.isFinite(mark[0])||!Number.isFinite(mark[1]))continue;
+  const needle=normalizeSpeechText(mark[2]).trim();
+  if(!needle)continue;
+  let start=chunk.indexOf(needle,cursor);
+  let length=needle.length;
+  if(start<0){
+   // Edge can omit terminal quotes/punctuation from boundary text.
+   const prefix=needle.replace(/[.!?…””"'’)\]]+$/u,'').trim().slice(0,40);
+   if(prefix.length>=3){start=chunk.indexOf(prefix,cursor);length=prefix.length;}
+  }
+  if(start<0)continue;
+  const segment=segments.find(part=>part.start<=start&&part.end>=start+Math.min(length,3));
+  timed.push({
+   start:segment?.start??start,end:segment?.end??Math.min(chunk.length,start+length),
+   text:segment?.text??chunk.slice(start,start+length),
+   time:Math.max(0,Number(mark[0])),duration:Math.max(0,Number(mark[1]))
+  });
+  cursor=start+length;
+ }
+ if(timed.length){
+  // SentenceBoundary event timings are authoritative; if multiple items map
+  // to one sentence, keep a single highlight for that full sentence.
+  return timed.filter((part,i)=>!i||part.start!==timed[i-1].start);
+ }
+ return segments.map(part=>({...part,time:null,duration:null}));
+}
+
 export function createReadAloud({getText,next,peekNextText=()=>null,onState,getCsrfToken=()=>''}){
  let active=false,paused=false,token=0,voice=DEFAULT_VOICE,rate=1,audio=null,audioUrl=null;
  const requests=new Set(),prepared=new Set();
@@ -96,7 +139,10 @@ export function createReadAloud({getText,next,peekNextText=()=>null,onState,getC
     body:JSON.stringify({text:chunk,voice:selectedVoice})
    });
    if(!response.ok)throw Error('Edge voice unavailable (HTTP '+response.status+').');
-   return await response.blob();
+   let sentences=[];
+   try{sentences=JSON.parse(response.headers.get('X-PiShelf-Sentences')||'[]');}
+   catch{sentences=[];}
+   return {blob:await response.blob(),sentences:Array.isArray(sentences)?sentences:[]};
   }finally{requests.delete(request);}
  }
 
@@ -115,15 +161,22 @@ export function createReadAloud({getText,next,peekNextText=()=>null,onState,getC
    catch(error){if(valid(session)){stop();onState?.({error:error.message});}}
    return;
   }
-   let index=0,prefetch=preparedPage?.ready?Promise.resolve(preparedPage.ready):null,nextPagePrefetch=null;
+  const normalized=normalizeSpeechText(text);
+  let searchFrom=0;
+  const offsets=chunks.map(chunk=>{
+   const at=normalized.indexOf(chunk,searchFrom);
+   if(at>=0)searchFrom=at+chunk.length;
+   return Math.max(0,at);
+  });
+  let index=0,prefetch=preparedPage?.ready?Promise.resolve(preparedPage.ready):null,nextPagePrefetch=null;
   // Prepare at most one extra Edge clip at a time.
   async function prepare(chunk){
    if(!valid(session))return null;
-   const blob=await requestSpeech(chunk,voice);
+   const {blob,sentences}=await requestSpeech(chunk,voice);
    if(!valid(session))return null;
    const url=URL.createObjectURL(blob),player=new Audio(url);
    player.preload='auto';player.load();
-   const ready={url,player};prepared.add(ready);
+   const ready={url,player,sentences};prepared.add(ready);
    return ready;
   }
   function release(ready){
@@ -151,7 +204,7 @@ export function createReadAloud({getText,next,peekNextText=()=>null,onState,getC
     }catch(error){if(valid(session)){stop();onState?.({error:error.message});}}
     return;
    }
-   const chunk=chunks[index];
+   const chunk=chunks[index],chunkOffset=offsets[index];
    try{
     const ready=(prefetch?await prefetch:null)||await prepare(chunk);
     prefetch=null;
@@ -161,9 +214,34 @@ export function createReadAloud({getText,next,peekNextText=()=>null,onState,getC
     if(index<chunks.length)prefetch=prepare(chunks[index]).catch(()=>null);
     else nextPagePrefetch=preloadNextPage();
     const {player,url}=ready;
+    const sentences=speechSentenceRanges(chunk,ready.sentences);
     audio=player;audioUrl=url;player.playbackRate=rate;
-    // Playback follows only queued selections; no article/page recognition.
-    onState?.({spokenText:chunk,readingProgress:0});
+    let shown=-1;
+    function updateSentence(){
+     if(!valid(session))return;
+     let which=0;
+     if(sentences[0]?.time!=null){
+      for(let i=1;i<sentences.length;i++){
+       if(player.currentTime+0.04>=sentences[i].time)which=i;else break;
+      }
+     }else if(Number.isFinite(player.duration)&&player.duration>0){
+      const position=Math.min(1,player.currentTime/player.duration)*chunk.length;
+      for(let i=1;i<sentences.length;i++){
+       if(position>=sentences[i].start)which=i;else break;
+      }
+     }
+     if(which===shown)return;
+     shown=which;
+     const sentence=sentences[which];
+     onState?.({
+      spokenText:chunk,readingSentence:sentence.text,
+      readingOffset:chunkOffset+sentence.start,readingLength:sentence.end-sentence.start,
+      readingProgress:Number.isFinite(player.duration)&&player.duration>0?player.currentTime/player.duration:0
+     });
+    }
+    updateSentence();
+    player.ontimeupdate=updateSentence;
+    player.onseeked=updateSentence;
     player.onended=()=>{
      if(audio===player){audio=null;audioUrl=null;}
      release(ready);
