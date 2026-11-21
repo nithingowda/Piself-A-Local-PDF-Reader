@@ -710,6 +710,7 @@ async function startPdfSpeech(){
  const {createReadAloud}=await speechEngine();
  if(pdfSpeech)return;
  pdfSpeech=createReadAloud({
+  getCsrfToken:()=>signedInUser?.csrf||'',
   async getText(){
    if(!documentPDF)return '';
    const pdfPage=await documentPDF.getPage(page);
@@ -725,6 +726,7 @@ async function startEpubSpeech(){
  const {createReadAloud}=await speechEngine();
  if(epubSpeech)return;
  epubSpeech=createReadAloud({
+  getCsrfToken:()=>signedInUser?.csrf||'',
   getText(){return epubController?.readAloudText()||'';},
   next(){return epubController?.readAloudNext()||false;},
   onState:state=>speechState('epub',state)

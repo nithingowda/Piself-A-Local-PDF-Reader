@@ -1,5 +1,5 @@
 /* Piper TTS runs on the local PiShelf server; browser speech is a fallback. */
-export function createReadAloud({getText,next,onState}){
+export function createReadAloud({getText,next,onState,getCsrfToken=()=>''}){
  const synth=window.speechSynthesis;
  let active=false,paused=false,token=0,voice='piper-alba',rate=1,utterance=null,audio=null,abort=null,seekAudio=null;
  const notify=()=>onState?.({active,paused,rate,voice});
@@ -21,7 +21,7 @@ export function createReadAloud({getText,next,onState}){
    if(voice==='piper-alba'){
     const request=new AbortController();abort=request;
     try{
-     const response=await fetch('/api/tts/alba',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({text:chunk}),signal:request.signal});
+     const response=await fetch('/api/tts/alba',{method:'POST',headers:{'Content-Type':'application/json','X-PiShelf-CSRF':getCsrfToken()},credentials:'same-origin',body:JSON.stringify({text:chunk}),signal:request.signal});
      if(!response.ok){let detail='Piper server returned HTTP '+response.status;try{const payload=await response.json();detail=payload.error||payload.message||detail;}catch{}throw Error(detail);}
      const blob=await response.blob();if(!active||t!==token)return;
      const url=URL.createObjectURL(blob);const player=new Audio(url);audio=player;player.playbackRate=rate;

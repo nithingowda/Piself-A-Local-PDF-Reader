@@ -34,3 +34,9 @@ test('compact immersive player provides seek and playback controls for both form
  assert.match(speech,/function seek\(seconds\)/);
  assert.match(speech,/audio\.currentTime/);
 });
+
+test('Piper speech requests include the current session CSRF token',()=>{
+ assert.match(speech,/getCsrfToken=\(\)=>''/);
+ assert.match(speech,/'X-PiShelf-CSRF':getCsrfToken\(\)/);
+ assert.match(app,/getCsrfToken:\(\)=>signedInUser\?\.csrf\|\|''/);
+});
