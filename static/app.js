@@ -677,11 +677,40 @@ const EDGE_VOICES=[
  ['en-GB-RyanNeural','Ryan · British English (Male)'],
  ['en-AU-NatashaNeural','Natasha · Australian English (Female)']
 ];
+// Keep the user's preferred voice across PDF/EPUB and browser reloads.
+const VOICE_STORAGE_KEY='pishelf-edge-voice';
+function preferredSpeechVoice(){
+ try{const value=localStorage.getItem(VOICE_STORAGE_KEY);if(EDGE_VOICES.some(([id])=>id===value))return value;}catch{}
+ return 'en-IN-NeerjaNeural';
+}
 function speechVoices(kind){
  const select=$(kind+'-read-voice');if(!select)return;
- const previous=select.value;
  select.replaceChildren(...EDGE_VOICES.map(([id,label])=>new Option(label,id)));
- select.value=EDGE_VOICES.some(([id])=>id===previous)?previous:'en-IN-NeerjaNeural';
+ select.value=preferredSpeechVoice();
+}
+// Drag only from the player background: buttons and settings remain clickable.
+function enableSpeechDrag(kind){
+ const player=$(kind+'-speech-player');
+ if(player.dataset.draggable)return;
+ player.dataset.draggable='true';
+ let drag=null;
+ player.addEventListener('pointerdown',event=>{
+  if(event.button!==0||event.target.closest('button,select,label,input,.read-aloud-panel'))return;
+  const rect=player.getBoundingClientRect();
+  drag={id:event.pointerId,dx:event.clientX-rect.left,dy:event.clientY-rect.top};
+  player.setPointerCapture(event.pointerId);
+ });
+ player.addEventListener('pointermove',event=>{
+  if(!drag||drag.id!==event.pointerId)return;
+  const x=Math.max(0,Math.min(innerWidth-player.offsetWidth,event.clientX-drag.dx));
+  const y=Math.max(0,Math.min(innerHeight-player.offsetHeight,event.clientY-drag.dy));
+  player.style.setProperty('left',x+'px','important');
+  player.style.setProperty('top',y+'px','important');
+  player.style.setProperty('bottom','auto','important');
+  player.style.setProperty('transform','none','important');
+ });
+ const end=event=>{if(drag?.id===event.pointerId)drag=null;};
+ player.addEventListener('pointerup',end);player.addEventListener('pointercancel',end);
 }
 function speechPlayer(kind,visible){
  if(!visible)clearReadingMark();
@@ -693,6 +722,8 @@ function speechPlayer(kind,visible){
  if(!visible)$(kind+'-read-panel').hidden=true;
 }
 function wireSpeech(kind,controller){
+ enableSpeechDrag(kind);
+ controller.setVoice(preferredSpeechVoice());
  const panel=$(kind+'-read-panel');
  $(kind+'-read-toggle').onclick=()=>{speechPlayer(kind,true);controller.play();};
  $(kind+'-read-main').onclick=()=>controller.paused?controller.play():controller.pause();
@@ -704,7 +735,7 @@ function wireSpeech(kind,controller){
  $(kind+'-read-pause').onclick=()=>controller.paused?controller.play():controller.pause();
  $(kind+'-read-stop').onclick=()=>{controller.stop();speechPlayer(kind,false);};
  $(kind+'-read-rate').onchange=e=>controller.setRate(e.target.value);
- $(kind+'-read-voice').onchange=e=>controller.setVoice(e.target.value);
+ $(kind+'-read-voice').onchange=e=>{const selected=e.target.value;try{localStorage.setItem(VOICE_STORAGE_KEY,selected);}catch{}controller.setVoice(selected);speechVoices(kind==='pdf'?'epub':'pdf');};
  speechVoices(kind);
 }
 let readingMark=null,readingMarkText='',readingMarkPage=0;
