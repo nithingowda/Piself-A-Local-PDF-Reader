@@ -61,10 +61,29 @@ export async function createEpubReader({url,container,cfi,theme='light',fontSize
    const style=doc.createElement('style');
    style.textContent='.pishelf-tap-selected{outline:2px solid #ed9a19!important;background:rgba(255,193,54,.3)!important;border-radius:3px}';
    doc.head?.append(style);
-   doc.addEventListener('selectionchange',()=>{
+   // Native drag/highlight selection must finish before queuing speech.
+   // selectionchange can fire once per character while the user is dragging.
+   let selectionTimer=null,lastSelected='',lastSelectedAt=0;
+   const finishSelection=()=>{
     if(!canSelectSpeechText())return;
     const selected=doc.defaultView?.getSelection()?.toString()?.trim();
-    if(selected)onSelection?.(selected);
+    if(!selected)return;
+    const now=Date.now();
+    if(selected===lastSelected&&now-lastSelectedAt<1500)return;
+    lastSelected=selected;lastSelectedAt=now;
+    onSelection?.(selected);
+   };
+   const afterSelection=()=>{
+    clearTimeout(selectionTimer);
+    selectionTimer=setTimeout(finishSelection,30);
+   };
+   doc.addEventListener('pointerup',afterSelection);
+   doc.addEventListener('touchend',afterSelection);
+   doc.addEventListener('selectionchange',()=>{
+    if(!canSelectSpeechText())return;
+    // Fallback for iOS selection handles that don't emit pointerup.
+    clearTimeout(selectionTimer);
+    selectionTimer=setTimeout(finishSelection,550);
    });
    doc.addEventListener('click',event=>{
     if(!canSelectSpeechText()||!event.isTrusted||event.target.closest('a,button,input,select,textarea'))return;
