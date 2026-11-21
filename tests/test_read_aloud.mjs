@@ -125,3 +125,12 @@ test('EPUB text taps choose a heading or paragraph and preserve later content',(
  assert.match(epub,/visible\.slice\(Math\.max\(0,start\)\)/);
  assert.match(app,/onTextTap:async/);
 });
+
+test('tap selection is visible in PDF and EPUB while audio loads',()=>{
+ const css=readFileSync(new URL('style.css',root),'utf8');
+ assert.match(app,/speech-tap-selection/);
+ assert.match(app,/slot\.append\(selection\)/);
+ assert.match(css,/\.speech-tap-selection/);
+ assert.match(epub,/pishelf-tap-selected/);
+ assert.match(epub,/doc\.head\?\.append\(style\)/);
+});

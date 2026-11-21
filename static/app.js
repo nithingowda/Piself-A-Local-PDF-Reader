@@ -745,7 +745,7 @@ function clearReadingMark(){
  readingMarkText='';readingMarkPage=0;readingMarkIndex=-1;
 }
 // PDF images have no selectable text layer; use PDF.js text item coordinates.
-let pdfSpeechItems=null,pdfSpeechItemsPage=0;
+let pdfSpeechItems=null,pdfSpeechItemsPage=0,pdfSpeechStartIndex=0;
 async function markPdfReading(text,progress){
  if(!documentPDF||!text)return;
  const currentPage=page;
@@ -766,7 +766,7 @@ async function markPdfReading(text,progress){
   if(readingMarkText!==text||readingMarkPage!==currentPage)return;
   const items=pdfSpeechItems;
   const anchor=words.slice(0,5).find(word=>word.length>3)?.toLowerCase();
-  const start=items.findIndex(item=>anchor&&item.str.toLowerCase().includes(anchor));
+  const start=items.findIndex((item,i)=>i>=pdfSpeechStartIndex&&anchor&&item.str.toLowerCase().includes(anchor));
   if(start<0)return;
   let remaining=wordIndex,item=items[start];
   for(const candidate of items.slice(start)){
@@ -817,7 +817,7 @@ let pdfSpeechStart=null;
 async function readPdfFromTap(event){
  if(!documentPDF||!event.isTrusted||event.target.closest('button,a,input,select,textarea'))return;
  const slot=event.target.closest('[data-page]');
- if(!slot||!$('reader').contains(slot))return;
+ if(!slot||!$('reader').contains(slot)||!slot.getBoundingClientRect().width)return;
  const targetPage=Number(slot.dataset.page);
  if(!Number.isInteger(targetPage)||targetPage<1)return;
  const rect=slot.getBoundingClientRect();
@@ -834,6 +834,17 @@ async function readPdfFromTap(event){
   const distance=Math.abs(pt[1]-y)*2+Math.max(0,pt[0]-x,x-pt[0]-item.width);
   if(distance<best){best=distance;index=i;}
  });
+ // Show the chosen text immediately, even while the network voice loads.
+ clearReadingMark();
+ const selection=document.createElement('div');
+ selection.className='speech-tap-selection';
+ const chosen=items[index],point=viewport.convertToViewportPoint(chosen.transform[4],chosen.transform[5]);
+ selection.style.left=Math.max(0,point[0]/viewport.width*100)+'%';
+ selection.style.top=Math.max(0,(point[1]-Math.abs(chosen.height||12))/viewport.height*100)+'%';
+ selection.style.width=Math.max(3,Math.min(100,(chosen.width||40)/viewport.width*100))+'%';
+ selection.style.height=Math.max(1.5,Math.abs(chosen.height||12)/viewport.height*100)+'%';
+ slot.append(selection);
+ readingMark=selection;
  pdfSpeech?.stop();
  pdfSpeechStart={page:targetPage,index};
  if(page!==targetPage)move(targetPage);
@@ -854,6 +865,8 @@ async function startPdfSpeech(){
    // PDF.js marks line endings; preserve them so headlines are read separately.
    const start=pdfSpeechStart?.page===page?pdfSpeechStart.index:0;
    pdfSpeechStart=null;
+   pdfSpeechItemsPage=0;pdfSpeechItems=null;
+   pdfSpeechStartIndex=start;
    return content.items.slice(start).map(item=>(item.str||'')+(item.hasEOL?'\n':' ')).join('').trim();
   },
   async next(){if(!documentPDF||page>=documentPDF.numPages)return false;move(page+1);return true;},
