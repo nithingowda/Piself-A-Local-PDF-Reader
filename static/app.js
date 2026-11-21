@@ -723,6 +723,7 @@ function speechPlayer(kind,visible){
  if(!visible)$(kind+'-read-panel').hidden=true;
 }
 // Optional numbered paragraph queue; legacy Read Aloud remains the default.
+const compactReader=window.matchMedia('(max-width:650px), (pointer:coarse) and (max-height:500px)');
 const numberedParagraphs={pdf:[],epub:[]};
 const numberedCursor={pdf:0,epub:0};
 const numberedPlayback={pdf:false,epub:false};
@@ -872,6 +873,10 @@ async function playNumberedParagraphs(kind){
   numberedPlayback[kind]=false;controller.stop();numberedPlayback[kind]=true;numberedPickMode[kind]=true;numberedCursor[kind]=0;
   const first=numberedParagraphs[kind][0];
   if(kind==='pdf'){pdfSpeechPage=first.page;showPdfSpeechPage(first.page);}
+  if(compactReader.matches){
+   numberedPanel(kind).hidden=true;
+   $(kind+'-read-paragraphs').setAttribute('aria-expanded','false');
+  }
   speechPlayer(kind,true);renderNumberedPanel(kind);
   controller.play();
  }finally{numberedPlayPending[kind]=false;}
@@ -1017,6 +1022,7 @@ function speechState(kind,state){
   if(state.active===false){resetNumberedParagraphs(kind);renderNumberedPanel(kind);}
  }
  if(state.spokenText!==undefined){
+  if(compactReader.matches)return;
   if(kind==='pdf')void markPdfReading(state.spokenText,state.readingOffset||0,state.readingLength||0);
   else markEpubReading(state.readingSentence||state.spokenText,0);
   return;
