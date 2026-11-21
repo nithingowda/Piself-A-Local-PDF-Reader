@@ -40,3 +40,12 @@ test('Piper speech requests include the current session CSRF token',()=>{
  assert.match(speech,/'X-PiShelf-CSRF':getCsrfToken\(\)/);
  assert.match(app,/getCsrfToken:\(\)=>signedInUser\?\.csrf\|\|''/);
 });
+
+test('spoken sentence indicator and scrollable immersive reader',()=>{
+ const css=readFileSync(new URL('style.css',root),'utf8');
+ for(const kind of ['pdf','epub'])assert.match(html,new RegExp('id="'+kind+'-spoken-text"'));
+ assert.match(speech,/spokenText:chunk/);
+ assert.match(app,/state\.spokenText/);
+ assert.match(css,/#reader\.speech-immersive #page-area\{overflow:auto!important/);
+ assert.doesNotMatch(css,/#reader\.speech-immersive,#epub-reader\.speech-immersive\{position:relative\}/);
+});
