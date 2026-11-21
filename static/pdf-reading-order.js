@@ -111,7 +111,9 @@ export function orderPdfSpeechItems(items,viewport){
   // If there are not enough repeated starts, preserve vertical order rather
   // than incorrectly reading a row across multiple columns.
   if(columns.length<2)return tagged([...group].sort((a,b)=>a.y-b.y||a.x-b.x),()=>0);
-  const boundaries=columns.slice(1).map((entry,i)=>(columns[i].x+entry.x)/2);
+  // A fragment may start in the right half of its own column. Only cross
+  // columns near the next repeated left margin, allowing alignment jitter.
+  const boundaries=columns.slice(1).map(entry=>entry.x-tolerance);
   const column=item=>boundaries.filter(boundary=>item.x>=boundary).length;
   return tagged([...group].sort((a,b)=>column(a)-column(b)||a.y-b.y||a.x-b.x),column);
  }
@@ -137,10 +139,10 @@ export function pdfSpeechLayout(items){
     (changedColumn?completedSentence:lineGap>height*2.4||item.y<previous.y-height*.8);
    const hyphenated=/[A-Za-z]-$/.test(previous.str||'');
    if(paragraphBreak)text+='\n';
-   else if(hyphenated){
+   else if(hyphenated&&lineGap>height*.5){
     text=text.slice(0,-1);
     if(spans.length)spans[spans.length-1].end--;
-   }else text+=' ';
+   }else if(!(lineGap<=height*.5&&(hyphenated||fragment.startsWith('-'))))text+=' ';
   }
   const start=text.length;
   text+=fragment;

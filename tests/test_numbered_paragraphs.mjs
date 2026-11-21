@@ -194,3 +194,22 @@ test('selection crosses a full stop and a capitalized start in the next article 
  ],viewport);
  assert.equal(paragraphAtPoint(groups,40,576,viewport).id,'0,1,2');
 });
+
+test('selection keeps the right-hand fragment of left-knee cartilage in its printed column',async()=>{
+ const {orderPdfSpeechItems}=await import('../static/pdf-reading-order.js');
+ const rows=[
+  line('revealed that the left',205,120,0),
+  line('-knee cartilage',310,120,1),
+  line('in monkeys on dabigatran was',205,135,2),
+  line('about 60 per cent thicker.',205,150,3),
+  line('Separate article.',400,120,4),
+  line('Another line.',400,135,5)
+ ];
+ rows[0].width=104;
+ rows[1].width=78;
+ const groups=numberedPdfParagraphs(orderPdfSpeechItems(rows,viewport),viewport);
+ const pick=paragraphAtPoint(groups,213,116,viewport);
+ assert.equal(pick.text,'revealed that the left-knee cartilage in monkeys on dabigatran was about 60 per cent thicker.');
+ assert.equal(pick.boxes.length,4);
+ assert.equal(paragraphAtPoint(groups,340,116,viewport).id,pick.id);
+});
