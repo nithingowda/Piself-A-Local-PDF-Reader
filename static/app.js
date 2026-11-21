@@ -851,6 +851,7 @@ function cancelSpeechPick(){
 }
 function beginSpeechPick(kind){
  pdfSpeech?.stop();epubSpeech?.stop();
+ pdfSpeechPage=null;pdfSpeechStart=null;
  speechPickMode=kind;
  document.body.classList.add('speech-picking');
  speechPickNotice(kind);
