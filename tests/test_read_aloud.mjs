@@ -50,15 +50,15 @@ test('spoken sentence indicator and scrollable immersive reader',()=>{
  assert.doesNotMatch(css,/#reader\.speech-immersive,#epub-reader\.speech-immersive\{position:relative\}/);
 });
 
-test('Edge Neerja defaults with Piper fallback and buffered next segment',()=>{
+test('Edge Neerja defaults with bounded buffered next segment',()=>{
  const server=readFileSync(new URL('../server.py',import.meta.url),'utf8');
  const docker=readFileSync(new URL('../Dockerfile',import.meta.url),'utf8');
  assert.match(app,/Neerja · Indian English \(Female\)/);
  assert.match(app,/en-IN-NeerjaNeural/);
- assert.match(speech,/voice='en-IN-NeerjaNeural'/);
+ assert.match(speech,/DEFAULT_VOICE='en-IN-NeerjaNeural'/);
  assert.match(speech,/\/api\/tts\/edge/);
  assert.doesNotMatch(speech,/\/api\/tts\/alba/);
- assert.match(speech,/prefetch=requestSpeech\(chunks\[index\],selectedVoice\)/);
+ assert.match(speech,/prefetch=requestSpeech\(chunks\[index\],voice\)/);
  assert.match(server,/en-IN-NeerjaNeural/);
  assert.match(server,/audio\/mpeg/);
  assert.match(docker,/edge-tts/);
@@ -96,4 +96,12 @@ test('reading highlight updates by audio progress without a player transcript',(
  assert.match(app,/pdfSpeechItemsPage/);
  assert.match(app,/markEpubReading\(state\.spokenText,state\.readingProgress\|\|0\)/);
  assert.match(speech,/ontimeupdate/);
+});
+
+test('speech chunker handles long text without oversized chunks',async()=>{
+ const {splitSpeechChunks}=await import('../static/read-aloud.js');
+ const chunks=splitSpeechChunks('First sentence. '+'long '.repeat(140)+'Final sentence!');
+ assert.ok(chunks.length>2);
+ assert.ok(chunks.every(chunk=>chunk.length<=240));
+ assert.equal(chunks.join(' ').replace(/\s+/g,' '),('First sentence. '+'long '.repeat(140)+'Final sentence!').trim().replace(/\s+/g,' '));
 });
