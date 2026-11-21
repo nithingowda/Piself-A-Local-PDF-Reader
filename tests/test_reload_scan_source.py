@@ -8,7 +8,7 @@ HTML=(ROOT/'static/index.html').read_text()
 
 class ReloadScanTests(unittest.TestCase):
     def test_reload_scans_folder(self):
-        self.assertIn("applyPrefs();await refresh();",APP)
+        self.assertIn("applyPrefs();refresh();",APP)
         self.assertIn("api('/api/library?refresh=1')",APP)
 
     def test_polling_setting_removed(self):
@@ -16,9 +16,9 @@ class ReloadScanTests(unittest.TestCase):
         self.assertNotIn('prefs.interval',APP)
         self.assertNotIn('pollTimer',APP)
 
-    def test_manual_refresh_button_removed(self):
-        self.assertNotIn('id="refresh"',HTML)
-        self.assertNotIn("$('refresh').onclick=()=>refresh()",APP)
+    def test_manual_refresh_button_remains(self):
+        self.assertIn('id="refresh"',HTML)
+        self.assertIn("$('refresh').onclick=()=>refresh()",APP)
 
 if __name__=='__main__':
     unittest.main()
