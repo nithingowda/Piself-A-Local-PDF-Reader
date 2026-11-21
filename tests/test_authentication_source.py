@@ -11,8 +11,10 @@ class AuthenticationSourceTests(unittest.TestCase):
     def test_pdf_and_api_gets_require_session(self):
         self.assertIn("user=self.require_session(admin=path in ('/admin.html','/admin.js'))",SERVER)
         self.assertIn("if path not in ('/login.html','/login.js','/setup.html','/setup.js'):",SERVER)
-    def test_all_non_auth_mutations_admin_only(self):
-        self.assertIn("self.require_session(admin=route!='/api/progress',mutation=True)",SERVER)
+    def test_only_reader_progress_and_annotations_allow_member_mutations(self):
+        self.assertIn("self.require_session(admin=route not in ('/api/progress','/api/annotations'),mutation=True)",SERVER)
+        self.assertIn("if route == '/api/annotations':",SERVER)
+        self.assertIn("user=self.require_session(mutation=True)",SERVER)
         self.assertNotIn("if(signedInUser?.role!=='admin')",JS)
     def test_passwords_hashed_and_sessions_expire(self):
         self.assertIn('hashlib.pbkdf2_hmac',AUTH)

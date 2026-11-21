@@ -199,18 +199,37 @@ $('clear-all').onclick=()=>{if(documentPDF){toast('Return to the library before 
    so zoom, rotation layout and responsive sizing cannot displace the marks. */
 let annotationDocument='',annotationItems=[],annotationActive=false,annotationStroke=null;
 const annotationKey=id=>'pishelf:annotations:v1:'+id;
-function annotationLoad(id){
- annotationDocument=id;annotationItems=[];
- try{const value=JSON.parse(localStorage.getItem(annotationKey(id))||'[]');
-  if(Array.isArray(value))annotationItems=value.filter(x=>x&&Number.isInteger(x.page)&&x.page>0&&['highlight','pen'].includes(x.type)).slice(-3000);
- }catch{}
- annotationDrawAll();annotationList();
+let annotationSaveQueue=Promise.resolve(),annotationLoadEpoch=0;
+async function annotationLoad(id){
+ const epoch=++annotationLoadEpoch;
+ annotationDocument=id;annotationItems=[];annotationDrawAll();annotationList();
+ try{
+  const serverItems=await api('/api/annotations?id='+encodeURIComponent(id));
+  if(epoch!==annotationLoadEpoch||annotationDocument!==id)return;
+  annotationItems=Array.isArray(serverItems)?serverItems:[];
+  // One-time migration of old browser-local pen/highlighter marks.
+  const old=localStorage.getItem(annotationKey(id));
+  if(old&&!annotationItems.length){
+   const legacy=JSON.parse(old);
+   if(Array.isArray(legacy)){
+    const marks=legacy.filter(x=>['pen','highlight'].includes(x.type)).map(x=>({type:x.type,page:x.page,color:x.color,points:x.points}));
+    if(marks.length){annotationItems=marks;await annotationStore();}
+   }
+  }
+  if(old&&epoch===annotationLoadEpoch)localStorage.removeItem(annotationKey(id));
+  annotationDrawAll();annotationList();
+ }catch(e){if(epoch===annotationLoadEpoch)toast('Could not load account highlights: '+e.message);}
 }
 function annotationStore(){
- if(!annotationDocument)return;
- try{localStorage.setItem(annotationKey(annotationDocument),JSON.stringify(annotationItems));}
- catch{toast('Annotation storage is full. Export your notes to keep them.');}
+ if(!annotationDocument)return Promise.resolve();
+ const id=annotationDocument;
+ const items=annotationItems.filter(x=>['pen','highlight'].includes(x.type)).map(x=>({type:x.type,page:x.page,color:x.color,points:x.points}));
  annotationDrawAll();annotationList();
+ annotationSaveQueue=annotationSaveQueue.catch(()=>{}).then(async()=>{
+  try{await api('/api/annotations',{id,items});}
+  catch(e){toast('Could not sync highlights: '+e.message);throw e;}
+ });
+ return annotationSaveQueue;
 }
 function annotationLayer(slot){
  let layer=slot.querySelector('.annotation-layer');
@@ -734,7 +753,7 @@ async function openMagazine(item,start){
   history.pushState({pishelfReader:true},'',location.href);
   readerHistoryActive=true;
  }
- clearMagazinePrefetches();cancelAllSharpImages();current=item;annotationLoad(item.id);const g=++generation;const reading=saved[item.id]||{};
+ clearMagazinePrefetches();cancelAllSharpImages();current=item;const g=++generation;const reading=saved[item.id]||{};
  zoom=1;rotation=reading.rotation||0;dimensions.clear();
  $('reader').hidden=false;document.body.classList.add('reader-open');setReaderFocus(true);
  $('library').hidden=true;$('reader-title').textContent=item.title;
@@ -746,6 +765,8 @@ async function openMagazine(item,start){
   const doc=await task.promise;
   if(g!==generation){await doc.destroy();return;}
   documentPDF=doc;
+  await annotationLoad(item.id);
+  if(g!==generation||documentPDF!==doc)return;
   page=Math.max(1,Math.min(start||reading.page||1,doc.numPages));
   $('page-number').max=doc.numPages;
   // Open immediately using the current page dimensions. Hydrate other page
