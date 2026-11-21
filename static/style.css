@@ -195,3 +195,51 @@ body.epub-open{overflow:hidden}
 /* Mouse-only desktop PDF panning; touch gestures remain unchanged. */
 #page-area.zoomed-in{cursor:grab}
 #page-area.desktop-panning{cursor:grabbing;user-select:none;-webkit-user-select:none}
+
+/* Reader polish: compact, tactile controls without changing PDF sizing or gestures. */
+#reader .reader-bar{
+ gap:8px;
+ padding:9px 12px;
+ padding-top:max(9px,env(safe-area-inset-top));
+}
+#reader .reader-bar strong{font-size:13px;letter-spacing:.01em;font-weight:650}
+#reader .controls{
+ gap:6px;
+ padding:9px 12px;
+ padding-bottom:max(9px,env(safe-area-inset-bottom));
+}
+#reader .reader-bar button,#reader .controls button,#reader .controls select{
+ border-radius:10px;
+ transition:background-color .16s ease,border-color .16s ease,transform .16s ease;
+}
+#reader .reader-bar button:hover,#reader .controls button:hover{
+ background:color-mix(in srgb,var(--card) 70%,#8d9baa 30%);
+ transform:translateY(-1px);
+}
+#reader .reader-bar button:active,#reader .controls button:active{transform:translateY(0)}
+#reader .reader-bar button:focus-visible,#reader .controls button:focus-visible,
+#reader .controls select:focus-visible,#reader .controls input:focus-visible{
+ outline:2px solid #589bdc;outline-offset:2px;
+}
+#reader .reader-progress{pointer-events:none}
+@media(max-width:650px){
+ #reader .reader-bar{gap:5px;padding-inline:8px}
+ #reader .reader-bar button{padding:7px 9px}
+ #reader .controls{
+  flex-wrap:nowrap;
+  justify-content:flex-start;
+  overflow-x:auto;
+  overflow-y:hidden;
+  max-height:none;
+  gap:5px;
+  scrollbar-width:thin;
+  -webkit-overflow-scrolling:touch;
+ }
+ #reader .controls>*{flex-shrink:0}
+ #reader .controls button,#reader .controls select{min-height:38px}
+ #reader .controls .reader-scrubber{min-width:130px}
+}
+@media(prefers-reduced-motion:reduce){
+ #reader .reader-bar button,#reader .controls button{transition:none}
+ #reader .reader-bar button:hover,#reader .controls button:hover{transform:none}
+}
