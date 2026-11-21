@@ -49,8 +49,8 @@ test('existing automatic PDF/EPUB Read Aloud remains available by default',()=>{
  assert.match(app,/orderPdfSpeechItems\(content\.items/);
  assert.match(app,/pdfSpeechText\(ordered\.slice\(start\)\)/);
  assert.match(app,/readAloudNext\(\)/);
- assert.match(app,/function markPdfReading\(/);
- assert.match(app,/function markEpubReading\(/);
+ assert.doesNotMatch(app,/function markPdfReading\(/);
+ assert.doesNotMatch(app,/function markEpubReading\(/);
  assert.match(app,/if\(numberedPlayback\.pdf\)return numberedParagraphs\.pdf/);
  assert.match(app,/if\(numberedPlayback\.epub\)/);
 });
@@ -122,7 +122,7 @@ test('a column ending mid-sentence stays separate from the lower debate sidebar'
 test('slightly wider spacing includes the next aligned body line',()=>{
  const groups=numberedPdfParagraphs([
   line('The article continues',205,420,0),
-  line('on this slightly indented line.',209,444,1),
+  line('on this slightly indented line.',214,447,1),
   line('A separate paragraph.',205,478,2)
  ],viewport);
  assert.deepEqual(groups.map(group=>group.text),[
