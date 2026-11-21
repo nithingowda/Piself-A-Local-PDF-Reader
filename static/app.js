@@ -760,7 +760,6 @@ function resetNumberedParagraphs(kind){
  for(const entry of numberedParagraphs[kind])if(entry.node){entry.node.classList.remove('pishelf-numbered-paragraph','pishelf-speaking');entry.node.removeAttribute('data-pishelf-paragraph-number');}
  numberedParagraphs[kind]=[];numberedCursor[kind]=0;
  $(kind+'-play-selected').hidden=true;
- $(kind+'-read-paragraphs').setAttribute('aria-pressed','false');
  if(kind==='pdf')renderNumberedMarkers();
 }
 function renderNumberedMarkers(){
@@ -815,12 +814,6 @@ function refreshNumberedSelection(kind){
  });
  $(kind+'-play-selected').hidden=!items.length||numberedPlayback[kind]||!numberedPickMode[kind];
  if(kind==='pdf')renderNumberedMarkers();
-}
-function enableNumberedParagraphs(kind){
- cancelSpeechPick();
- numberedPickMode[kind]=!numberedPickMode[kind];
- $(kind+'-read-paragraphs').setAttribute('aria-pressed',String(numberedPickMode[kind]));
- refreshNumberedSelection(kind);
 }
 function addNumberedParagraph(kind,entry){
  const list=numberedParagraphs[kind];
@@ -928,7 +921,7 @@ async function useSelectedPassage(selection){
  if(!entry)return;
  const start=speechPickMode==='pdf';
  if(!start&&!numberedPickMode.pdf)return;
- if(start){cancelSpeechPick();resetNumberedParagraphs('pdf');numberedPickMode.pdf=true;$('pdf-read-paragraphs').setAttribute('aria-pressed','true');}
+ if(start){cancelSpeechPick();resetNumberedParagraphs('pdf');numberedPickMode.pdf=true;}
  addNumberedParagraph('pdf',{...entry,ticket:++numberedTapSerial});
  selection.removeAllRanges();
  if(start)await playNumberedParagraphs('pdf');
@@ -940,11 +933,11 @@ function wireSpeech(kind,controller){
  const panel=$(kind+'-read-panel');
  $(kind+'-read-toggle').onclick=()=>beginSpeechPick(kind);
  $(kind+'-play-selected').onclick=()=>playNumberedParagraphs(kind);
- $(kind+'-read-paragraphs').onclick=()=>enableNumberedParagraphs(kind);
  const play=()=>{
   if(controller.active)return controller.play();
   if(numberedParagraphs[kind].length)return playNumberedParagraphs(kind);
-  if(numberedPickMode[kind])return toast('Select a passage first.');
+  if(kind==='pdf'){pdfSpeechStart=null;pdfSpeechPage=page;}
+  else epubController?.clearSpeechStart();
   controller.play();
  };
  $(kind+'-read-main').onclick=()=>controller.active&&!controller.paused?controller.pause():play();
@@ -1114,10 +1107,9 @@ async function beginSpeechPick(kind){
   controller.stop();
   resetNumberedParagraphs(kind);
   numberedPickMode[kind]=true;
-  $(kind+'-read-paragraphs').setAttribute('aria-pressed','true');
   speechPlayer(kind,true);
   refreshNumberedSelection(kind);
-  toast('Select passages in reading order, then tap Play selected.');
+  toast('Press Play to read from this page, or select passages and tap Play selected.');
  }catch(error){toast('Read aloud: '+error.message);}
 }
 async function readPdfFromTap(event){
@@ -1635,7 +1627,7 @@ $('fit').onclick=()=>zoomWithControls(fitWidthZoom());
 $('fit-page').onclick=()=>zoomWithControls(fitEntirePageZoom(page));$('rotate').onclick=()=>{rotation=(rotation+90)%360;rebuild();};$('view-mode').onchange=()=>{prefs.mode=$('view-mode').value;automaticFit=defaultPagedFit();storePrefs();if(documentPDF){if(isBookSpread())page=spreadStart(page);zoom=fitEntirePageZoom(page);rebuild();}};
 $('bookmark').onclick=()=>{if(!documentPDF)return;const marks=saved[current.id]?.bookmarks||[];persist(current.id,{bookmarks:marks.includes(page)?marks.filter(n=>n!==page):[...marks,page].sort((a,b)=>a-b)});updatePageUI();updateBookmarks();};$('bookmarks').onchange=e=>{if(e.target.value)move(+e.target.value);e.target.value='';};
 $('fullscreen').onclick=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await $('reader').requestFullscreen();}catch{toast('Fullscreen is unavailable in this browser.');}};
-let searchTimer;$('search').oninput=()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>{visibleLimit=60;drawLibrary();},150);};$('sort').onchange=e=>{prefs.sort=e.target.value;storePrefs();drawLibrary();};$('refresh').onclick=()=>refresh();document.querySelectorAll('[data-filter]').forEach(b=>b.onclick=()=>{filter=b.dataset.filter;category=collectionFilter='';visibleLimit=60;document.querySelectorAll('.tab,.category').forEach(t=>t.classList.toggle('active',t===b));drawLibrary();});
+let searchTimer;$('search').oninput=()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>{visibleLimit=60;drawLibrary();},150);};$('sort').onchange=e=>{prefs.sort=e.target.value;storePrefs();drawLibrary();};document.querySelectorAll('[data-filter]').forEach(b=>b.onclick=()=>{filter=b.dataset.filter;category=collectionFilter='';visibleLimit=60;document.querySelectorAll('.tab,.category').forEach(t=>t.classList.toggle('active',t===b));drawLibrary();});
 document.addEventListener('keydown',e=>{if($('reader').hidden||document.querySelector('dialog[open]')||/INPUT|SELECT/.test(e.target.tagName))return;if(e.key==='ArrowRight'){e.preventDefault();turnFromControl(1);}if(e.key==='ArrowLeft'){e.preventDefault();turnFromControl(-1);}if(e.key==='Escape'&&!document.fullscreenElement)closeReader();if(e.key.toLowerCase()==='b')$('bookmark').click();if(e.key.toLowerCase()==='c'){e.preventDefault();toggleReaderControls();}});
 let lastReaderWidth=0,lastReaderHeight=0;
 new ResizeObserver(entries=>{
