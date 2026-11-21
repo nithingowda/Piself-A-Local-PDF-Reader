@@ -668,12 +668,20 @@ async function speechEngine(){
  if(!speechModule)speechModule=import('./read-aloud.js');
  return speechModule;
 }
+const EDGE_VOICES=[
+ ['en-IN-NeerjaNeural','Neerja · Indian English (Female)'],
+ ['en-IN-PrabhatNeural','Prabhat · Indian English (Male)'],
+ ['en-US-AriaNeural','Aria · US English (Female)'],
+ ['en-US-GuyNeural','Guy · US English (Male)'],
+ ['en-GB-SoniaNeural','Sonia · British English (Female)'],
+ ['en-GB-RyanNeural','Ryan · British English (Male)'],
+ ['en-AU-NatashaNeural','Natasha · Australian English (Female)']
+];
 function speechVoices(kind){
  const select=$(kind+'-read-voice');if(!select)return;
  const previous=select.value;
- select.replaceChildren(new Option('Neerja · Indian English (Online AI)','edge-neerja'),new Option('Alba (Medium) · Offline AI','piper-alba'),new Option('Browser default voice',''));
- for(const voice of (window.speechSynthesis?.getVoices()||[]))select.add(new Option(voice.name+' ('+voice.lang+')',voice.voiceURI));
- select.value=previous||'edge-neerja';
+ select.replaceChildren(...EDGE_VOICES.map(([id,label])=>new Option(label,id)));
+ select.value=EDGE_VOICES.some(([id])=>id===previous)?previous:'en-IN-NeerjaNeural';
 }
 function speechPlayer(kind,visible){
  const root=$(kind==='pdf'?'reader':'epub-reader');
@@ -737,7 +745,7 @@ async function startEpubSpeech(){
 }
 $('pdf-read-toggle').onclick=async()=>{await startPdfSpeech();speechPlayer('pdf',true);pdfSpeech.play();};
 $('epub-read-toggle').onclick=async()=>{await startEpubSpeech();speechPlayer('epub',true);epubSpeech.play();};
-window.speechSynthesis?.addEventListener?.('voiceschanged',()=>{speechVoices('pdf');speechVoices('epub');});
+
 
 async function closeEpubBook({fromHistory=false}={}){
  epubSpeech?.stop();
