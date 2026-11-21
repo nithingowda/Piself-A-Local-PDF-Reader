@@ -1,9 +1,10 @@
 /* Online Edge Neural TTS reader with bounded prefetch and progress reporting. */
 export function createReadAloud({getText,next,onState,getCsrfToken=()=>''}){
  
- let active=false,paused=false,token=0,voice='en-IN-NeerjaNeural',rate=1,audio=null,abort=null,seekAudio=null;
+ let active=false,paused=false,token=0,voice='en-IN-NeerjaNeural',rate=1,audio=null;
+ const requests=new Set();let currentUrl=null;
  const notify=()=>onState?.({active,paused,rate,voice});
- function stop(){++token;active=false;paused=false;abort?.abort();abort=null;if(audio){audio.pause();audio.src='';audio=null;}seekAudio=null;notify();}
+ function stop(){++token;active=false;paused=false;for(const request of requests)request.abort();requests.clear();if(audio){audio.pause();audio.removeAttribute('src');audio.load();audio=null;}if(currentUrl){URL.revokeObjectURL(currentUrl);currentUrl=null;}notify();}
  async function speakNext(t){
   if(!active||t!==token)return;
   let text='';
@@ -11,14 +12,17 @@ export function createReadAloud({getText,next,onState,getCsrfToken=()=>''}){
   catch(error){stop();onState?.({error:error.message});return;}
   if(!active||t!==token)return;
   if(!text){let more=false;try{more=await next();}catch{}if(more&&active&&t===token)return speakNext(t);stop();return;}
-  // Short utterances avoid browser speech synthesis silently stopping on long pages.
+  // Group extracted document sentences into bounded Edge synthesis requests.
   const chunks=(text.match(/[^.!?।！？]+[.!?।！？]*|[^.!?।！？]+$/g)||[text]).flatMap(sentence=>{const words=sentence.trim().split(/\s+/),parts=[];let part='';for(const word of words){if(part.length+word.length+1>240&&part){parts.push(part);part='';}part+=(part?' ':'')+word;}if(part)parts.push(part);return parts;});
   let index=0,prefetch=null;
+  // Keep at most one current and one prefetched request; cancel both on stop.
   async function requestSpeech(chunk,selectedVoice){
-   const request=new AbortController();abort=request;
-   const response=await fetch('/api/tts/edge',{method:'POST',headers:{'Content-Type':'application/json','X-PiShelf-CSRF':getCsrfToken()},credentials:'same-origin',body:JSON.stringify({text:chunk,voice:selectedVoice}),signal:request.signal});
-   if(!response.ok)throw Error('Edge voice unavailable (HTTP '+response.status+').');
-   return response.blob();
+   const request=new AbortController();requests.add(request);
+   try{
+    const response=await fetch('/api/tts/edge',{method:'POST',headers:{'Content-Type':'application/json','X-PiShelf-CSRF':getCsrfToken()},credentials:'same-origin',body:JSON.stringify({text:chunk,voice:selectedVoice}),signal:request.signal});
+    if(!response.ok)throw Error('Edge voice unavailable (HTTP '+response.status+').');
+    return await response.blob();
+   }finally{requests.delete(request);}
   }
   async function say(){
    if(!active||t!==token)return;
@@ -31,10 +35,10 @@ export function createReadAloud({getText,next,onState,getCsrfToken=()=>''}){
     index++;
     if(index<chunks.length)prefetch=requestSpeech(chunks[index],selectedVoice).catch(()=>null);
     onState?.({spokenText:chunk,readingProgress:0});
-    const url=URL.createObjectURL(blob),player=new Audio(url);audio=player;player.playbackRate=rate;
+    const url=URL.createObjectURL(blob),player=new Audio(url);audio=player;currentUrl=url;player.playbackRate=rate;
     player.ontimeupdate=()=>{if(active&&t===token&&Number.isFinite(player.duration)&&player.duration>0)onState?.({readingProgress:Math.min(1,player.currentTime/player.duration),spokenText:chunk});};
-    player.onended=()=>{URL.revokeObjectURL(url);audio=null;if(active&&t===token)void say();};
-    player.onerror=()=>{URL.revokeObjectURL(url);stop();onState?.({error:'Could not play Edge audio.'});};
+    player.onended=()=>{URL.revokeObjectURL(url);if(currentUrl===url)currentUrl=null;audio=null;if(active&&t===token)void say();};
+    player.onerror=()=>{stop();onState?.({error:'Could not play Edge audio.'});};
     await player.play();if(paused)player.pause();
    }catch(error){if(!active||t!==token)return;stop();onState?.({error:error.message});}
   }

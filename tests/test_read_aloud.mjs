@@ -43,7 +43,7 @@ test('Piper speech requests include the current session CSRF token',()=>{
 
 test('spoken sentence indicator and scrollable immersive reader',()=>{
  const css=readFileSync(new URL('style.css',root),'utf8');
- for(const kind of ['pdf','epub'])assert.match(html,new RegExp('id="'+kind+'-spoken-text"'));
+ for(const kind of ['pdf','epub'])assert.doesNotMatch(html,new RegExp('id="'+kind+'-spoken-text"'));
  assert.match(speech,/spokenText:chunk/);
  assert.match(app,/state\.spokenText/);
  assert.match(css,/#reader\.speech-immersive #page-area\{overflow:auto!important/);
@@ -70,4 +70,16 @@ test('Only Edge voices are offered and reading highlights track playback',()=>{
  assert.match(app,/markPdfReading/);
  assert.match(app,/markEpubReading/);
  assert.match(speech,/ontimeupdate/);
+});
+
+test('Glass player has no caption and online speech cancels pending requests',()=>{
+ const css=readFileSync(new URL('style.css',root),'utf8');
+ const server=readFileSync(new URL('../server.py',import.meta.url),'utf8');
+ assert.doesNotMatch(html,/id="pdf-spoken-text"/);
+ assert.doesNotMatch(html,/id="epub-spoken-text"/);
+ assert.match(css,/prefers-reduced-transparency/);
+ assert.match(speech,/requests\.clear\(\)/);
+ assert.match(speech,/URL\.revokeObjectURL/);
+ assert.match(server,/EDGE_TTS_SLOTS=threading\.BoundedSemaphore\(2\)/);
+ assert.match(server,/raise APIError\(429/);
 });

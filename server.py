@@ -26,6 +26,9 @@ import subprocess
 import tempfile
 import asyncio
 
+# Bound concurrent external synthesis calls to protect the Pi and remote service.
+EDGE_TTS_SLOTS=threading.BoundedSemaphore(2)
+
 # Optional raster engine is installed in Docker; errors are reported per request.
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -387,7 +390,11 @@ class Handler(BaseHTTPRequestHandler):
                     raise APIError(400,'Speech text must be 1–500 characters.')
                 selected_voice=data.get('voice','en-IN-NeerjaNeural')
                 allowed_voices={'en-IN-NeerjaNeural','en-IN-PrabhatNeural','en-US-AriaNeural','en-US-GuyNeural','en-GB-SoniaNeural','en-GB-RyanNeural','en-AU-NatashaNeural'}
-                if selected_voice not in allowed_voices: raise APIError(400,'Unsupported Edge voice.')
+                if not isinstance(selected_voice,str) or selected_voice not in allowed_voices:
+                    raise APIError(400,'Unsupported Edge voice.')
+                # Reject excess work instead of accumulating expensive internet requests.
+                if not EDGE_TTS_SLOTS.acquire(blocking=False):
+                    raise APIError(429,'Too many speech requests. Please retry shortly.')
                 try:
                     import edge_tts
                     async def generate_edge():
@@ -402,7 +409,9 @@ class Handler(BaseHTTPRequestHandler):
                     body=asyncio.run(asyncio.wait_for(generate_edge(),timeout=30))
                 except Exception as error:
                     logging.warning('Edge TTS unavailable: %s',type(error).__name__)
-                    raise APIError(503,'Online Edge voice unavailable; switching to offline Piper.')
+                    raise APIError(503,'Online Edge voice unavailable.')
+                finally:
+                    EDGE_TTS_SLOTS.release()
                 if not body:
                     raise APIError(503,'Online Edge voice returned no audio.')
                 self.send_response(200)
