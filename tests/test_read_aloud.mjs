@@ -60,7 +60,7 @@ test('PDF/WebP source can be selected by a rectangle or two taps',()=>{
  assert.match(app,/showPdfSelection\(slot,drag\.start,point\)/);
  assert.match(app,/pdfSelectionAnchor\?\.slot===drag\.slot/);
  assert.match(app,/speechSelecting\.pdf/);
- assert.match(app,/setSpeechDraft\('pdf',chosen\.text\)/);
+ assert.match(app,/enqueueSelectedSpeech\('pdf',chosen\.text\)/);
  assert.match(css,/\.speech-manual-selection/);
  assert.match(css,/speech-selecting-pdf/);
 });
@@ -107,7 +107,7 @@ test('EPUB selection uses user-highlighted phrase and tap-to-preview only',()=>{
  assert.match(epub,/onTextTap\?\.\(block\.textContent\.trim\(\)\)/);
  assert.match(epub,/canSelectSpeechText\(\)/);
  assert.match(app,/onSelection:text=>/);
- assert.match(app,/setSpeechDraft\('epub',text\)/);
+ assert.match(app,/enqueueSelectedSpeech\('epub',text\)/);
  assert.doesNotMatch(epub,/readAloudNext\(/);
  assert.doesNotMatch(epub,/readAloudText\(/);
 });
@@ -136,7 +136,7 @@ test('reader cleanup discards selections and does not keep old book queue',()=>{
 test('unsafe HTML from PDF and EPUB never becomes queue UI markup',()=>{
  assert.match(app,/textarea\.value=entry\.text/);
  assert.match(app,/title\.textContent=/);
- assert.match(app,/setSpeechDraft\(kind,text\)/);
+ assert.match(app,/async function enqueueSelectedSpeech\(kind,text\)/);
  assert.doesNotMatch(app,/innerHTML\s*=\s*entry\.text/);
 });
 
@@ -175,4 +175,18 @@ test('EPUB drag selections wait until gesture completion and deduplicate events'
  assert.match(epub,/doc\.addEventListener\('touchend',afterSelection\)/);
  assert.match(epub,/selectionTimer=setTimeout\(finishSelection,550\)/);
  assert.match(epub,/selected===lastSelected&&now-lastSelectedAt<1500/);
+});
+
+test('manual Add button works even when selection mode is switched off',()=>{
+ const start=app.indexOf('async function enqueueSelectedSpeech(kind,text)');
+ const end=app.indexOf('function renderSpeechQueue(kind)',start);
+ const block=app.slice(start,end);
+ assert.doesNotMatch(block,/if\(!speechSelecting\[kind\]\)return/);
+ assert.match(app,/void enqueueSelectedSpeech\(kind,text\)/);
+});
+test('simultaneous selections and Play reuse a single speech controller',()=>{
+ assert.match(app,/const speechControllerPending=\{pdf:null,epub:null\}/);
+ assert.match(app,/if\(speechControllerPending\[kind\]\)return speechControllerPending\[kind\]/);
+ assert.match(app,/speechControllerPending\[kind\]=creation/);
+ assert.match(app,/try\{return await creation;\}/);
 });
