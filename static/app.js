@@ -815,7 +815,6 @@ function renderSpeechQueue(kind){
  if(draft.value!==speechDraft[kind])draft.value=speechDraft[kind];
  const list=panel.querySelector('.speech-queue-list');
  list.replaceChildren();
- const {moveQueueItem}=window.pishelfManualQueue||{};
  items.forEach((entry,index)=>{
   const li=document.createElement('li');
   li.className='speech-queue-entry';
@@ -851,6 +850,7 @@ function rearrangeSpeechQueue(kind,index,step){
  speechQueues[kind]=items;renderSpeechQueue(kind);
 }
 function openSpeechQueue(kind){
+ if(kind==='pdf')annotationToggle(false);
  const panel=speechQueueUI(kind);panel.hidden=false;
  speechSelecting[kind]=true;
  document.body.classList.toggle('speech-selecting-pdf',speechSelecting.pdf);
@@ -861,6 +861,7 @@ function resetSpeechQueue(kind){
  speechQueues[kind]=[];speechQueuePosition[kind]=0;speechDraft[kind]='';
  clearSpeechSelection(kind);
  const panel=queuePanel(kind);if(panel)panel.hidden=true;
+ speechPlayer(kind,false);
 }
 function speechState(kind,state){
  if(state.notice){toast(state.notice);return;}
