@@ -148,3 +148,31 @@ test('magazine text ordering intelligence and automatic page narration are gone'
  assert.doesNotMatch(app,/markPdfReading/);
  assert.doesNotMatch(app,/markEpubReading/);
 });
+
+test('selecting PDF or EPUB text immediately queues and plays the first selection',()=>{
+ assert.match(app,/async function enqueueSelectedSpeech\(kind,text\)/);
+ assert.match(app,/queue\.push\(entry\)/);
+ assert.match(app,/if\(current\?\.active\|\|automaticQueueStartPending\[kind\]\)return/);
+ assert.match(app,/speechQueuePosition\[kind\]=speechQueues\[kind\]\.indexOf\(entry\)/);
+ assert.match(app,/speechPlayer\(kind,true\)/);
+ assert.match(app,/controller\.play\(\)/);
+ assert.match(app,/if\(chosen\.text\)void enqueueSelectedSpeech\('pdf',chosen\.text\)/);
+ assert.match(app,/onTextTap:text=>\{if\(g===epubGeneration\)void enqueueSelectedSpeech\('epub',text\)/);
+ assert.match(app,/onSelection:text=>\{if\(g===epubGeneration\)void enqueueSelectedSpeech\('epub',text\)/);
+});
+test('new selections append without interrupting the current selection',()=>{
+ const start=app.indexOf('async function enqueueSelectedSpeech(kind,text)');
+ const end=app.indexOf('function renderSpeechQueue(kind)',start);
+ const block=app.slice(start,end);
+ assert.match(block,/const current=kind==='pdf'\?pdfSpeech:epubSpeech/);
+ assert.match(block,/if\(current\?\.active\|\|automaticQueueStartPending\[kind\]\)return/);
+ assert.doesNotMatch(block,/controller\.stop\(\)/);
+ assert.doesNotMatch(block,/clearSpeechSelection\(kind\)/);
+ assert.doesNotMatch(app.slice(app.indexOf('async function playSpeechQueue(kind)'),app.indexOf('// Read a user-drawn region')),/clearSpeechSelection\(kind\)/);
+});
+test('EPUB drag selections wait until gesture completion and deduplicate events',()=>{
+ assert.match(epub,/doc\.addEventListener\('pointerup',afterSelection\)/);
+ assert.match(epub,/doc\.addEventListener\('touchend',afterSelection\)/);
+ assert.match(epub,/selectionTimer=setTimeout\(finishSelection,550\)/);
+ assert.match(epub,/selected===lastSelected&&now-lastSelectedAt<1500/);
+});
