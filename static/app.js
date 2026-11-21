@@ -994,7 +994,7 @@ async function closeEpubBook({fromHistory=false}={}){
 }
 window.addEventListener('popstate',()=>{if(!$('epub-reader').hidden){epubHistoryActive=false;closeEpubBook({fromHistory:true});}});
 async function openEpubBook(item,start){
- epubSpeech?.stop();
+ resetSpeechQueue('epub');
  if($('epub-reader').hidden){history.pushState({pishelfEpub:true},'',location.href);epubHistoryActive=true;}
  const g=++epubGeneration;
  if(epubController){epubController.destroy();epubController=null;}
@@ -1164,7 +1164,7 @@ function turnBook(direction){
 }
 /** close Reader: Support the PiShelf reader or library interface. */
 async function closeReader({fromHistory=false}={}){
- cancelSpeechPick();pdfSpeech?.stop();pdfSpeechPage=null;
+ resetSpeechQueue('pdf');pdfSpeechPage=null;
  annotationToggle(false);annotationStroke=null;clearCurl();
  if(!fromHistory&&readerHistoryActive){
   readerHistoryActive=false;
