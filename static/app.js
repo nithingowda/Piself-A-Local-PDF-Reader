@@ -831,6 +831,46 @@ async function zoomWithControls(targetZoom){
 }
 $('minus').onclick=()=>zoomWithControls(zoom-.25);
 $('plus').onclick=()=>zoomWithControls(zoom+.25);
+// Desktop PDF navigation: use the existing PDF zoom pipeline, not browser zoom.
+const desktopZoomArea=$('page-area');
+let desktopZoomWheelTimer=0,desktopZoomWheelTarget=null,desktopDrag=null;
+desktopZoomArea.addEventListener('wheel',event=>{
+ if(!documentPDF||$('reader').hidden||!(event.ctrlKey||event.metaKey))return;
+ event.preventDefault();
+ if(!layoutReady||pinch)return;
+ const base=desktopZoomWheelTarget??zoom;
+ desktopZoomWheelTarget=Math.max(fitEntirePageZoom(page),Math.min(3,base*Math.exp(-event.deltaY*.002)));
+ clearTimeout(desktopZoomWheelTimer);
+ desktopZoomWheelTimer=setTimeout(()=>{const target=desktopZoomWheelTarget;desktopZoomWheelTarget=null;if(target!==null)void zoomWithControls(target);},55);
+},{passive:false});
+document.addEventListener('keydown',event=>{
+ if(!documentPDF||$('reader').hidden||document.querySelector('dialog[open]')||
+   /INPUT|TEXTAREA|SELECT/.test(event.target?.tagName)||event.target?.isContentEditable||
+   !(event.ctrlKey||event.metaKey)||event.altKey)return;
+ const key=event.key;
+ if(key==='+'||key==='='||key==='Add'){event.preventDefault();void zoomWithControls(zoom+.25);}
+ else if(key==='-'||key==='_'||key==='Subtract'){event.preventDefault();void zoomWithControls(zoom-.25);}
+ else if(key==='0'){event.preventDefault();automaticFit='page';void rebuild();}
+});
+desktopZoomArea.addEventListener('pointerdown',event=>{
+ if(event.pointerType!=='mouse'||event.button!==0||!documentPDF||pinch||
+   zoom<=fitEntirePageZoom(page)+.01)return;
+ desktopDrag={id:event.pointerId,x:event.clientX,y:event.clientY,left:desktopZoomArea.scrollLeft,top:desktopZoomArea.scrollTop};
+ desktopZoomArea.setPointerCapture(event.pointerId);
+ desktopZoomArea.classList.add('desktop-panning');
+});
+desktopZoomArea.addEventListener('pointermove',event=>{
+ if(!desktopDrag||event.pointerId!==desktopDrag.id)return;
+ desktopZoomArea.scrollLeft=desktopDrag.left-(event.clientX-desktopDrag.x);
+ desktopZoomArea.scrollTop=desktopDrag.top-(event.clientY-desktopDrag.y);
+});
+function endDesktopPan(event){if(!desktopDrag||event.pointerId!==desktopDrag.id)return;
+ desktopDrag=null;desktopZoomArea.classList.remove('desktop-panning');
+ if(desktopZoomArea.hasPointerCapture(event.pointerId))desktopZoomArea.releasePointerCapture(event.pointerId);
+}
+desktopZoomArea.addEventListener('pointerup',endDesktopPan);
+desktopZoomArea.addEventListener('pointercancel',endDesktopPan);
+
 $('fit-height').onclick=()=>{
  if(!documentPDF)return;
  if($('view-mode').value!=='single')$('view-mode').value='single';
