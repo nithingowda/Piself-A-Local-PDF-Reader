@@ -363,3 +363,10 @@ body.epub-open{overflow:hidden}
 .pdf-text-surface span::selection{background:rgba(55,145,230,.35);color:transparent}
 .annotation-editing .pdf-text-surface span{pointer-events:none}
 .pdf-range-action:not([hidden]){position:fixed;z-index:10000;top:20%;left:50%;transform:translateX(-50%);padding:9px 14px;border-radius:12px}
+
+/* Only the text layer participates in native PDF selection. */
+.pdf-slot,.pdf-slot>img,.pdf-slot>canvas,.numbered-pick-overlay{
+ -webkit-user-select:none;user-select:none
+}
+.pdf-slot>img,.pdf-slot>canvas{pointer-events:none;-webkit-user-drag:none}
+.pdf-slot .pdf-text-surface{-webkit-user-select:text;user-select:text}

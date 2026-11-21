@@ -457,6 +457,7 @@ async function renderPages(){
    if(current?.id){
     const prefetched=takeDecodedPreview(n);
     const img=prefetched||document.createElement('img');
+    img.draggable=false;
     img.alt='Magazine page '+n;
     img.decoding='async';
     img.style.cssText='display:block;width:100%;height:100%;object-fit:contain';
@@ -473,7 +474,7 @@ async function renderPages(){
      replacePagePixels(slot,img);slot.dataset.ready='yes';void installTextSurface(slot,img,documentPDF);slot.dataset.queued='no';
      if(width>960){
       cancelSharpImage(slot);
-      const sharp=new Image();
+      const sharp=new Image();sharp.draggable=false;
       sharp.decoding='async';sharp.alt=img.alt;sharp.style.cssText=img.style.cssText;
       pendingSharpImages.set(slot,sharp);
       sharp.onload=()=>{
@@ -731,7 +732,15 @@ function enableSpeechDrag(kind){
  player.addEventListener('pointerup',end);player.addEventListener('pointercancel',end);
 }
 function speechPlayer(kind,visible){
- if(!visible)clearReadingMark();
+ if(!visible){
+  resetNumberedParagraphs(kind);
+  clearSpeechHighlight(kind);
+  if(kind==='pdf'){
+   const selection=window.getSelection();
+   if(selection?.anchorNode&&$('pages').contains(selection.anchorNode))selection.removeAllRanges();
+   rangeAction.hidden=true;
+  }
+ }
  const root=$(kind==='pdf'?'reader':'epub-reader');
  const player=$(kind+'-speech-player');
  player.hidden=!visible;
@@ -936,11 +945,12 @@ function wireSpeech(kind,controller){
  $(kind+'-read-main').onclick=()=>controller.paused?controller.play():controller.pause();
  $(kind+'-read-back').onclick=()=>controller.seek(-10);
  $(kind+'-read-forward').onclick=()=>controller.seek(10);
- $(kind+'-read-close').onclick=()=>{controller.stop();numberedPlayback[kind]=false;speechPlayer(kind,false);refreshNumberedSelection(kind);};
+ const closePlayer=()=>{controller.stop();speechPlayer(kind,false);};
+ $(kind+'-read-close').onclick=closePlayer;
  $(kind+'-read-more').onclick=()=>{panel.hidden=!panel.hidden;};
  $(kind+'-read-play').onclick=()=>controller.play();
  $(kind+'-read-pause').onclick=()=>controller.paused?controller.play():controller.pause();
- $(kind+'-read-stop').onclick=()=>{controller.stop();numberedPlayback[kind]=false;speechPlayer(kind,false);refreshNumberedSelection(kind);};
+ $(kind+'-read-stop').onclick=closePlayer;
  $(kind+'-read-rate').onchange=e=>controller.setRate(e.target.value);
  $(kind+'-read-voice').onchange=e=>{const selected=e.target.value;try{localStorage.setItem(VOICE_STORAGE_KEY,selected);}catch{}controller.setVoice(selected);speechVoices(kind==='pdf'?'epub':'pdf');};
  speechVoices(kind);
@@ -1025,7 +1035,13 @@ function markEpubReading(text,progress=0){
   if(idx>=0){const range=doc.createRange();range.setStart(node,idx);range.setEnd(node,Math.min(node.length,idx+needle.length));view.CSS.highlights.set('pishelf-reading',new view.Highlight(range));break;}
  }
 }
+function clearSpeechHighlight(kind){
+ if(kind==='pdf')clearReadingMark();
+ else epubController?.clearReadingHighlight?.();
+}
 function speechState(kind,state){
+ if(state.clipEnded){clearSpeechHighlight(kind);return;}
+ if(state.active===false)clearSpeechHighlight(kind);
  if(state.notice){toast(state.notice);return;}
  if(numberedPlayback[kind]){
   if(state.spokenText!==undefined){
