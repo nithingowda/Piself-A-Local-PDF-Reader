@@ -249,3 +249,19 @@ body.epub-open{overflow:hidden}
 .thumbnail-navigation .thumbnail-jump{width:76px;max-width:22vw;text-align:center;border-radius:8px;padding:7px}
 #thumbnail-grid button[aria-current="page"]{outline:2px solid #589bdc;outline-offset:2px}
 .reader-scrubber output{font-variant-numeric:tabular-nums}
+
+/* Annotations are overlaid, not baked into cached WebP/PDF page pixels. */
+.pdf-slot .annotation-layer{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:3}
+#page-area.annotation-editing .pdf-slot{cursor:crosshair;touch-action:none}
+#page-area.annotation-editing{touch-action:none}
+.annotation-panel{position:absolute;right:12px;top:62px;bottom:90px;width:min(340px,calc(100vw - 24px));overflow:auto;z-index:7;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:14px;box-shadow:0 8px 32px #0005;padding:14px;backdrop-filter:blur(12px)}
+.annotation-panel[hidden]{display:none}
+.annotation-heading,.annotation-tools,.annotation-entry{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.annotation-heading{margin-bottom:12px}
+.annotation-tools{flex-wrap:wrap}
+.annotation-panel label{display:flex;flex-direction:column;gap:5px;margin:9px 0}
+.annotation-panel textarea{width:100%;resize:vertical;min-height:68px}
+.annotation-entry{padding:7px 0;border-bottom:1px solid var(--line)}
+.annotation-entry button:first-child{flex:1;text-align:left;overflow-wrap:anywhere}
+#annotation-list{max-height:30vh;overflow:auto}
+@media(max-width:650px){.annotation-panel{top:56px;bottom:64px;right:6px;width:min(340px,calc(100vw - 12px))}}
