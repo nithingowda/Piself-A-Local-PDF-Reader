@@ -12,7 +12,7 @@ class AuthenticationSourceTests(unittest.TestCase):
         self.assertIn("user=self.require_session(admin=path in ('/admin.html','/admin.js'))",SERVER)
         self.assertIn("if path not in ('/login.html','/login.js','/setup.html','/setup.js'):",SERVER)
     def test_only_reader_progress_and_annotations_allow_member_mutations(self):
-        self.assertIn("self.require_session(admin=route not in ('/api/progress','/api/annotations','/api/tts/alba'),mutation=True)",SERVER)
+        self.assertIn("self.require_session(admin=route not in ('/api/progress','/api/annotations','/api/tts/alba','/api/tts/edge'),mutation=True)",SERVER)
         self.assertIn("if route == '/api/tts/alba':",SERVER)
         self.assertIn("if route == '/api/annotations':",SERVER)
         self.assertIn("user=self.require_session(mutation=True)",SERVER)
