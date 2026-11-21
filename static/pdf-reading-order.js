@@ -101,11 +101,11 @@ export function orderPdfSpeechItems(items,viewport){
   const minimumCount=Math.max(2,Math.floor(group.length*.06));
   const candidates=starts.filter(entry=>entry.count>=minimumCount)
    .sort((a,b)=>b.count-a.count||a.x-b.x);
-  const columns=[];
+  const columns=[]; // Newspapers can use four narrow columns on one page.
   for(const candidate of candidates){
    if(columns.every(other=>Math.abs(other.x-candidate.x)>viewport.width*.17))
     columns.push(candidate);
-   if(columns.length===3)break;
+   if(columns.length===4)break;
   }
   columns.sort((a,b)=>a.x-b.x);
   // If there are not enough repeated starts, preserve vertical order rather
