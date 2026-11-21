@@ -143,3 +143,14 @@ test('tapping any line selects the whole paragraph across inline emphasis',()=>{
  }
  assert.equal(paragraphAtPoint(groups,45,145,viewport).text,'Another paragraph.');
 });
+
+test('one tap selects all remaining contiguous body paragraphs before a sidebar',()=>{
+ const lines=Array.from({length:10},(_,i)=>({
+  ...line('Body paragraph '+i+'.',40,100+i*32,i),fontName:'body'
+ }));
+ lines.push({...line('The debate over how to reverse global warming',40,423,10),fontName:'heading'});
+ const paragraphs=numberedPdfParagraphs(lines,viewport);
+ const passage=paragraphAtPoint(paragraphs,50,160,viewport);
+ assert.deepEqual(passage.text.split('\n'),lines.slice(2,10).map(item=>item.str));
+ assert.equal(passage.boxes.length,8);
+});
