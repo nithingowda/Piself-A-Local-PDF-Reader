@@ -616,7 +616,11 @@ async function rebuild(){if(!documentPDF)return;cancelAllSharpImages();$('pages'
   cssZoomBase=zoom;updateTouchMode();
  }
  if(g!==generation||epoch!==layoutEpoch)return;
- for(const c of $('pages').querySelectorAll('canvas')){c.width=0;c.height=0;}$('pages').replaceChildren();slots=[];renderedSlots.clear();
+ for(const c of $('pages').querySelectorAll('canvas')){c.width=0;c.height=0;}
+ // The old sentence overlay belongs to the removed page slot. Allow it to
+ // be drawn again after zooming, rotating, or switching page/spread views.
+ if(readingMark){readingMark.remove();readingMark=null;}readingMarkText='';
+ $('pages').replaceChildren();slots=[];renderedSlots.clear();
  const mode=$('view-mode').value,count=documentPDF.numPages,fragment=document.createDocumentFragment();
  if(mode==='book'){
   page=spreadStart(page);
@@ -647,7 +651,10 @@ async function rebuild(){if(!documentPDF)return;cancelAllSharpImages();$('pages'
  if(target){$('page-area').scrollTop=mode==='scroll'?target.offsetTop-20:0;enqueue(target);}
  if(automaticFit){const area=$('page-area');area.scrollLeft=(area.scrollWidth-area.clientWidth)/2;}
  if(isBookSpread())for(const slot of slots)enqueue(slot);
- updatePageUI();updateBookmarks();remember();}
+ updatePageUI();updateBookmarks();remember();
+ if(pdfSpeech?.active&&pdfLastSentence&&slots.some(slot=>+slot.dataset.page===pdfSpeechCurrentPage()))
+  void markPdfReading(pdfLastSentence.text,pdfLastSentence.offset,pdfLastSentence.length);
+}
 let pdfjsModulePromise;
 /** pdf Engine: Support the PiShelf reader or library interface. */
 async function pdfEngine(){
@@ -738,11 +745,11 @@ function wireSpeech(kind,controller){
  $(kind+'-read-voice').onchange=e=>{const selected=e.target.value;try{localStorage.setItem(VOICE_STORAGE_KEY,selected);}catch{}controller.setVoice(selected);speechVoices(kind==='pdf'?'epub':'pdf');};
  speechVoices(kind);
 }
-let readingMark=null,readingMarkText='',readingMarkPage=0,readingMarkIndex=-1;
+let readingMark=null,readingMarkText='',readingMarkPage=0,readingMarkIndex=-1,pdfLastSentence=null;
 function clearReadingMark(){
  if(readingMark){readingMark.remove();readingMark=null;}
  if(window.CSS?.highlights)CSS.highlights.delete('pishelf-reading');
- readingMarkText='';readingMarkPage=0;readingMarkIndex=-1;
+ readingMarkText='';readingMarkPage=0;readingMarkIndex=-1;pdfLastSentence=null;
 }
 // PDF images have no selectable text layer; use PDF.js text item coordinates.
 let pdfSpeechItems=null,pdfSpeechItemsPage=0,pdfSpeechStartIndex=0,pdfSpeechHighlightSpans=null,pdfSpeechSpansPage=0;
@@ -764,14 +771,11 @@ async function markPdfReading(text,offset=0,length=0){
   }
   if(readingMarkText!==key||pdfSpeechCurrentPage()!==currentPage)return;
   if(pdfSpeechSpansPage!==currentPage||!pdfSpeechHighlightSpans){
-   const {pdfSpeechLayout}=await import('./pdf-reading-order.js');
+   const {pdfSpeechHighlightMap}=await import('./pdf-reading-order.js');
    const {normalizeSpeechText}=await speechEngine();
-   const layout=pdfSpeechLayout(pdfSpeechItems.slice(pdfSpeechStartIndex));
-   pdfSpeechHighlightSpans=layout.spans.map(span=>({
-    item:span.item,
-    from:normalizeSpeechText(layout.text.slice(0,span.start)).length,
-    to:normalizeSpeechText(layout.text.slice(0,span.end)).length
-   }));
+   pdfSpeechHighlightSpans=pdfSpeechHighlightMap(
+    pdfSpeechItems.slice(pdfSpeechStartIndex),normalizeSpeechText
+   ).spans;
    pdfSpeechSpansPage=currentPage;
   }
   const end=offset+length;
@@ -821,8 +825,10 @@ function markEpubReading(text,progress=0){
 function speechState(kind,state){
  if(state.notice){toast(state.notice);return;}
  if(state.spokenText!==undefined){
-  if(kind==='pdf')void markPdfReading(state.spokenText,state.readingOffset||0,state.readingLength||0);
-  else markEpubReading(state.readingSentence||state.spokenText,0);
+  if(kind==='pdf'){
+   pdfLastSentence={text:state.spokenText,offset:state.readingOffset||0,length:state.readingLength||0};
+   void markPdfReading(pdfLastSentence.text,pdfLastSentence.offset,pdfLastSentence.length);
+  }else markEpubReading(state.readingSentence||state.spokenText,0);
   return;
  }
  if(state.error){toast('Read aloud: '+state.error);return;}
