@@ -57,7 +57,7 @@ test('PDF/WebP source can be selected by a rectangle or two taps',()=>{
  assert.match(app,/pdfPage\.getTextContent\(\)/);
  assert.match(app,/import\('\.\/manual-read-queue\.js'\)/);
  assert.match(app,/extractPdfRegion\(content\.items,viewport,region\)/);
- assert.match(app,/showPdfSelection\(slot,drag\.start,point\)/);
+ assert.match(app,/finishPdfSelection\(drag\.slot,drag\.start,point\)/);
  assert.match(app,/pdfSelectionAnchor\?\.slot===drag\.slot/);
  assert.match(app,/speechSelecting\.pdf/);
  assert.match(app,/setSpeechDraft\('pdf',chosen\.text\)/);
