@@ -11,22 +11,29 @@ export function numberedPdfParagraphs(ordered,viewport){
  });
  // Manual picks follow contiguous printed lines, even when narration
  // would join an unfinished sentence to text in another column.
- let region=0;
+ let region=0,lineStart=null,lineEnd=0,margin=Infinity;
  const localItems=measured.map((item,index)=>{
   const prev=measured[index-1];
   if(prev){
    const height=Math.max(1,Math.min(prev.boxHeight,item.boxHeight));
    const dy=item.y-prev.y;
-   const gapX=Math.max(item.x-prev.x-prev.boxWidth,prev.x-item.x-item.boxWidth);
    const newLine=dy>height*.55;
-   const headingChange=newLine&&prev.fontName&&item.fontName&&prev.fontName!==item.fontName;
-   // Allow a little extra leading on aligned lines of the same body text.
-   const aligned=Math.abs(item.x-prev.x)<=height*.85;
-   const sameStyle=item.fontName===prev.fontName&&Math.abs(item.boxHeight-prev.boxHeight)<=height*.1;
-   const maxLineGap=height*(aligned&&sameStyle?2.3:1.8);
-   if(item.readingRegion!==prev.readingRegion||item.readingColumn!==prev.readingColumn||
-      dy < -height*.65||dy>maxLineGap||gapX>height*1.4||headingChange)region++;
+   // A trailing word in another font belongs to its printed line.
+   const gapX=newLine?Math.max(item.x-lineEnd,lineStart.x-item.x-item.boxWidth):
+    item.x-prev.x-prev.boxWidth;
+   const aligned=Math.abs(item.x-lineStart.x)<=height*.85;
+   const sameSize=Math.abs(item.boxHeight-lineStart.boxHeight)<=height*.15;
+   const changedFont=item.fontName&&lineStart.fontName&&item.fontName!==lineStart.fontName;
+   const headingChange=newLine&&changedFont&&(!sameSize||lineStart===prev);
+   const indent=newLine&&item.x>margin+height*.65&&/[.!?…]["”’)]*$/.test(prev.str.trim());
+   const maxLineGap=height*(aligned&&sameSize?2.3:1.8);
+   const boundary=item.readingRegion!==prev.readingRegion||item.readingColumn!==prev.readingColumn||
+    dy < -height*.65||dy>maxLineGap||gapX>height*1.4||headingChange||indent;
+   if(boundary){region++;margin=Infinity;}
+   if(newLine||boundary)lineStart=null;
   }
+  if(!lineStart){lineStart=item;lineEnd=item.x;margin=Math.min(margin,item.x);}
+  lineEnd=Math.max(lineEnd,item.x+item.boxWidth);
   return {...item,readingRegion:region};
  });
  const {text,spans}=pdfSpeechLayout(localItems);

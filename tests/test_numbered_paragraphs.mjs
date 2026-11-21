@@ -129,3 +129,17 @@ test('slightly wider spacing includes the next aligned body line',()=>{
   'The article continues on this slightly indented line.','A separate paragraph.'
  ]);
 });
+
+test('tapping any line selects the whole paragraph across inline emphasis',()=>{
+ const body=(text,x,y,id,width,fontName='body')=>({...line(text,x,y,id),width,boxWidth:width,fontName});
+ const groups=numberedPdfParagraphs([
+  body('Energy use',25,100,0,75),body('rose',106,100,1,24,'italic'),
+  body('again this year.',25,116,2,102),
+  body('The trend continued.',25,132,3,126),
+  body('Another paragraph.',38,148,4,128)
+ ],viewport);
+ for(const y of [97,113,129]){
+  assert.equal(paragraphAtPoint(groups,40,y,viewport).text,'Energy use rose again this year. The trend continued.');
+ }
+ assert.equal(paragraphAtPoint(groups,45,145,viewport).text,'Another paragraph.');
+});
