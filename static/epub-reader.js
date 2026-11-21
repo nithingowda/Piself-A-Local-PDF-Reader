@@ -94,6 +94,12 @@ export async function createEpubReader({url,container,cfi,theme='light',fontSize
   emitLocation();
  }).catch(()=>{if(!dead)onStatus('Reading is available; percentage navigation is unavailable for this EPUB.');});
  return {
+  clearReadingHighlight(){
+   selectedSpeechBlock?.classList.remove('pishelf-tap-selected');
+   for(const content of rendition.getContents()||[]){
+    content.document?.defaultView?.CSS?.highlights?.delete('pishelf-reading');
+   }
+  },
   next(){return rendition.next();},
   async readAloudNext(){const before=rendition.currentLocation()?.start?.cfi;await rendition.next();const after=rendition.currentLocation()?.start?.cfi;return Boolean(after&&after!==before);},
   readAloudText(){

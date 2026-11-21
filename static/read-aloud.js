@@ -248,7 +248,7 @@ export function createReadAloud({getText,next,peekNextText=()=>null,onState,getC
     player.onended=()=>{
      if(audio===player){audio=null;audioUrl=null;}
      release(ready);
-     if(valid(session))void say();
+     if(valid(session)){onState?.({clipEnded:true});void say();}
     };
     player.onerror=()=>{if(valid(session)){stop();onState?.({error:'Could not play Edge audio.'});}};
     await player.play();
