@@ -83,3 +83,17 @@ test('Glass player has no caption and online speech cancels pending requests',()
  assert.match(server,/EDGE_TTS_SLOTS=threading\.BoundedSemaphore\(2\)/);
  assert.match(server,/raise APIError\(429/);
 });
+
+test('floating player can be dragged and Edge voice choice persists',()=>{
+ for(const kind of ['pdf','epub'])assert.match(html,new RegExp('id="'+kind+'-speech-player"[^>]*>\\s*<div class="speech-drag-handle"'));
+ assert.match(app,/enableSpeechDrag\(kind\)/);
+ assert.match(app,/setPointerCapture/);
+ assert.match(app,/localStorage\.setItem\(VOICE_STORAGE_KEY,selected\)/);
+ assert.match(app,/preferredSpeechVoice\(\)/);
+});
+test('reading highlight updates by audio progress without a player transcript',()=>{
+ assert.match(app,/readingMarkIndex===wordIndex/);
+ assert.match(app,/pdfSpeechItemsPage/);
+ assert.match(app,/markEpubReading\(state\.spokenText,state\.readingProgress\|\|0\)/);
+ assert.match(speech,/ontimeupdate/);
+});
