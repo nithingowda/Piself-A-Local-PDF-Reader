@@ -72,6 +72,8 @@ export async function createEpubReader({url,container,cfi,theme='light',fontSize
  }).catch(()=>{if(!dead)onStatus('Reading is available; percentage navigation is unavailable for this EPUB.');});
  return {
   next(){return rendition.next();},
+  async readAloudNext(){const before=rendition.currentLocation()?.start?.cfi;await rendition.next();const after=rendition.currentLocation()?.start?.cfi;return Boolean(after&&after!==before);},
+  readAloudText(){const contents=rendition.getContents();return (contents||[]).map(c=>c.document?.body?.innerText||c.document?.body?.textContent||'').join(' ').trim();},
   prev(){return rendition.prev();},
   display(location){return rendition.display(location);},
   goPercent(percent){
