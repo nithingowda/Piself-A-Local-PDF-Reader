@@ -92,7 +92,7 @@ test('floating player can be dragged and Edge voice choice persists',()=>{
  assert.match(app,/preferredSpeechVoice\(\)/);
 });
 test('reading highlight updates by audio progress without a player transcript',()=>{
- assert.match(app,/readingMarkIndex===wordIndex/);
+ assert.match(app,/readingMarkIndex=wordIndex/);
  assert.match(app,/pdfSpeechItemsPage/);
  assert.match(app,/markEpubReading\(state\.spokenText,state\.readingProgress\|\|0\)/);
  assert.match(speech,/ontimeupdate/);
