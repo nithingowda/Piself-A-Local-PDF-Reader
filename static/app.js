@@ -829,6 +829,8 @@ async function zoomWithControls(targetZoom){
  }
  updatePageUI();remember();
 }
+$('minus').onclick=()=>zoomWithControls(zoom-.25);
+$('plus').onclick=()=>zoomWithControls(zoom+.25);
 // Desktop PDF navigation: use the existing PDF zoom pipeline, not browser zoom.
 const desktopZoomArea=$('page-area');
 let desktopZoomWheelTimer=0,desktopZoomWheelTarget=null,desktopDrag=null;
@@ -868,8 +870,7 @@ function endDesktopPan(event){if(!desktopDrag||event.pointerId!==desktopDrag.id)
 }
 desktopZoomArea.addEventListener('pointerup',endDesktopPan);
 desktopZoomArea.addEventListener('pointercancel',endDesktopPan);
-$('minus').onclick=()=>zoomWithControls(zoom-.25);
-$('plus').onclick=()=>zoomWithControls(zoom+.25);
+
 $('fit-height').onclick=()=>{
  if(!documentPDF)return;
  if($('view-mode').value!=='single')$('view-mode').value='single';
