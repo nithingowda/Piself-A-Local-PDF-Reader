@@ -1,0 +1,22 @@
+# Optional systemd deployment for PiShelf without Docker.
+# Replace YOUR_USER and /opt/pishelf with your actual account and checkout path.
+[Unit]
+Description=PiShelf self-hosted reader
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=YOUR_USER
+WorkingDirectory=/opt/pishelf
+ExecStart=/usr/bin/python3 /opt/pishelf/server.py --library /opt/pishelf/magazines --data /opt/pishelf/data
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/opt/pishelf/data /opt/pishelf/magazines
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
