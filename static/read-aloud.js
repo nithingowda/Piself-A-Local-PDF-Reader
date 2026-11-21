@@ -1,21 +1,30 @@
 /* Edge Neural TTS: one active audio clip, one prefetched clip, no local synthesis. */
-const MAX_CHUNK_LENGTH=240;
+const MAX_CHUNK_LENGTH=440; // Server accepts up to 500 characters per request.
 const DEFAULT_VOICE='en-IN-NeerjaNeural';
 
 // Preserve paragraph and heading boundaries before normalizing whitespace.
 export function splitSpeechChunks(text){
  const paragraphs=String(text||'').split(/\n+/).map(line=>line.replace(/[ \t]+/g,' ').trim()).filter(Boolean);
  const chunks=[];
+ // Combine sentences in the same paragraph into one synthesis request.
+ // Short requests for every line/sentence create audible network pauses.
  for(const paragraph of paragraphs){
   const sentences=paragraph.match(/[^.!?।！？]+[.!?।！？]*|[^.!?।！？]+$/g)||[];
+  let chunk='';
   for(const sentence of sentences){
-   let part='';
-   for(const word of sentence.trim().split(/\s+/)){
-    if(part&&part.length+word.length+1>MAX_CHUNK_LENGTH){chunks.push(part);part='';}
-    part+=(part?' ':'')+word;
+   const words=sentence.trim().split(/\s+/);
+   for(const word of words){
+    if(!word)continue;
+    if(chunk&&chunk.length+1+word.length>MAX_CHUNK_LENGTH){
+     chunks.push(chunk);chunk='';
+    }
+    if(word.length>MAX_CHUNK_LENGTH){
+     if(chunk){chunks.push(chunk);chunk='';}
+     for(let i=0;i<word.length;i+=MAX_CHUNK_LENGTH)chunks.push(word.slice(i,i+MAX_CHUNK_LENGTH));
+    }else chunk+=(chunk?' ':'')+word;
    }
-   if(part)chunks.push(part);
   }
+  if(chunk)chunks.push(chunk);
  }
  return chunks;
 }
