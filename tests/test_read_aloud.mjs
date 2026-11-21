@@ -157,3 +157,13 @@ test('read aloud stays on tapped PDF page including right side of a book spread'
  assert.match(app,/pdfSpeechPage=currentPage\+1/);
  assert.doesNotMatch(app,/if\(page!==targetPage\)move\(targetPage\)/);
 });
+
+test('tapped page stays the read-aloud source even in scroll and book views',()=>{
+ assert.match(app,/function pdfSpeechCurrentPage\(\)\{return pdfSpeechPage\|\|page;\}/);
+ assert.match(app,/pdfSpeechPage=targetPage/);
+ assert.match(app,/showPdfSpeechPage\(targetPage\)/);
+ assert.match(app,/const speechPage=pdfSpeechCurrentPage\(\)/);
+ assert.match(app,/const currentPage=pdfSpeechCurrentPage\(\)/);
+ assert.match(app,/pdfSpeechPage=currentPage\+1/);
+ assert.match(app,/if\(target\)\{/);
+});
