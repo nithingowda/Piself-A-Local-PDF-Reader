@@ -426,6 +426,20 @@ class Handler(BaseHTTPRequestHandler):
             if root is None: raise ValueError()
             path = safe_relative(data['path'])
             folder = checked_path(root, path)
+            if data.get('action') == 'rename':
+                if path == '.' or folder == root: raise APIError(400,'Cannot rename a library root.')
+                new_path = safe_relative(data.get('newPath',''))
+                if new_path == '.' or new_path == path or Path(new_path).parent != Path(path).parent:
+                    raise APIError(400,'Choose a different category name within the same parent folder.')
+                destination = checked_path(root, new_path)
+                if destination.exists(): raise APIError(409,'A category with that name already exists.')
+                if not folder.is_dir(): raise APIError(404,'Category not found.')
+                try:
+                    if any(folder.iterdir()): raise APIError(409,'Only empty categories can be renamed.')
+                    folder.rename(destination)
+                except OSError: raise APIError(409,'Unable to rename this category.')
+                self.server.scan_time=float('-inf')
+                return {'ok': True}
             if data.get('action') == 'delete':
                 if path == '.' or folder == root: raise APIError(400,'Cannot remove a library root.')
                 try: folder.rmdir()
