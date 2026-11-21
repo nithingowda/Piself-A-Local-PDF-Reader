@@ -34,7 +34,7 @@ export function numberedPdfParagraphs(ordered,viewport){
   }
   if(!lineStart){lineStart=item;lineEnd=item.x;margin=Math.min(margin,item.x);}
   lineEnd=Math.max(lineEnd,item.x+item.boxWidth);
-  return {...item,readingRegion:region};
+  return {...item,sourceRegion:item.readingRegion,readingRegion:region};
  });
  const {text,spans}=pdfSpeechLayout(localItems);
  if(!text.trim()||!viewport.width||!viewport.height)return [];
@@ -55,6 +55,7 @@ export function numberedPdfParagraphs(ordered,viewport){
    if(boxes.length){
     const anchor=boxes.reduce((a,box)=>box.y<a.y||(box.y===a.y&&box.x<a.x)?box:a,boxes[0]);
     groups.push({
+     font:included[0].item.fontName,column:included[0].item.readingColumn,region:included[0].item.sourceRegion,
      id:included.map(span=>span.item.sourceIndex).join(','),
      text:source,anchor:{x:anchor.x/viewport.width,y:anchor.y/viewport.height},
      boxes:boxes.map(box=>({
@@ -81,7 +82,22 @@ export function paragraphAtPoint(paragraphs,x,y,viewport){
   }
  }
  // Don't select text across a large photograph or empty gutter.
- return nearest<=Math.max(20,viewport.height*.02)?chosen:null;
+ if(!chosen||nearest>Math.max(20,viewport.height*.02))return null;
+ const parts=[chosen];
+ const index=paragraphs.indexOf(chosen);
+ for(const next of paragraphs.slice(index+1,index+3)){
+  const prev=parts.at(-1);
+  const last=prev.boxes.at(-1),first=next.boxes[0];
+  const height=Math.min(last.h,first.h);
+  const gap=first.y-last.y-last.h;
+  if(next.region!==prev.region||next.column!==prev.column||next.font!==prev.font||
+     Math.abs(first.h-last.h)>height*.12||gap<0||gap>height*1.8||
+     Math.abs(next.anchor.x-prev.anchor.x)*viewport.width>height*viewport.height*1.6)break;
+  parts.push(next);
+ }
+ if(parts.length===1)return chosen;
+ return {...chosen,id:parts.map(p=>p.id).join(','),text:parts.map(p=>p.text).join('\n'),
+  boxes:parts.flatMap(p=>p.boxes)};
 }
 
 export function reorderParagraphs(items,at,direction){
