@@ -725,257 +725,264 @@ function wireSpeech(kind,controller){
  enableSpeechDrag(kind);
  controller.setVoice(preferredSpeechVoice());
  const panel=$(kind+'-read-panel');
- $(kind+'-read-toggle').onclick=()=>beginSpeechPick(kind);
+ $(kind+'-read-toggle').onclick=()=>openSpeechQueue(kind);
  $(kind+'-read-main').onclick=()=>controller.paused?controller.play():controller.pause();
  $(kind+'-read-back').onclick=()=>controller.seek(-10);
  $(kind+'-read-forward').onclick=()=>controller.seek(10);
  $(kind+'-read-close').onclick=()=>{controller.stop();speechPlayer(kind,false);};
  $(kind+'-read-more').onclick=()=>{panel.hidden=!panel.hidden;};
- $(kind+'-read-play').onclick=()=>controller.play();
+ $(kind+'-read-play').onclick=()=>{void playSpeechQueue(kind);};
  $(kind+'-read-pause').onclick=()=>controller.paused?controller.play():controller.pause();
  $(kind+'-read-stop').onclick=()=>{controller.stop();speechPlayer(kind,false);};
  $(kind+'-read-rate').onchange=e=>controller.setRate(e.target.value);
  $(kind+'-read-voice').onchange=e=>{const selected=e.target.value;try{localStorage.setItem(VOICE_STORAGE_KEY,selected);}catch{}controller.setVoice(selected);speechVoices(kind==='pdf'?'epub':'pdf');};
  speechVoices(kind);
 }
-let readingMark=null,readingMarkText='',readingMarkPage=0,readingMarkIndex=-1;
+// Manual-only reading queue: never infer article order or read an entire page.
+const speechQueues={pdf:[],epub:[]};
+const speechQueuePosition={pdf:0,epub:0};
+const speechDraft={pdf:'',epub:''};
+const speechSelecting={pdf:false,epub:false};
+let pdfSpeechPage=null; // kept for reader teardown
+let pdfSelectionOverlay=null,pdfSelectionAnchor=null,pdfSelectionDrag=null;
+let pdfSelectionSerial=0;
 function clearReadingMark(){
- if(readingMark){readingMark.remove();readingMark=null;}
- if(window.CSS?.highlights)CSS.highlights.delete('pishelf-reading');
- readingMarkText='';readingMarkPage=0;readingMarkIndex=-1;
+ pdfSelectionOverlay?.remove();pdfSelectionOverlay=null;
 }
-// PDF images have no selectable text layer; use PDF.js text item coordinates.
-let pdfSpeechItems=null,pdfSpeechItemsPage=0,pdfSpeechStartIndex=0,pdfSpeechHighlightSpans=null,pdfSpeechSpansPage=0;
-async function markPdfReading(text,offset=0,length=0){
- if(!documentPDF||!text||!length)return;
- const currentPage=pdfSpeechCurrentPage();
- const slot=Array.from($('pages').querySelectorAll('[data-page]')).find(el=>+el.dataset.page===currentPage);
- if(!slot)return;
- const key=currentPage+':'+offset+':'+length;
- if(readingMarkText===key)return;
- readingMark?.remove();readingMark=null;
- readingMarkText=key;readingMarkPage=currentPage;readingMarkIndex=offset;
- try{
-  const pdfPage=await documentPDF.getPage(currentPage);
-  if(pdfSpeechItemsPage!==currentPage||!pdfSpeechItems){
-   const {orderPdfSpeechItems}=await import('./pdf-reading-order.js');
-   pdfSpeechItems=orderPdfSpeechItems((await pdfPage.getTextContent()).items,pdfPage.getViewport({scale:1,rotation}));
-   pdfSpeechItemsPage=currentPage;
-  }
-  if(readingMarkText!==key||pdfSpeechCurrentPage()!==currentPage)return;
-  if(pdfSpeechSpansPage!==currentPage||!pdfSpeechHighlightSpans){
-   const {pdfSpeechLayout}=await import('./pdf-reading-order.js');
-   const {normalizeSpeechText}=await speechEngine();
-   const layout=pdfSpeechLayout(pdfSpeechItems.slice(pdfSpeechStartIndex));
-   pdfSpeechHighlightSpans=layout.spans.map(span=>({
-    item:span.item,
-    from:normalizeSpeechText(layout.text.slice(0,span.start)).length,
-    to:normalizeSpeechText(layout.text.slice(0,span.end)).length
-   }));
-   pdfSpeechSpansPage=currentPage;
-  }
-  const end=offset+length;
-  const viewport=pdfPage.getViewport({scale:1,rotation});
-  const overlay=document.createElement('div');
-  overlay.className='speech-paragraph-overlay';
-  for(const {item,from,to} of pdfSpeechHighlightSpans){
-   // Sentence positions share the exact normalized text used for synthesis.
-   if(to<=offset||from>=end)continue;
-   const characters=Math.max(1,to-from);
-   const first=Math.max(from,offset),last=Math.min(to,end);
-   const startFraction=Math.max(0,(first-from)/characters);
-   const fraction=Math.max(.01,(last-first)/characters);
-   const pt=viewport.convertToViewportPoint(item.transform[4],item.transform[5]);
-   const highlight=document.createElement('div');
-   highlight.className='speech-page-highlight';
-   highlight.style.left=Math.max(0,(pt[0]+Math.abs(item.width||20)*startFraction)/viewport.width*100)+'%';
-   highlight.style.top=Math.max(0,(pt[1]-Math.abs(item.height||12))/viewport.height*100)+'%';
-   highlight.style.width=Math.max(.4,Math.min(100,Math.abs(item.width||20)*fraction/viewport.width*100))+'%';
-   highlight.style.height=Math.max(1.5,Math.abs(item.height||12)/viewport.height*100)+'%';
-   overlay.append(highlight);
-   if(overlay.childElementCount>=120)break;
-  }
-  if(readingMarkText===key&&pdfSpeechCurrentPage()===currentPage){
-   slot.append(overlay);readingMark=overlay;
-  }
- }catch{}
-}
-
-function markEpubReading(text,progress=0){
- if(!epubController)return;
- const iframe=$('epub-page').querySelector('iframe'),doc=iframe?.contentDocument;
- if(!doc||!text)return;
- const view=doc.defaultView;
- if(!view?.CSS?.highlights||!view.Highlight)return;
- view.CSS.highlights.delete('pishelf-reading');
- const words=text.trim().split(/\s+/);
- const needle=words[Math.min(words.length-1,Math.floor(Math.max(0,Math.min(.999,progress))*words.length))]?.toLowerCase();
- if(!needle)return;
- const walker=doc.createTreeWalker(doc.body,NodeFilter.SHOW_TEXT);
- let node;
- while((node=walker.nextNode())){
-  const hay=node.textContent.toLowerCase(),idx=hay.indexOf(needle);
-  if(idx>=0){const range=doc.createRange();range.setStart(node,idx);range.setEnd(node,Math.min(node.length,idx+needle.length));view.CSS.highlights.set('pishelf-reading',new view.Highlight(range));break;}
+function clearSpeechSelection(kind){
+ speechSelecting[kind]=false;
+ if(kind==='pdf'){
+  pdfSelectionAnchor=null;pdfSelectionDrag=null;clearReadingMark();
+  document.body.classList.remove('speech-selecting-pdf');
  }
+}
+function cancelSpeechPick(){clearSpeechSelection('pdf');clearSpeechSelection('epub');}
+function queuePanel(kind){return document.getElementById(kind+'-speech-queue');}
+function speechQueueUI(kind){
+ if(queuePanel(kind))return queuePanel(kind);
+ const root=$(kind==='pdf'?'reader':'epub-reader');
+ const panel=document.createElement('aside');
+ panel.className='speech-queue-panel';panel.id=kind+'-speech-queue';
+ panel.setAttribute('aria-label','Selected text reading queue');panel.hidden=true;
+ // Static HTML only. User/PDF text is always inserted via textContent/value.
+ panel.innerHTML='<div class="speech-queue-heading"><strong>Read selected text</strong><button class="speech-queue-close" type="button" aria-label="Close reading queue">✕</button></div>'
+  +'<p class="speech-queue-instructions"></p>'
+  +'<label class="speech-queue-draft-label">Selected text<textarea class="speech-queue-draft" rows="3" maxlength="30000" placeholder="Select text in the reader. You can edit it here."></textarea></label>'
+  +'<div class="speech-queue-actions"><button class="speech-queue-add" type="button">+ Add selection</button><button class="speech-queue-select" type="button">Select text</button></div>'
+  +'<ol class="speech-queue-list" aria-label="Reading order"></ol>'
+  +'<div class="speech-queue-actions"><button class="speech-queue-play" type="button">▶ Play queue</button><button class="speech-queue-clear" type="button">Clear</button></div>'
+  +'<p class="speech-queue-status" role="status"></p>';
+ root.append(panel);
+ panel.querySelector('.speech-queue-close').onclick=()=>{panel.hidden=true;clearSpeechSelection(kind);};
+ panel.querySelector('.speech-queue-select').onclick=()=>{
+  speechSelecting[kind]=!speechSelecting[kind];
+  document.body.classList.toggle('speech-selecting-pdf',speechSelecting.pdf);
+  if(!speechSelecting[kind])clearSpeechSelection(kind);
+  renderSpeechQueue(kind);
+ };
+ panel.querySelector('.speech-queue-draft').addEventListener('input',event=>{speechDraft[kind]=event.target.value;});
+ panel.querySelector('.speech-queue-add').onclick=()=>{
+  const text=speechDraft[kind].trim();
+  if(!text){toast('Select text first, then add it to the reading queue.');return;}
+  if(speechQueues[kind].length>=150){toast('Reading queue limit is 150 selections.');return;}
+  if(kind==='pdf')pdfSpeech?.stop();else epubSpeech?.stop();
+  speechQueues[kind].push({text,source:kind==='pdf'?'PDF':'EPUB'});
+  speechDraft[kind]='';
+  renderSpeechQueue(kind);
+ };
+ panel.querySelector('.speech-queue-play').onclick=()=>{void playSpeechQueue(kind);};
+ panel.querySelector('.speech-queue-clear').onclick=()=>{
+  (kind==='pdf'?pdfSpeech:epubSpeech)?.stop();
+  speechQueues[kind]=[];speechQueuePosition[kind]=0;speechDraft[kind]='';
+  renderSpeechQueue(kind);
+ };
+ return panel;
+}
+function setSpeechDraft(kind,text){
+ if(!speechSelecting[kind])return;
+ const chosen=String(text||'').trim();
+ if(!chosen)return;
+ speechDraft[kind]=chosen;
+ const panel=speechQueueUI(kind);
+ panel.hidden=false;renderSpeechQueue(kind);
+}
+function renderSpeechQueue(kind){
+ const panel=speechQueueUI(kind),items=speechQueues[kind];
+ panel.querySelector('.speech-queue-instructions').textContent=kind==='pdf'
+  ?'Drag a box around text on the PDF/WebP page. On touchscreens, tap its first and last lines. Select one column at a time.'
+  :'Select text in the EPUB, or tap a headline or paragraph. Only added selections will be read.';
+ const draft=panel.querySelector('.speech-queue-draft');
+ if(draft.value!==speechDraft[kind])draft.value=speechDraft[kind];
+ const list=panel.querySelector('.speech-queue-list');
+ list.replaceChildren();
+ const {moveQueueItem}=window.pishelfManualQueue||{};
+ items.forEach((entry,index)=>{
+  const li=document.createElement('li');
+  li.className='speech-queue-entry';
+  if(index===speechQueuePosition[kind]&&(kind==='pdf'?pdfSpeech:epubSpeech)?.active)li.classList.add('is-current');
+  const heading=document.createElement('div');heading.className='speech-queue-entry-actions';
+  const title=document.createElement('strong');title.textContent=(index+1)+'. '+entry.source;
+  heading.append(title);
+  function control(label,action,disabled=false){
+   const button=document.createElement('button');button.type='button';
+   button.textContent=label;button.title=label;button.disabled=disabled;
+   button.onclick=action;heading.append(button);
+  }
+  control('↑',()=>rearrangeSpeechQueue(kind,index,-1),index===0);
+  control('↓',()=>rearrangeSpeechQueue(kind,index,1),index===items.length-1);
+  control('✕',()=>{(kind==='pdf'?pdfSpeech:epubSpeech)?.stop();items.splice(index,1);renderSpeechQueue(kind);});
+  li.append(heading);
+  const textarea=document.createElement('textarea');
+  textarea.rows=2;textarea.value=entry.text;textarea.maxLength=30000;
+  textarea.setAttribute('aria-label','Selection '+(index+1)+' text');
+  textarea.onchange=()=>{(kind==='pdf'?pdfSpeech:epubSpeech)?.stop();entry.text=textarea.value.trim();if(!entry.text)items.splice(index,1);renderSpeechQueue(kind);};
+  li.append(textarea);list.append(li);
+ });
+ panel.querySelector('.speech-queue-select').textContent=speechSelecting[kind]?'✓ Selecting':'Select text';
+ panel.querySelector('.speech-queue-play').disabled=!items.length;
+ panel.querySelector('.speech-queue-status').textContent=items.length+
+  (items.length===1?' selection':' selections')+' · Playback follows the order above.';
+}
+function rearrangeSpeechQueue(kind,index,step){
+ (kind==='pdf'?pdfSpeech:epubSpeech)?.stop();
+ const items=speechQueues[kind].slice(),target=index+step;
+ if(target<0||target>=items.length)return;
+ [items[index],items[target]]=[items[target],items[index]];
+ speechQueues[kind]=items;renderSpeechQueue(kind);
+}
+function openSpeechQueue(kind){
+ const panel=speechQueueUI(kind);panel.hidden=false;
+ speechSelecting[kind]=true;
+ document.body.classList.toggle('speech-selecting-pdf',speechSelecting.pdf);
+ renderSpeechQueue(kind);
+}
+function resetSpeechQueue(kind){
+ (kind==='pdf'?pdfSpeech:epubSpeech)?.stop();
+ speechQueues[kind]=[];speechQueuePosition[kind]=0;speechDraft[kind]='';
+ clearSpeechSelection(kind);
+ const panel=queuePanel(kind);if(panel)panel.hidden=true;
 }
 function speechState(kind,state){
  if(state.notice){toast(state.notice);return;}
+ if(state.error){toast('Read aloud: '+state.error);return;}
  if(state.spokenText!==undefined){
-  if(kind==='pdf')void markPdfReading(state.spokenText,state.readingOffset||0,state.readingLength||0);
-  else markEpubReading(state.readingSentence||state.spokenText,0);
+  const panel=queuePanel(kind);
+  if(panel&&!panel.hidden)panel.querySelector('.speech-queue-status').textContent=
+   'Reading selection '+(speechQueuePosition[kind]+1)+': '+(state.readingSentence||state.spokenText);
   return;
  }
- if(state.error){toast('Read aloud: '+state.error);return;}
- $(kind+'-read-play').textContent=state.active?'Reading…':'▶ Read aloud';
+ $(kind+'-read-play').textContent=state.active?'Reading…':'▶ Read queue';
  $(kind+'-read-main').textContent=state.paused||!state.active?'▶':'⏸';
  $(kind+'-read-main').setAttribute('aria-label',state.paused||!state.active?'Resume reading':'Pause reading');
  $(kind+'-read-pause').textContent=state.paused?'Resume':'Pause';
- // Keep the mini-player visible after errors or natural completion; only Close dismisses it.
+ if(!state.active&&queuePanel(kind)&&!queuePanel(kind).hidden)renderSpeechQueue(kind);
 }
-// One-shot starting positions. Subsequent pages read from the beginning.
-let pdfSpeechStart=null,pdfSpeechPage=null;
-// Speech page is independent of the spread's first page and scroll-mode viewport.
-function pdfSpeechCurrentPage(){return pdfSpeechPage||page;}
-function showPdfSpeechPage(n){
- if(!documentPDF)return;
- const visible=Array.from($('pages').querySelectorAll('[data-page]'));
- const target=visible.find(slot=>Number(slot.dataset.page)===n);
- if(target){
-  // A visible page (including right-hand book pages) must not trigger rebuild.
-  if($('view-mode').value==='scroll')target.scrollIntoView({block:'nearest',behavior:'auto'});
-  return;
- }
- move(n);
+async function startPdfSpeech(){await ensureSpeechController('pdf');}
+async function startEpubSpeech(){await ensureSpeechController('epub');}
+async function ensureSpeechController(kind){
+ const existing=kind==='pdf'?pdfSpeech:epubSpeech;
+ if(existing)return existing;
+ const {createReadAloud}=await speechEngine();
+ const controller=createReadAloud({
+  getCsrfToken:()=>signedInUser?.csrf||'',
+  getText(){return speechQueues[kind][speechQueuePosition[kind]]?.text||'';},
+  next(){
+   if(speechQueuePosition[kind]+1>=speechQueues[kind].length)return false;
+   speechQueuePosition[kind]++;renderSpeechQueue(kind);return true;
+  },
+  peekNextText(){return speechQueues[kind][speechQueuePosition[kind]+1]?.text||null;},
+  onState:state=>speechState(kind,state)
+ });
+ if(kind==='pdf')pdfSpeech=controller;else epubSpeech=controller;
+ wireSpeech(kind,controller);
+ return controller;
+}
+async function playSpeechQueue(kind){
+ const entries=speechQueues[kind];
+ if(!entries.length){toast('Add some selected text to the queue first.');return;}
+ const controller=await ensureSpeechController(kind);
+ controller.stop();speechQueuePosition[kind]=0;
+ clearSpeechSelection(kind);
+ renderSpeechQueue(kind);
+ speechPlayer(kind,true);
+ controller.play();
 }
 
-// Only accept a page tap after the reader explicitly asks for a starting point.
-let speechPickMode=null;
-function speechPickNotice(kind){
- let notice=document.getElementById('speech-pick-notice');
- if(!notice){
-  notice=document.createElement('div');notice.id='speech-pick-notice';
-  notice.className='speech-pick-notice';notice.setAttribute('role','status');
-  const message=document.createElement('span');message.id='speech-pick-message';
-  const cancel=document.createElement('button');cancel.type='button';cancel.textContent='Cancel';
-  cancel.onclick=()=>cancelSpeechPick();
-  notice.append(message,cancel);document.body.append(notice);
- }
- document.getElementById('speech-pick-message').textContent='Tap the '+(kind==='pdf'?'PDF page':'EPUB text')+' where reading should start';
- notice.hidden=false;
-}
-function cancelSpeechPick(){
- speechPickMode=null;
- const notice=document.getElementById('speech-pick-notice');
- if(notice)notice.hidden=true;
- document.body.classList.remove('speech-picking');
-}
-function beginSpeechPick(kind){
- pdfSpeech?.stop();epubSpeech?.stop();
- pdfSpeechPage=null;pdfSpeechStart=null;
- speechPickMode=kind;
- document.body.classList.add('speech-picking');
- speechPickNotice(kind);
-}
-async function readPdfFromTap(event){
- if(speechPickMode!=='pdf'||!documentPDF||!event.isTrusted||event.target.closest('button,a,input,select,textarea'))return;
- const slot=event.target.closest('[data-page]');
- if(!slot||!$('reader').contains(slot)||!slot.getBoundingClientRect().width)return;
- const targetPage=Number(slot.dataset.page);
- if(!Number.isInteger(targetPage)||targetPage<1)return;
+// Read a user-drawn region of the PDF's real text while showing the WebP image.
+// No automatic next-page reading, column detection or article classification.
+function pdfSelectionPoint(slot,event){
  const rect=slot.getBoundingClientRect();
- const pdfPage=await documentPDF.getPage(targetPage);
- const viewport=pdfPage.getViewport({scale:1,rotation});
- const {orderPdfSpeechItems}=await import('./pdf-reading-order.js');
- const rawItems=(await pdfPage.getTextContent()).items;
- const items=orderPdfSpeechItems(rawItems,viewport);
- if(!items.length){toast('This page has no selectable text for Read Aloud.');return;}
- // Choose the nearest text line by vertical distance, then horizontal position.
- const x=(event.clientX-rect.left)/rect.width*viewport.width;
- const y=(event.clientY-rect.top)/rect.height*viewport.height;
- let index=0,best=Infinity;
- items.forEach((item,i)=>{
-  const pt=viewport.convertToViewportPoint(item.transform[4],item.transform[5]);
-  const distance=Math.abs(pt[1]-y)*2+Math.max(0,pt[0]-x,x-pt[0]-item.width);
-  if(distance<best){best=distance;index=i;}
- });
- // Show the chosen text immediately, even while the network voice loads.
+ return {x:Math.max(0,Math.min(1,(event.clientX-rect.left)/rect.width)),
+         y:Math.max(0,Math.min(1,(event.clientY-rect.top)/rect.height))};
+}
+function showPdfSelection(slot,one,two){
  clearReadingMark();
- const selection=document.createElement('div');
- selection.className='speech-tap-selection';
- const chosen=items[index],point=viewport.convertToViewportPoint(chosen.transform[4],chosen.transform[5]);
- selection.style.left=Math.max(0,point[0]/viewport.width*100)+'%';
- selection.style.top=Math.max(0,(point[1]-Math.abs(chosen.height||12))/viewport.height*100)+'%';
- selection.style.width=Math.max(3,Math.min(100,(chosen.width||40)/viewport.width*100))+'%';
- selection.style.height=Math.max(1.5,Math.abs(chosen.height||12)/viewport.height*100)+'%';
- slot.append(selection);
- readingMark=selection;
- cancelSpeechPick();
- pdfSpeech?.stop();
- pdfSpeechStart={page:targetPage,index:items[index].sourceIndex};
- pdfSpeechPage=targetPage;
- // Do not navigate: the user has tapped the page already in view.
- showPdfSpeechPage(targetPage);
- await startPdfSpeech();
- speechPlayer('pdf',true);
- pdfSpeech.play();
+ const overlay=document.createElement('div');
+ overlay.className='speech-manual-selection';
+ overlay.style.left=(Math.min(one.x,two.x)*100)+'%';
+ overlay.style.top=(Math.min(one.y,two.y)*100)+'%';
+ overlay.style.width=(Math.max(.004,Math.abs(one.x-two.x))*100)+'%';
+ overlay.style.height=(Math.max(.008,Math.abs(one.y-two.y))*100)+'%';
+ slot.append(overlay);pdfSelectionOverlay=overlay;
 }
-$('pages').addEventListener('click',event=>{void readPdfFromTap(event);});
-async function startPdfSpeech(){
- const {createReadAloud}=await speechEngine();
- if(pdfSpeech)return;
- pdfSpeech=createReadAloud({
-  getCsrfToken:()=>signedInUser?.csrf||'',
-  async getText(){
-   if(!documentPDF)return '';
-   const speechPage=pdfSpeechCurrentPage();
-   const pdfPage=await documentPDF.getPage(speechPage);
-   const content=await pdfPage.getTextContent();
-   // Read from the tapped page, not the first page of a book spread.
-   const {orderPdfSpeechItems,pdfSpeechText}=await import('./pdf-reading-order.js');
-   const ordered=orderPdfSpeechItems(content.items,pdfPage.getViewport({scale:1,rotation}));
-   const start=pdfSpeechStart?.page===speechPage
-    ?Math.max(0,ordered.findIndex(item=>item.sourceIndex===pdfSpeechStart.index)):0;
-   pdfSpeechStart=null;
-   pdfSpeechItemsPage=speechPage;pdfSpeechItems=ordered;
-   pdfSpeechStartIndex=start;pdfSpeechHighlightSpans=null;pdfSpeechSpansPage=0;
-   return pdfSpeechText(ordered.slice(start));
-  },
-  async peekNextText(){
-   const upcoming=pdfSpeechCurrentPage()+1;
-   if(!documentPDF||upcoming>documentPDF.numPages)return null;
-   const pdfPage=await documentPDF.getPage(upcoming);
-   const content=await pdfPage.getTextContent();
-   const {orderPdfSpeechItems,pdfSpeechText}=await import('./pdf-reading-order.js');
-   return pdfSpeechText(orderPdfSpeechItems(content.items,pdfPage.getViewport({scale:1,rotation})));
-  },
-  async next(){
-   const currentPage=pdfSpeechCurrentPage();
-   if(!documentPDF||currentPage>=documentPDF.numPages)return false;
-   pdfSpeechPage=currentPage+1;
-   showPdfSpeechPage(pdfSpeechPage);
-   return true;
-  },
-  onState:state=>speechState('pdf',state)
- });
- wireSpeech('pdf',pdfSpeech);
+async function finishPdfSelection(slot,one,two){
+ if(!slot.isConnected||!documentPDF)return;
+ showPdfSelection(slot,one,two);
+ const serial=++pdfSelectionSerial,chosenPage=Number(slot.dataset.page);
+ try{
+  const pdfPage=await documentPDF.getPage(chosenPage);
+  const viewport=pdfPage.getViewport({scale:1,rotation});
+  const content=await pdfPage.getTextContent();
+  const {extractPdfRegion}=await import('./manual-read-queue.js');
+  const region={x1:one.x*viewport.width,y1:one.y*viewport.height,
+    x2:two.x*viewport.width,y2:two.y*viewport.height};
+  const chosen=extractPdfRegion(content.items,viewport,region);
+  if(serial!==pdfSelectionSerial||!speechSelecting.pdf)return;
+  if(chosen.text)setSpeechDraft('pdf',chosen.text);
+  else toast('No selectable PDF text in that area. Select a text line, not an image.');
+ }catch(error){if(serial===pdfSelectionSerial)toast('Cannot select PDF text: '+error.message);}
 }
-async function startEpubSpeech(){
- const {createReadAloud}=await speechEngine();
- if(epubSpeech)return;
- epubSpeech=createReadAloud({
-  getCsrfToken:()=>signedInUser?.csrf||'',
-  getText(){return epubController?.readAloudText()||'';},
-  next(){return epubController?.readAloudNext()||false;},
-  onState:state=>speechState('epub',state)
- });
- wireSpeech('epub',epubSpeech);
-}
-$('pdf-read-toggle').onclick=()=>beginSpeechPick('pdf');
-$('epub-read-toggle').onclick=()=>beginSpeechPick('epub');
+$('page-area').addEventListener('pointerdown',event=>{
+ if(!speechSelecting.pdf||!documentPDF||event.button!==0)return;
+ const slot=event.target.closest('.pdf-slot');
+ if(!slot||!$('pages').contains(slot))return;
+ event.preventDefault();event.stopImmediatePropagation();
+ const point=pdfSelectionPoint(slot,event);
+ pdfSelectionDrag={id:event.pointerId,slot,start:point,last:point,startX:event.clientX,startY:event.clientY};
+ try{$('page-area').setPointerCapture(event.pointerId);}catch{}
+},true);
+$('page-area').addEventListener('pointermove',event=>{
+ if(!speechSelecting.pdf||!pdfSelectionDrag||event.pointerId!==pdfSelectionDrag.id)return;
+ event.preventDefault();event.stopImmediatePropagation();
+ const drag=pdfSelectionDrag;drag.last=pdfSelectionPoint(drag.slot,event);
+ if(Math.hypot(event.clientX-drag.startX,event.clientY-drag.startY)>8)showPdfSelection(drag.slot,drag.start,drag.last);
+},true);
+$('page-area').addEventListener('pointerup',event=>{
+ if(!speechSelecting.pdf||!pdfSelectionDrag||event.pointerId!==pdfSelectionDrag.id)return;
+ event.preventDefault();event.stopImmediatePropagation();
+ const drag=pdfSelectionDrag;pdfSelectionDrag=null;
+ try{$('page-area').releasePointerCapture(event.pointerId);}catch{}
+ const point=pdfSelectionPoint(drag.slot,event);
+ if(Math.hypot(event.clientX-drag.startX,event.clientY-drag.startY)>8){
+  pdfSelectionAnchor=null;
+  void finishPdfSelection(drag.slot,drag.start,point);
+ }else if(pdfSelectionAnchor?.slot===drag.slot){
+  const start=pdfSelectionAnchor.point;pdfSelectionAnchor=null;
+  void finishPdfSelection(drag.slot,start,point);
+ }else{
+  pdfSelectionAnchor={slot:drag.slot,point};
+  showPdfSelection(drag.slot,point,point);
+  const panel=queuePanel('pdf');
+  if(panel)panel.querySelector('.speech-queue-status').textContent='Start marked. Tap the last line to finish selection.';
+ }
+},true);
+$('page-area').addEventListener('pointercancel',()=>{pdfSelectionDrag=null;},true);
+$('pdf-read-toggle').onclick=()=>openSpeechQueue('pdf');
+$('epub-read-toggle').onclick=()=>openSpeechQueue('epub');
 
 
 async function closeEpubBook({fromHistory=false}={}){
- cancelSpeechPick();epubSpeech?.stop();
+ resetSpeechQueue('epub');
  if($('epub-reader').hidden)return;
  if(!fromHistory&&epubHistoryActive){epubHistoryActive=false;history.back();}
  ++epubGeneration;
@@ -1006,15 +1013,9 @@ async function openEpubBook(item,start){
    url:pdfURL(item),container:$('epub-page'),
    cfi:start===1?'':initial.epubCfi||'',
    theme:prefs.epubTheme||'light',fontSize:prefs.epubFontSize||100,
-   canSelectSpeechText:()=>speechPickMode==='epub',
-   onTextTap:async()=>{
-    if(g!==epubGeneration||speechPickMode!=='epub')return;
-    cancelSpeechPick();
-    await startEpubSpeech();
-    epubSpeech.stop();
-    speechPlayer('epub',true);
-    epubSpeech.play();
-   },
+   canSelectSpeechText:()=>speechSelecting.epub,
+   onTextTap:text=>{if(g===epubGeneration)setSpeechDraft('epub',text);},
+   onSelection:text=>{if(g===epubGeneration)setSpeechDraft('epub',text);},
    onLocation:update=>{
     if(g!==epubGeneration)return;
     const {percentage,locationsReady,...patch}=update;
