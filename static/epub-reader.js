@@ -63,7 +63,7 @@ export async function createEpubReader({url,container,cfi,theme='light',fontSize
    style.textContent+='@media(max-width:650px), (pointer:coarse) and (max-height:500px){.pishelf-numbered-paragraph{outline:none!important}.pishelf-numbered-paragraph.pishelf-speaking,.pishelf-tap-selected{background:transparent!important;outline:none!important}.pishelf-numbered-paragraph.pishelf-speaking::before{background:#69d2f3}.pishelf-numbered-paragraph::before{transform:translateY(-50%)}}';
    doc.head?.append(style);
    doc.addEventListener('click',event=>{
-    if(!canSelectSpeechText()||!event.isTrusted||event.target.closest('a,button,input,select,textarea'))return;
+    if(event.detail>1||!canSelectSpeechText()||!event.isTrusted||event.target.closest('a,button,input,select,textarea'))return;
     const block=event.target.closest('h1,h2,h3,h4,h5,h6,p,blockquote,li');
     if(!block||!block.textContent?.trim())return;
     selectedSpeechBlock?.classList.remove('pishelf-tap-selected');
