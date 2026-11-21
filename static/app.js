@@ -747,7 +747,7 @@ function numberedPanel(kind){
  panel.querySelector('.numbered-clear').onclick=()=>{
   (kind==='pdf'?pdfSpeech:epubSpeech)?.stop();
   numberedPlayback[kind]=false;
-  for(const entry of numberedParagraphs[kind])entry.node?.removeAttribute('data-pishelf-paragraph-number');
+  for(const entry of numberedParagraphs[kind])if(entry.node){entry.node.classList.remove('pishelf-numbered-paragraph');entry.node.removeAttribute('data-pishelf-paragraph-number');}
   numberedParagraphs[kind]=[];numberedCursor[kind]=0;
   renderNumberedPanel(kind);
  };
@@ -755,7 +755,7 @@ function numberedPanel(kind){
 }
 function resetNumberedParagraphs(kind){
  numberedPlayback[kind]=false;numberedPickMode[kind]=false;
- for(const entry of numberedParagraphs[kind])entry.node?.removeAttribute('data-pishelf-paragraph-number');
+ for(const entry of numberedParagraphs[kind])if(entry.node){entry.node.classList.remove('pishelf-numbered-paragraph');entry.node.removeAttribute('data-pishelf-paragraph-number');}
  numberedParagraphs[kind]=[];numberedCursor[kind]=0;
  const panel=$(kind+'-numbered-paragraphs');
  if(panel)panel.hidden=true;
@@ -790,7 +790,10 @@ function renderNumberedPanel(kind){
  const list=panel.querySelector('.numbered-paragraph-list');list.replaceChildren();
  const items=numberedParagraphs[kind];
  items.forEach((entry,index)=>{
-  if(entry.node)entry.node.setAttribute('data-pishelf-paragraph-number',String(index+1));
+  if(entry.node){
+   entry.node.classList.add('pishelf-numbered-paragraph');
+   entry.node.setAttribute('data-pishelf-paragraph-number',String(index+1));
+  }
   const li=document.createElement('li');
   if(numberedPlayback[kind]&&numberedCursor[kind]===index)li.className='is-active';
   const label=document.createElement('strong');
@@ -808,7 +811,7 @@ function renderNumberedPanel(kind){
   action('✕',false,()=>{
    (kind==='pdf'?pdfSpeech:epubSpeech)?.stop();
    numberedPlayback[kind]=false;
-   entry.node?.removeAttribute('data-pishelf-paragraph-number');
+   if(entry.node){entry.node.classList.remove('pishelf-numbered-paragraph');entry.node.removeAttribute('data-pishelf-paragraph-number');}
    items.splice(index,1);renderNumberedPanel(kind);
   });
   li.append(label,text,controls);list.append(li);
