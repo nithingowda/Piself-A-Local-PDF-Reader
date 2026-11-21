@@ -22,6 +22,15 @@ let collections=[],collectionFilter='',collectionSets=new Map();
 let categories=[],sourceFilter='',seriesFilter='',tagFilter='',visibleLimit=60;
 let library=[],saved={},filter='all',category='',syncing=false,current=null,documentPDF=null,page=1,zoom=1,rotation=0,generation=0,layoutEpoch=0,layoutReady=false;
 let cssZoomBase=1;
+let zoomBadgeTimer;
+function showZoomBadge(value=zoom){
+ const badge=$('reader-zoom-badge');
+ if(!badge||!documentPDF||!Number.isFinite(value))return;
+ badge.textContent=`${Math.round(value*100)}%`;
+ badge.classList.add('visible');
+ clearTimeout(zoomBadgeTimer);
+ zoomBadgeTimer=setTimeout(()=>badge.classList.remove('visible'),2000);
+}
 let saveChain=Promise.resolve(),toastTimer,scrollTimer,resizeTimer,scrollFrame,issueItem;
 const pendingSaves=new Map();
 /** el: Support the PiShelf reader or library interface. */
@@ -794,7 +803,7 @@ async function zoomWithControls(targetZoom){
  // Re-center even when the user is already at minimum and has panned sideways.
  if(Math.abs(next-zoom)<0.001&&!fits)return;
  const original=documentPDF,g=generation;
- page=anchor.number;zoom=next;
+ page=anchor.number;zoom=next;showZoomBadge();
  pinchScrollLockUntil=performance.now()+500;
  await rebuild();
  if(g!==generation||documentPDF!==original)return;
@@ -817,7 +826,7 @@ $('plus').onclick=()=>zoomWithControls(zoom+.25);
 $('fit-height').onclick=()=>{
  if(!documentPDF)return;
  if($('view-mode').value!=='single')$('view-mode').value='single';
- automaticFit='height';rebuild();
+ automaticFit='height';rebuild().then(()=>showZoomBadge());
 };
 function fitWidthZoom(){
  const area=$('page-area');
@@ -911,7 +920,7 @@ function finishPinch(cancelled=false){
  if(!slot)return;
  // Capture the PDF point under the fingers before modifying layout.
  const fx=state.fx,fy=state.fy;
- automaticFit=null;zoom=next;page=isBookSpread()?spreadStart(state.page):state.page;
+ automaticFit=null;zoom=next;page=isBookSpread()?spreadStart(state.page):state.page;showZoomBadge();
  // Resize the actual page boxes. CSS zoom on the entire pages wrapper
  // creates a large scrollable gutter in iOS Safari and breaks pinch-out.
  $('pages').style.zoom='';
@@ -953,7 +962,7 @@ $('page-area').addEventListener('touchstart',e=>{
 },{passive:false});
 $('page-area').addEventListener('touchmove',e=>{
  if(!pinch)return;e.preventDefault();if(e.touches.length!==2)return;
- const point=touchPair(e.touches);pinch.nextZoom=Math.max(fitEntirePageZoom(pinch.page),Math.min(Math.max(3,pinch.startZoom),pinch.startZoom*point.distance/pinch.distance));pinch.x=point.x;pinch.y=point.y;
+ const point=touchPair(e.touches);pinch.nextZoom=Math.max(fitEntirePageZoom(pinch.page),Math.min(Math.max(3,pinch.startZoom),pinch.startZoom*point.distance/pinch.distance));pinch.x=point.x;pinch.y=point.y;showZoomBadge(pinch.nextZoom);
  if(!pinchFrame)pinchFrame=requestAnimationFrame(()=>{
   pinchFrame=0;if(!pinch)return;
   const slot=pinch.slot,area=$('page-area');
