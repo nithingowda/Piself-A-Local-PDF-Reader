@@ -379,3 +379,78 @@ test('PDF highlighting uses contiguous sentence character spans rather than word
  assert.match(app,/readingMarkIndex=offset/);
  assert.match(pdfOrder,/export function pdfSpeechLayout/);
 });
+
+
+test('stacked Physics and Health articles read separately before advancing down-page',async()=>{
+ const {orderPdfSpeechItems,pdfSpeechText,splitPdfArticleBands}=await import('../static/pdf-reading-order.js');
+ const viewport={width:700,height:890,convertToViewportPoint:(x,y)=>[x,y]};
+ const item=(str,x,y,height=12,width=155)=>({
+  str,transform:[1,0,0,1,x,y],width,height,hasEOL:true
+ });
+ const top=[
+  item('Physics',25,38,9),
+  item('First quantum clock that',25,63,23,300),
+  item('ticks using sunlight',25,88,23,300),
+  item('Karmela Padavic-Callaghan',25,119,10)
+ ];
+ // Dense top-article text in all columns; no artificial gap inside Physics.
+ for(let n=0;n<25;n++){
+  const y=155+n*16;
+  for(const [index,x] of [25,190,355,520].entries())
+   top.push(item('Physics column '+(index+1)+' line '+(n+1)+'.',x,y));
+ }
+ const health=[
+  item('Health',25,584,9),
+  item('Pink noise may ease',25,608,23,210),
+  item('Alzheimer’s disease',25,633,23,210),
+  item('memory loss',25,658,23,210)
+ ];
+ for(let n=0;n<9;n++){
+  const y=683+n*16;
+  for(const [index,x] of [25,190,355,520].entries())
+   health.push(item('Health column '+(index+1)+' line '+(n+1)+'.',x,y));
+ }
+ // Deliberately interleave content streams, as in magazine PDFs.
+ const raw=[...health.reverse(),...top.reverse()];
+ const ordered=orderPdfSpeechItems(raw,viewport);
+ const body=pdfSpeechText(ordered);
+ const physicsStart=body.indexOf('First quantum clock');
+ const physicsLast=body.indexOf('Physics column 4 line 25.');
+ const healthStart=body.indexOf('Health');
+ const healthBody=body.indexOf('Health column 1 line 1.');
+ assert.ok(physicsStart>=0&&physicsStart<physicsLast);
+ assert.ok(physicsLast<healthStart,'finish all four Physics columns before starting Health');
+ assert.ok(healthStart<healthBody);
+ assert.ok(body.indexOf('Physics column 1 line 25.')<body.indexOf('Physics column 2 line 1.'));
+ assert.ok(body.indexOf('Physics column 2 line 25.')<body.indexOf('Physics column 3 line 1.'));
+ assert.ok(body.indexOf('Physics column 3 line 25.')<body.indexOf('Physics column 4 line 1.'));
+ assert.ok(body.indexOf('Health column 1 line 9.')<body.indexOf('Health column 2 line 1.'));
+ assert.ok(body.indexOf('Health column 2 line 9.')<body.indexOf('Health column 3 line 1.'));
+ assert.ok(body.indexOf('Health column 3 line 9.')<body.indexOf('Health column 4 line 1.'));
+ const distinct=new Set(ordered.map(part=>part.readingRegion));
+ assert.ok(distinct.size>=2,'stacked stories must have separate reading regions');
+ const measured=raw.map((fragment,sourceIndex)=>({
+  ...fragment,sourceIndex,x:fragment.transform[4],y:fragment.transform[5],
+  boxHeight:fragment.height,boxWidth:fragment.width
+ }));
+ assert.ok(splitPdfArticleBands(measured,viewport).length>=2);
+});
+
+test('multiple magazine sections on one page keep a headline from jumping to another article',async()=>{
+ const {orderPdfSpeechItems}=await import('../static/pdf-reading-order.js');
+ const viewport={width:700,height:890,convertToViewportPoint:(x,y)=>[x,y]};
+ const line=(str,x,y,height=12)=>({str,transform:[1,0,0,1,x,y],width:130,height});
+ const raw=[
+  line('Physics',25,35,9),line('Quantum clock powered by sunlight',25,65,24),
+  line('First physics line',25,160),line('Last physics line',25,550),
+  line('Second physics column',195,160),line('Second physics ending',195,550),
+  line('Third physics column',365,160),line('Third physics ending',365,550),
+  line('Health',25,585,9),line('Pink noise may ease memory loss',25,612,24),
+  line('Health details one',25,670),line('Health details two',25,685),
+  line('More health details',195,670),line('Final health details',195,685)
+ ];
+ const ordered=orderPdfSpeechItems(raw,viewport);
+ const physicsEnd=ordered.findIndex(part=>part.str==='Third physics ending');
+ const healthStart=ordered.findIndex(part=>part.str==='Health');
+ assert.ok(physicsEnd>=0&&healthStart>physicsEnd);
+});

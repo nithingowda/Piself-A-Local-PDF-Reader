@@ -28,6 +28,53 @@ function stripRunningFooters(items,viewport){
  return excluded.size?items.filter(item=>!excluded.has(item.sourceIndex)):items;
 }
 
+// A magazine page can contain two separate multi-column stories stacked vertically.
+// Find the blank horizontal band preceding a new short section label + larger title.
+// This is a cheap text-geometry heuristic; image previews remain untouched.
+export function splitPdfArticleBands(items,viewport){
+ const byY=[...items].sort((a,b)=>a.y-b.y||a.x-b.x);
+ if(byY.length<3)return [byY];
+ const heights=byY.map(item=>item.boxHeight||12).sort((a,b)=>a-b);
+ const medianHeight=Math.max(8,heights[Math.floor(heights.length/2)]||12);
+ const boundaries=[];
+ for(let i=1;i<byY.length;i++){
+  const before=byY[i-1],after=byY[i];
+  const gap=after.y-before.y;
+  const center=(after.y+before.y)/2;
+  if(gap<=0||center<viewport.height*.2||center>viewport.height*.9)continue;
+  const large=gap>=Math.max(55,viewport.height*.09);
+  const meaningful=gap>=Math.max(17,medianHeight*1.6);
+  if(!large&&!meaningful)continue;
+  if(i<2||byY.length-i<2)continue;
+  // A new article's section label starts at the left margin and is usually
+  // a short word (Physics, Health, Technology), above a much larger headline.
+  const first=after.str.trim();
+  const leftMargin=after.x<=viewport.width*.18;
+  const categoryLike=first.length<=26&&first.split(/\s+/).length<=3&&
+   /^[\p{L}][\p{L}\s&/-]*$/u.test(first);
+  const titleAfter=byY.slice(i).some(item=>
+   item.y>after.y&&item.y-after.y<Math.max(68,viewport.height*.09)&&
+   item.x<viewport.width*.38&&
+   (item.boxHeight>=after.boxHeight*1.28||
+    (item.str.length>=first.length+18&&item.boxHeight>=after.boxHeight))
+  );
+  if(large||(meaningful&&leftMargin&&categoryLike&&titleAfter))
+   boundaries.push(center);
+ }
+ // Keep bands in visual order, and perform independent column detection inside
+ // each. Otherwise bottom Health text can be interleaved with Physics columns.
+ const bands=[];
+ let lower=-Infinity;
+ for(const upper of boundaries){
+  const band=byY.filter(item=>item.y>=lower&&item.y<upper);
+  if(band.length)bands.push(band);
+  lower=upper;
+ }
+ const last=byY.filter(item=>item.y>=lower);
+ if(last.length)bands.push(last);
+ return bands;
+}
+
 export function orderPdfSpeechItems(items,viewport){
  const measured=items.map((item,sourceIndex)=>{
   const p=viewport.convertToViewportPoint(item.transform[4],item.transform[5]);
@@ -35,19 +82,8 @@ export function orderPdfSpeechItems(items,viewport){
  }).filter(item=>item.str?.trim()&&Number.isFinite(item.x)&&Number.isFinite(item.y));
  const content=stripRunningFooters(measured,viewport);
  if(content.length<2)return content;
- // A large vertical gap separates the headline/image region from article copy.
- const byY=[...content].sort((a,b)=>a.y-b.y||a.x-b.x);
- let cutoff=null,maxGap=Math.max(48,viewport.height*.10);
- for(let i=1;i<byY.length;i++){
-  const gap=byY[i].y-byY[i-1].y;
-  if(gap>maxGap&&i>=1&&byY.length-i>=2){
-   cutoff=(byY[i].y+byY[i-1].y)/2;maxGap=gap;
-  }
- }
- const groups=cutoff===null?[content]:[
-  content.filter(item=>item.y<cutoff),
-  content.filter(item=>item.y>=cutoff)
- ];
+ // Read one article band at a time before sorting that band's columns.
+ const groups=splitPdfArticleBands(content,viewport);
  function columnSorted(group,region){
   // Keep reading-order metadata for paragraph continuation across columns.
   const tagged=(sorted,getColumn)=>sorted.map(item=>({...item,readingRegion:region,readingColumn:getColumn(item)}));
@@ -65,11 +101,11 @@ export function orderPdfSpeechItems(items,viewport){
   const minimumCount=Math.max(2,Math.floor(group.length*.06));
   const candidates=starts.filter(entry=>entry.count>=minimumCount)
    .sort((a,b)=>b.count-a.count||a.x-b.x);
-  const columns=[];
+  const columns=[]; // Newspapers can use four narrow columns on one page.
   for(const candidate of candidates){
    if(columns.every(other=>Math.abs(other.x-candidate.x)>viewport.width*.17))
     columns.push(candidate);
-   if(columns.length===3)break;
+   if(columns.length===4)break;
   }
   columns.sort((a,b)=>a.x-b.x);
   // If there are not enough repeated starts, preserve vertical order rather
