@@ -671,9 +671,9 @@ async function speechEngine(){
 function speechVoices(kind){
  const select=$(kind+'-read-voice');if(!select)return;
  const previous=select.value;
- select.replaceChildren(new Option('Alba (Medium) · Offline AI','piper-alba'),new Option('Browser default voice',''));
+ select.replaceChildren(new Option('Neerja · Indian English (Online AI)','edge-neerja'),new Option('Alba (Medium) · Offline AI','piper-alba'),new Option('Browser default voice',''));
  for(const voice of (window.speechSynthesis?.getVoices()||[]))select.add(new Option(voice.name+' ('+voice.lang+')',voice.voiceURI));
- select.value=previous||'piper-alba';
+ select.value=previous||'edge-neerja';
 }
 function speechPlayer(kind,visible){
  const root=$(kind==='pdf'?'reader':'epub-reader');
