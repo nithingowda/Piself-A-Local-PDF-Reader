@@ -748,7 +748,7 @@ function clearReadingMark(){
 let pdfSpeechItems=null,pdfSpeechItemsPage=0,pdfSpeechStartIndex=0;
 async function markPdfReading(text,progress){
  if(!documentPDF||!text)return;
- const currentPage=page;
+ const currentPage=pdfSpeechCurrentPage();
  const slot=Array.from($('pages').querySelectorAll('[data-page]')).find(el=>+el.dataset.page===currentPage);
  if(!slot)return;
  const words=text.trim().split(/\s+/),wordIndex=Math.floor(Math.max(0,Math.min(.999,progress))*words.length);
@@ -813,7 +813,21 @@ function speechState(kind,state){
  // Keep the mini-player visible after errors or natural completion; only Close dismisses it.
 }
 // One-shot starting positions. Subsequent pages read from the beginning.
-let pdfSpeechStart=null;
+let pdfSpeechStart=null,pdfSpeechPage=null;
+// Speech page is independent of the spread's first page and scroll-mode viewport.
+function pdfSpeechCurrentPage(){return pdfSpeechPage||page;}
+function showPdfSpeechPage(n){
+ if(!documentPDF)return;
+ const visible=Array.from($('pages').querySelectorAll('[data-page]'));
+ const target=visible.find(slot=>Number(slot.dataset.page)===n);
+ if(target){
+  // A visible page (including right-hand book pages) must not trigger rebuild.
+  if($('view-mode').value==='scroll')target.scrollIntoView({block:'nearest',behavior:'auto'});
+  return;
+ }
+ move(n);
+}
+
 // Only accept a page tap after the reader explicitly asks for a starting point.
 let speechPickMode=null;
 function speechPickNotice(kind){
@@ -876,7 +890,9 @@ async function readPdfFromTap(event){
  cancelSpeechPick();
  pdfSpeech?.stop();
  pdfSpeechStart={page:targetPage,index:items[index].sourceIndex};
- if(page!==targetPage)move(targetPage);
+ pdfSpeechPage=targetPage;
+ // Do not navigate: the user has tapped the page already in view.
+ showPdfSpeechPage(targetPage);
  await startPdfSpeech();
  speechPlayer('pdf',true);
  pdfSpeech.play();
@@ -889,16 +905,23 @@ async function startPdfSpeech(){
   getCsrfToken:()=>signedInUser?.csrf||'',
   async getText(){
    if(!documentPDF)return '';
-   const pdfPage=await documentPDF.getPage(page);
+   const speechPage=pdfSpeechCurrentPage();
+   const pdfPage=await documentPDF.getPage(speechPage);
    const content=await pdfPage.getTextContent();
-   // PDF.js marks line endings; preserve them so headlines are read separately.
-   const start=pdfSpeechStart?.page===page?pdfSpeechStart.index:0;
+   // Read from the tapped page, not the first page of a book spread.
+   const start=pdfSpeechStart?.page===speechPage?pdfSpeechStart.index:0;
    pdfSpeechStart=null;
    pdfSpeechItemsPage=0;pdfSpeechItems=null;
    pdfSpeechStartIndex=start;
    return content.items.slice(start).map(item=>(item.str||'')+(item.hasEOL?'\n':' ')).join('').trim();
   },
-  async next(){if(!documentPDF||page>=documentPDF.numPages)return false;move(page+1);return true;},
+  async next(){
+   const currentPage=pdfSpeechCurrentPage();
+   if(!documentPDF||currentPage>=documentPDF.numPages)return false;
+   pdfSpeechPage=currentPage+1;
+   showPdfSpeechPage(pdfSpeechPage);
+   return true;
+  },
   onState:state=>speechState('pdf',state)
  });
  wireSpeech('pdf',pdfSpeech);
@@ -1106,7 +1129,7 @@ function turnBook(direction){
 }
 /** close Reader: Support the PiShelf reader or library interface. */
 async function closeReader({fromHistory=false}={}){
- cancelSpeechPick();pdfSpeech?.stop();
+ cancelSpeechPick();pdfSpeech?.stop();pdfSpeechPage=null;
  annotationToggle(false);annotationStroke=null;clearCurl();
  if(!fromHistory&&readerHistoryActive){
   readerHistoryActive=false;
