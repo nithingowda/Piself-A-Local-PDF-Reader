@@ -761,7 +761,6 @@ function resetNumberedParagraphs(kind){
  for(const entry of numberedParagraphs[kind])if(entry.node){entry.node.classList.remove('pishelf-numbered-paragraph','pishelf-speaking');entry.node.removeAttribute('data-pishelf-paragraph-number');}
  numberedParagraphs[kind]=[];numberedCursor[kind]=0;
  $(kind+'-play-selected').hidden=true;
- $(kind+'-read-paragraphs').setAttribute('aria-pressed','false');
  if(kind==='pdf')renderNumberedMarkers();
 }
 function renderNumberedMarkers(){
@@ -816,12 +815,6 @@ function refreshNumberedSelection(kind){
  });
  $(kind+'-play-selected').hidden=!items.length||numberedPlayback[kind]||!numberedPickMode[kind];
  if(kind==='pdf')renderNumberedMarkers();
-}
-function enableNumberedParagraphs(kind){
- cancelSpeechPick();
- numberedPickMode[kind]=!numberedPickMode[kind];
- $(kind+'-read-paragraphs').setAttribute('aria-pressed',String(numberedPickMode[kind]));
- refreshNumberedSelection(kind);
 }
 function addNumberedParagraph(kind,entry){
  const list=numberedParagraphs[kind];
@@ -932,7 +925,7 @@ async function useSelectedPassage(selection){
  if(!entry)return;
  const start=speechPickMode==='pdf';
  if(!start&&!numberedPickMode.pdf)return;
- if(start){cancelSpeechPick();resetNumberedParagraphs('pdf');numberedPickMode.pdf=true;$('pdf-read-paragraphs').setAttribute('aria-pressed','true');}
+ if(start){cancelSpeechPick();resetNumberedParagraphs('pdf');numberedPickMode.pdf=true;}
  addNumberedParagraph('pdf',{...entry,ticket:++numberedTapSerial});
  selection.removeAllRanges();
  if(start)await playNumberedParagraphs('pdf');
@@ -944,7 +937,6 @@ function wireSpeech(kind,controller){
  const panel=$(kind+'-read-panel');
  $(kind+'-read-toggle').onclick=()=>beginSpeechPick(kind);
  $(kind+'-play-selected').onclick=()=>playNumberedParagraphs(kind);
- $(kind+'-read-paragraphs').onclick=()=>enableNumberedParagraphs(kind);
  const play=()=>{
   if(controller.active)return controller.play();
   if(numberedParagraphs[kind].length)return playNumberedParagraphs(kind);
@@ -959,7 +951,12 @@ function wireSpeech(kind,controller){
  $(kind+'-read-more').onclick=()=>{panel.hidden=!panel.hidden;};
  $(kind+'-read-play').onclick=play;
  $(kind+'-read-pause').onclick=()=>controller.paused?play():controller.pause();
- $(kind+'-read-stop').onclick=closePlayer;
+ $(kind+'-read-stop').onclick=()=>{
+  controller.stop();
+  resetNumberedParagraphs(kind);
+  numberedPickMode[kind]=true;
+  refreshNumberedSelection(kind);
+ };
  $(kind+'-read-rate').onchange=e=>controller.setRate(e.target.value);
  $(kind+'-read-voice').onchange=e=>{const selected=e.target.value;try{localStorage.setItem(VOICE_STORAGE_KEY,selected);}catch{}controller.setVoice(selected);speechVoices(kind==='pdf'?'epub':'pdf');};
  speechVoices(kind);
@@ -1118,7 +1115,6 @@ async function beginSpeechPick(kind){
   controller.stop();
   resetNumberedParagraphs(kind);
   numberedPickMode[kind]=true;
-  $(kind+'-read-paragraphs').setAttribute('aria-pressed','true');
   speechPlayer(kind,true);
   refreshNumberedSelection(kind);
   toast('Select passages in reading order, then tap Play selected.');
