@@ -31,47 +31,50 @@ function stripRunningFooters(items,viewport){
 // A magazine page can contain two separate multi-column stories stacked vertically.
 // Find the blank horizontal band preceding a new short section label + larger title.
 // This is a cheap text-geometry heuristic; image previews remain untouched.
+// Separate independent stories by their section label + headline, rather
+// than every empty strip of a page. Images inside an article create large
+// empty text gaps but must NOT send the reader to a different story.
 export function splitPdfArticleBands(items,viewport){
  const byY=[...items].sort((a,b)=>a.y-b.y||a.x-b.x);
  if(byY.length<3)return [byY];
  const heights=byY.map(item=>item.boxHeight||12).sort((a,b)=>a-b);
  const medianHeight=Math.max(8,heights[Math.floor(heights.length/2)]||12);
- const boundaries=[];
- for(let i=1;i<byY.length;i++){
-  const before=byY[i-1],after=byY[i];
-  const gap=after.y-before.y;
-  const center=(after.y+before.y)/2;
-  if(gap<=0||center<viewport.height*.2||center>viewport.height*.9)continue;
-  const large=gap>=Math.max(55,viewport.height*.09);
-  const meaningful=gap>=Math.max(17,medianHeight*1.6);
-  if(!large&&!meaningful)continue;
-  if(i<2||byY.length-i<2)continue;
-  // A new article's section label starts at the left margin and is usually
-  // a short word (Physics, Health, Technology), above a much larger headline.
-  const first=after.str.trim();
-  const leftMargin=after.x<=viewport.width*.18;
-  const categoryLike=first.length<=26&&first.split(/\s+/).length<=3&&
-   /^[\p{L}][\p{L}\s&/-]*$/u.test(first);
-  const titleAfter=byY.slice(i).some(item=>
-   item.y>after.y&&item.y-after.y<Math.max(68,viewport.height*.09)&&
-   item.x<viewport.width*.38&&
-   (item.boxHeight>=after.boxHeight*1.28||
-    (item.str.length>=first.length+18&&item.boxHeight>=after.boxHeight))
+ const candidates=[];
+ const tolerance=Math.max(5,medianHeight*.55);
+ // A new article usually begins with a short category label at the left,
+ // followed by a large title on the next line. A divider may have no text.
+ for(let i=1;i<byY.length-1;i++){
+  const label=byY[i],prior=byY[i-1];
+  if(label.y<viewport.height*.16||label.y>viewport.height*.91)continue;
+  if(label.x>viewport.width*.20||label.str.length>27)continue;
+  if(!/^[\p{L}][\p{L}\s&/-]*$/u.test(label.str.trim()))continue;
+  if(label.str.trim().split(/\s+/).length>3)continue;
+  const lineBefore=byY.filter(item=>item.y<label.y-tolerance).at(-1);
+  const gap=lineBefore?label.y-lineBefore.y:0;
+  if(gap<Math.max(15,medianHeight*1.35))continue;
+  const headline=byY.slice(i+1).find(item=>
+   item.y>label.y+tolerance&&item.y-label.y<Math.max(85,viewport.height*.11)&&
+   item.x<viewport.width*.43&&item.boxHeight>=Math.max(medianHeight*1.35,label.boxHeight*1.35)
   );
-  if(large||(meaningful&&leftMargin&&categoryLike&&titleAfter))
-   boundaries.push(center);
+  if(!headline)continue;
+  // Do not mistake ordinary short body words for section labels.
+  const bodyBefore=byY.filter(item=>item.y<label.y).length;
+  const bodyAfter=byY.filter(item=>item.y>headline.y).length;
+  if(bodyBefore<3||bodyAfter<3)continue;
+  candidates.push(label.y-Math.min(gap/2,medianHeight*1.2));
  }
- // Keep bands in visual order, and perform independent column detection inside
- // each. Otherwise bottom Health text can be interleaved with Physics columns.
- const bands=[];
- let lower=-Infinity;
- for(const upper of boundaries){
-  const band=byY.filter(item=>item.y>=lower&&item.y<upper);
+ const cuts=[];
+ for(const cut of candidates)if(cuts.every(previous=>Math.abs(previous-cut)>medianHeight*3))cuts.push(cut);
+ // If no secondary article is detected, keep the whole article together.
+ // The column sorter still handles a wide headline above narrow body copy.
+ const bands=[];let previous=-Infinity;
+ for(const cut of cuts.sort((a,b)=>a-b)){
+  const band=byY.filter(item=>item.y>=previous&&item.y<cut);
   if(band.length)bands.push(band);
-  lower=upper;
+  previous=cut;
  }
- const last=byY.filter(item=>item.y>=lower);
- if(last.length)bands.push(last);
+ const tail=byY.filter(item=>item.y>=previous);
+ if(tail.length)bands.push(tail);
  return bands;
 }
 
