@@ -150,6 +150,28 @@ export function pdfSpeechLayout(items){
  return {text:text.trim(),spans};
 }
 
+// Align text items to the normalized speech stream without repeatedly
+// scanning the whole page. The same spans drive sentence highlights over WebP.
+// Repeated fragments are matched sequentially (so identical lines stay distinct).
+export function pdfSpeechHighlightMap(items,normalize){
+ const layout=pdfSpeechLayout(items);
+ const text=normalize(layout.text);
+ let cursor=0;
+ const spans=layout.spans.map(({item,start,end})=>{
+  const fragment=normalize(layout.text.slice(start,end));
+  let from=fragment?text.indexOf(fragment,cursor):cursor;
+  if(from<0){
+   // Rare PDF ligatures/line joins can prevent exact matching. Retain a
+   // bounded fallback rather than losing the rest of the passage highlights.
+   from=Math.min(text.length,normalize(layout.text.slice(0,start)).length);
+  }
+  const to=Math.min(text.length,from+fragment.length);
+  cursor=Math.max(cursor,to);
+  return {item,from,to};
+ });
+ return {text,spans};
+}
+
 export function pdfSpeechText(items){
  return pdfSpeechLayout(items).text;
 }
