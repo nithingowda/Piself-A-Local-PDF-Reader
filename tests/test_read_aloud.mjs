@@ -18,8 +18,8 @@ test('PDF text is extracted from PDF.js and EPUB text from the rendition',()=>{
 test('speech cancels on closing and uses local browser voices',()=>{
  assert.match(app,/pdfSpeech\?\.stop\(\)/);
  assert.match(app,/epubSpeech\?\.stop\(\)/);
- assert.match(speech,/window.speechSynthesis/);
- assert.match(speech,/SpeechSynthesisUtterance/);
+ assert.doesNotMatch(speech,/window.speechSynthesis/);
+ assert.doesNotMatch(speech,/SpeechSynthesisUtterance/);
 });
 
 test('compact immersive player provides seek and playback controls for both formats',()=>{
@@ -53,13 +53,21 @@ test('spoken sentence indicator and scrollable immersive reader',()=>{
 test('Edge Neerja defaults with Piper fallback and buffered next segment',()=>{
  const server=readFileSync(new URL('../server.py',import.meta.url),'utf8');
  const docker=readFileSync(new URL('../Dockerfile',import.meta.url),'utf8');
- assert.match(app,/Neerja · Indian English \(Online AI\)/);
- assert.match(app,/select\.value=previous\|\|'edge-neerja'/);
- assert.match(speech,/voice='edge-neerja'/);
+ assert.match(app,/Neerja · Indian English \(Female\)/);
+ assert.match(app,/en-IN-NeerjaNeural/);
+ assert.match(speech,/voice='en-IN-NeerjaNeural'/);
  assert.match(speech,/\/api\/tts\/edge/);
- assert.match(speech,/\/api\/tts\/alba/);
- assert.match(speech,/prefetch=requestSpeech\(chunks\[index\]\)/);
+ assert.doesNotMatch(speech,/\/api\/tts\/alba/);
+ assert.match(speech,/prefetch=requestSpeech\(chunks\[index\],selectedVoice\)/);
  assert.match(server,/en-IN-NeerjaNeural/);
  assert.match(server,/audio\/mpeg/);
  assert.match(docker,/edge-tts/);
+});
+
+test('Only Edge voices are offered and reading highlights track playback',()=>{
+ assert.doesNotMatch(app,/new Option\('Alba/);
+ assert.doesNotMatch(app,/Browser default voice/);
+ assert.match(app,/markPdfReading/);
+ assert.match(app,/markEpubReading/);
+ assert.match(speech,/ontimeupdate/);
 });
