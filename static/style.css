@@ -276,3 +276,16 @@ body.epub-open{overflow:hidden}
 .read-aloud-controls{position:relative}
 .read-aloud-panel:not([hidden]){display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .read-aloud-panel[hidden]{display:none!important}
+
+/* Immersive audiobook-style controls: only the floating player remains visible. */
+.read-aloud-small{font-size:12px!important;padding:4px 8px!important;white-space:nowrap}
+.speech-floating-player:not([hidden]){position:absolute;z-index:90;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:8px;max-width:calc(100vw - 24px);padding:10px 14px;border:1px solid rgba(255,255,255,.25);border-radius:18px;background:rgba(30,34,42,.62);color:#fff;box-shadow:0 8px 35px rgba(0,0,0,.22);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}
+.speech-floating-player[hidden]{display:none!important}
+.speech-player-main{display:flex;gap:12px;align-items:center;justify-content:center}
+.speech-player-main button{color:inherit;background:rgba(255,255,255,.14);border:0;border-radius:30px;min-width:42px;min-height:38px;padding:7px;cursor:pointer}
+.speech-player-main button:focus-visible{outline:2px solid #fff;outline-offset:2px}
+.speech-floating-player .read-aloud-panel:not([hidden]){display:flex;flex-wrap:wrap;justify-content:center;gap:6px;max-width:420px}
+#reader.speech-immersive .reader-bar,#reader.speech-immersive .controls,#reader.speech-immersive .reader-progress,#reader.speech-immersive .book-turn-controls{display:none!important}
+#epub-reader.speech-immersive .epub-toolbar,#epub-reader.speech-immersive .epub-controls{display:none!important}
+#reader.speech-immersive,#epub-reader.speech-immersive{position:relative}
+@media(max-width:600px){.speech-floating-player:not([hidden]){padding:8px 10px;bottom:calc(12px + env(safe-area-inset-bottom,0px))}.speech-player-main{gap:6px}}

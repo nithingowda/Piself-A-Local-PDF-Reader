@@ -22,6 +22,8 @@ import zlib
 import auth
 import secrets
 import hmac
+import subprocess
+import tempfile
 
 # Optional raster engine is installed in Docker; errors are reported per request.
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -370,7 +372,39 @@ class Handler(BaseHTTPRequestHandler):
                 self.auth_post(route);return
             # Readers may save their reading position, bookmarks and favourites.
             # All other write endpoints remain administrator-only.
-            self.require_session(admin=route not in ('/api/progress','/api/annotations'),mutation=True)
+            self.require_session(admin=route not in ('/api/progress','/api/annotations','/api/tts/alba'),mutation=True)
+            if route == '/api/tts/alba':
+                length=int(self.headers.get('Content-Length','0'))
+                if self.headers.get_content_type()!='application/json' or not 0<length<=2048:
+                    raise APIError(400,'Invalid speech request.')
+                try:
+                    data=json.loads(self.rfile.read(length))
+                except (ValueError,UnicodeDecodeError):
+                    raise APIError(400,'Invalid speech JSON.')
+                phrase=data.get('text') if isinstance(data,dict) else None
+                if not isinstance(phrase,str) or not phrase.strip() or len(phrase)>500:
+                    raise APIError(400,'Speech text must be 1–500 characters.')
+                model=os.environ.get('PISHELF_PIPER_MODEL','/data/voices/en_GB-alba-medium.onnx')
+                if not Path(model).is_file():
+                    raise APIError(503,'Piper Alba model is not installed.')
+                with tempfile.TemporaryDirectory() as temp:
+                    output=Path(temp)/'speech.wav'
+                    try:
+                        subprocess.run(['piper','--model',model,'--output_file',str(output)],
+                                       input=phrase.encode('utf-8'),capture_output=True,timeout=35,check=True)
+                    except (OSError,subprocess.SubprocessError):
+                        raise APIError(503,'Piper speech engine unavailable.')
+                    if not output.is_file() or output.stat().st_size>8*1024*1024:
+                        raise APIError(503,'Piper audio generation failed.')
+                    body=output.read_bytes()
+                self.send_response(200)
+                self.send_header('Content-Type','audio/wav')
+                self.send_header('Content-Length',str(len(body)))
+                self.send_header('Cache-Control','no-store')
+                self.security_headers()
+                self.end_headers()
+                self.wfile.write(body)
+                return
             if urlsplit(self.path).path == '/api/webp-cache/clear':
                 # No body is required; reject unexpected or oversized requests.
                 if self.headers.get('Transfer-Encoding') or self.headers.get('Content-Length','0') not in ('0','2'):
