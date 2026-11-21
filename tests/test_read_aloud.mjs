@@ -454,3 +454,47 @@ test('multiple magazine sections on one page keep a headline from jumping to ano
  const healthStart=ordered.findIndex(part=>part.str==='Health');
  assert.ok(physicsEnd>=0&&healthStart>physicsEnd);
 });
+
+
+test('smart article detection does not mistake a large image gap for a new article',async()=>{
+ const {splitPdfArticleBands,orderPdfSpeechItems}=await import('../static/pdf-reading-order.js');
+ const viewport={width:700,height:890,convertToViewportPoint:(x,y)=>[x,y]};
+ const item=(str,x,y,height=12)=>({str,x,y,boxHeight:height,boxWidth:150,transform:[1,0,0,1,x,y],width:150,height});
+ const raw=[
+  item('Physics',25,38,9),item('First quantum clock that',25,65,23),
+  item('ticks using sunlight',25,90,23),
+  item('FOR the first time, researchers',25,145),
+  item('have built a quantum clock',25,160),
+  item('sunlight can power this clock.',25,175),
+  // An illustration in the third column leaves a very large blank text gap.
+  item('Solar optical clocks',355,190),item('could teach us about',355,205),
+  item('the sun and other stars',355,220),
+  item('In the new design, researchers',25,445),
+  item('use light to measure time.',25,460),
+  item('The experiment continues.',190,445),
+  item('This is still the same story.',190,460),
+  item('A bright new clock design',355,550),
+  item('may improve astronomical timing.',355,565)
+ ];
+ const bands=splitPdfArticleBands(raw,viewport);
+ assert.equal(bands.length,1,'image whitespace is not a story divider');
+ const ordered=orderPdfSpeechItems(raw,viewport);
+ assert.equal(new Set(ordered.map(x=>x.readingRegion)).size,1);
+});
+test('a second labeled story still creates a separate reading region',async()=>{
+ const {splitPdfArticleBands}=await import('../static/pdf-reading-order.js');
+ const viewport={width:700,height:890};
+ const item=(str,x,y,height=12)=>({str,x,y,boxHeight:height});
+ const items=[
+  item('Physics',25,35,9),item('First quantum clock',25,60,24),
+  item('Physics body first line',25,140),item('Physics body second line',25,156),
+  item('Physics other column',200,140),item('Physics other line',200,156),
+  item('Physics ending line',25,548),
+  item('Health',25,580,9),item('Pink noise may ease memory loss',25,606,23),
+  item('Health article body line one',25,680),item('Health article body line two',25,696),
+  item('Health second column body',200,680),item('Health second column line',200,696)
+ ];
+ const bands=splitPdfArticleBands(items,viewport);
+ assert.equal(bands.length,2);
+ assert.equal(bands[1][0].str,'Health');
+});
