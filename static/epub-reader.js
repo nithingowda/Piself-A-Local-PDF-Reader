@@ -52,7 +52,7 @@ export async function createEpubReader({url,container,cfi,theme='light',fontSize
   onLocation({...progress,percentage:lastPercentage,locationsReady});
  }
  // EPUB is rendered inside an iframe. Attach listeners when each chapter is displayed.
- let speechStartNode=null;
+ let speechStartNode=null,selectedSpeechBlock=null;
  rendition.on('rendered',()=>{
   for(const content of rendition.getContents()||[]){
    const doc=content.document;
@@ -62,6 +62,9 @@ export async function createEpubReader({url,container,cfi,theme='light',fontSize
     if(!event.isTrusted||event.target.closest('a,button,input,select,textarea'))return;
     const block=event.target.closest('h1,h2,h3,h4,h5,h6,p,blockquote,li');
     if(!block||!block.textContent?.trim())return;
+    selectedSpeechBlock?.classList.remove('pishelf-tap-selected');
+    selectedSpeechBlock=block;
+    block.classList.add('pishelf-tap-selected');
     speechStartNode=block;
     onTextTap?.();
    });
@@ -98,6 +101,7 @@ export async function createEpubReader({url,container,cfi,theme='light',fontSize
     if(!blocks.length)return body.textContent||'';
     const visible=Array.from(blocks).filter(node=>!node.closest('nav,[hidden],[aria-hidden="true"]'));
     const start=speechStartNode?visible.indexOf(speechStartNode):0;
+    if(speechStartNode&&start>=0){speechStartNode.classList.add('pishelf-tap-selected');}
     speechStartNode=null;
     return visible.slice(Math.max(0,start)).map(node=>node.textContent?.trim()||'').filter(Boolean).join('\n');
    }).filter(Boolean).join('\n').trim();
