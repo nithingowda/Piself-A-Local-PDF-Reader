@@ -426,7 +426,15 @@ class Handler(BaseHTTPRequestHandler):
             if root is None: raise ValueError()
             path = safe_relative(data['path'])
             folder = checked_path(root, path)
+            if data.get('action') == 'delete':
+                if path == '.' or folder == root: raise APIError(400,'Cannot remove a library root.')
+                try: folder.rmdir()
+                except FileNotFoundError: raise APIError(404,'Category no longer exists.')
+                except OSError: raise APIError(409,'Category is not empty. Move or remove its files and subcategories first.')
+                self.server.scan_time=float('-inf')
+                return {'ok': True}
             folder.mkdir(parents=True, exist_ok=True)
+            self.server.scan_time=float('-inf')
             return {'ok': True}
         if route == '/api/issue/edit':
             item = next((i for i in self.library_items() if i['id']==data.get('id')), None)
