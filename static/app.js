@@ -1068,7 +1068,10 @@ function speechState(kind,state){
   if(state.spokenText!==undefined){
    return;
   }
-  if(state.active===false){resetNumberedParagraphs(kind);refreshNumberedSelection(kind);}
+  if(state.active===false){
+   resetNumberedParagraphs(kind);
+   numberedPickMode[kind]=!$(kind+'-speech-player').hidden;
+  }
  }
  if(state.spokenText!==undefined){
   if(kind==='pdf')void markPdfReading(state.spokenText,state.readingOffset||0,state.readingLength||0);
