@@ -23,8 +23,8 @@ dialog{border:1px solid var(--line);border-radius:16px;background:var(--card);co
 .sr-only-focusable{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}.sr-only-focusable:focus-visible{width:auto;height:auto;margin:8px;padding:10px 14px;clip-path:none;overflow:visible;z-index:10}
 
 /* Optional reader enhancements; never modify page-area or pinch layout. */
-.reader-progress{height:3px;background:var(--line);width:100%;overflow:hidden}
-#reader-progress-fill{height:100%;width:0;background:var(--accent);transition:width .15s linear}
+.reader-progress{position:absolute;inset:auto 0 0;z-index:12;height:4px;background:#657080;width:100%;overflow:hidden}
+#reader-progress-fill{height:100%;width:0;background:#63c4ff;transition:width .15s linear}
 #thumbnail-dialog{width:min(720px,95vw);max-height:85vh;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink)}
 .thumbnail-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(95px,1fr));gap:12px;max-height:65vh;overflow:auto;padding:12px}
 .thumbnail-grid button{display:flex;flex-direction:column;gap:5px;align-items:center;padding:6px;min-width:0}
@@ -87,7 +87,7 @@ dialog{border:1px solid var(--line);border-radius:16px;background:var(--card);co
 .reader-scrubber label{white-space:nowrap;font-size:12px}
 #reader-page-slider{flex:1;min-width:90px;accent-color:var(--accent);padding:0;height:28px;touch-action:pan-x}
 #reader-page-slider-label{min-width:75px;text-align:right;font-size:12px;font-variant-numeric:tabular-nums}
-#reader.focused .reader-progress{opacity:.25}
+
 #reader.focused .reader-bar,#reader.focused .controls{visibility:hidden;pointer-events:none}
 #reader.focused #page-area{cursor:default}
 @media(max-width:600px){.reader-scrubber{flex-basis:100%;order:-1;padding:0 4px}.reader-scrubber label{font-size:11px}#reader-page-slider{min-height:30px}}
@@ -288,7 +288,7 @@ body.epub-open{overflow:hidden}
 .speech-player-main button{color:inherit;background:rgba(255,255,255,.14);border:0;border-radius:30px;min-width:42px;min-height:38px;padding:7px;cursor:pointer}
 .speech-player-main button:focus-visible{outline:2px solid #fff;outline-offset:2px}
 .speech-floating-player .read-aloud-panel:not([hidden]){display:flex;flex-wrap:wrap;justify-content:center;gap:6px;max-width:420px}
-#reader.speech-immersive .reader-bar,#reader.speech-immersive .controls,#reader.speech-immersive .reader-progress,#reader.speech-immersive .book-turn-controls{display:none!important}
+#reader.speech-immersive .reader-bar,#reader.speech-immersive .controls,#reader.speech-immersive .book-turn-controls{display:none!important}
 #epub-reader.speech-immersive .epub-toolbar,#epub-reader.speech-immersive .epub-controls{display:none!important}
 /* Keep the reader viewport fixed: changing it to relative prevents page scrolling. */
 @media(max-width:600px){.speech-floating-player:not([hidden]){padding:8px 10px;bottom:calc(12px + env(safe-area-inset-bottom,0px))}.speech-player-main{gap:6px}}
@@ -379,3 +379,7 @@ body.epub-open{overflow:hidden}
 }
 
 .speech-floating-player [role=timer]{color:white;background:#243040;padding:2px 7px;border-radius:6px;font-variant-numeric:tabular-nums}
+
+#fullscreen-exit{display:none}
+#reader:fullscreen #fullscreen-exit{display:grid;place-items:center;position:absolute;z-index:13;top:max(4px,env(safe-area-inset-top));left:max(4px,env(safe-area-inset-left));width:44px;height:44px;padding:0;border:0;border-radius:50%;background:transparent;color:#fff;font-size:18px;text-shadow:0 1px 3px #000;opacity:.65}
+#reader:fullscreen #fullscreen-exit:is(:hover,:focus-visible){opacity:1;background:#0003}
