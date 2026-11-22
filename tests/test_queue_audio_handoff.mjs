@@ -82,6 +82,7 @@ test('preparation packs short paragraphs and keeps out-of-order responses in rea
 });
 
 test('playback starts while the next speech request is still pending',async t=>{
+ const nativeFetch=globalThis.fetch;
  const pending=[],played=[];
  let player,started;
  const firstPlay=new Promise(resolve=>{started=resolve;});
@@ -101,6 +102,11 @@ test('playback starts while the next speech request is still pending',async t=>{
  player.onended();
  pending[1]();await preparing;
  assert.equal(played.length,2);
+ const finished=await fetchBlobSize();
+ async function fetchBlobSize(){return (await (await nativeFetch(player.src)).blob()).size;}
+ assert.equal(finished,12);
+ player.duration=10;player.onloadedmetadata();
+ assert.equal(player.currentTime,5);
  player.onended();assert.equal(controller.active,false);
 });
 

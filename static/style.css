@@ -377,3 +377,5 @@ body.epub-open{overflow:hidden}
  width:min(100cqw,calc(100cqh * var(--pdf-aspect)));
  height:min(100cqh,calc(100cqw / var(--pdf-aspect)));
 }
+
+.speech-floating-player [role=timer]{color:white;background:#243040;padding:2px 7px;border-radius:6px;font-variant-numeric:tabular-nums}
