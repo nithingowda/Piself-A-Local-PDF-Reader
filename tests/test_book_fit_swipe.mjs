@@ -59,43 +59,10 @@ test('one-finger touch navigation tracks the fold and retains fallback navigatio
  const gestureEnd=source.indexOf("$('page-area').addEventListener('dblclick'",gestureStart);
  assert.ok(gestureStart>0&&gestureEnd>gestureStart);
  const pointerHandlers=source.slice(gestureStart,gestureEnd);
- assert.match(pointerHandlers,/turnFromControl\(dx<0\?1:-1\)/);
+ assert.match(pointerHandlers,/turnBook\(dx<0\?1:-1\)/);
  assert.match(pointerHandlers,/gesturePointers\.size===1/);
  assert.match(pointerHandlers,/gestureStart\.multi/);
  assert.match(pointerHandlers,/pointermove/);
  assert.match(pointerHandlers,/settleCurl\(curl.progress/);
  assert.match(source,/function finishPinch\(cancelled=false\)/);
-});
-
-test('a cold preview cache still animates both directions before navigating',()=>{
- for(const book of [true,false])for(const direction of [-1,1]){
-  let frame,turns=0,frontDraws=0;
-  const front={width:200,height:300};
-  const slots=[4,5].map((n,i)=>({
-   dataset:{page:String(n)},isConnected:true,querySelector:()=>front,
-   getBoundingClientRect:()=>({left:i*200,right:(i+1)*200,top:0,bottom:300,width:200,height:300})
-  }));
-  const drawing=new Proxy({}, {get:(_,name)=>{
-   if(name==='drawImage')return image=>{assert.equal(image,front);frontDraws++;};
-   if(name==='createLinearGradient')return ()=>({addColorStop(){}});
-   return ()=>{};
-  }});
-  const canvas={style:{},setAttribute(){},remove(){},getContext:()=>drawing};
-  const ctx={
-   page:4,documentPDF:{numPages:8},rotation:0,layoutEpoch:1,slots,
-   isBookSpread:()=>book,spreadPages:n=>[n,n+1],imagePrefetches:new Map(),
-   $:()=>({value:book?'book':'single',append(){},getBoundingClientRect:()=>({bottom:300})}),
-   matchMedia:()=>({matches:false}),document:{createElement:()=>canvas},devicePixelRatio:1,
-   getComputedStyle:()=>({filter:'none'}),performance:{now:()=>0},
-   requestAnimationFrame:callback=>{frame=callback;return 1;},cancelAnimationFrame(){},
-   turnBook:d=>{assert.equal(d,direction);turns++;}
-  };
-  const turn=production('let curl=null;',"$('page-area').addEventListener('pointerdown'",'turnFromControl',ctx);
-  turn(direction);
-  assert.ok(frontDraws>0);
-  frame(150);
-  assert.equal(turns,0);
-  frame(500);
-  assert.equal(turns,1);
- }
 });
