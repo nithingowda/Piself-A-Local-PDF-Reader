@@ -111,17 +111,18 @@ export function speechSentenceRanges(chunk,marks=[]){
 
 export function createReadAloud({getText,next,peekNextText=()=>null,onState,getCsrfToken=()=>''}){
  let active=false,paused=false,token=0,voice=DEFAULT_VOICE,rate=1,audio=null,audioUrl=null;
+ let combined=false;
  const requests=new Set(),prepared=new Set();
  const notify=()=>onState?.({active,paused,rate,voice});
  const valid=session=>active&&session===token;
 
  // Cancel current and prefetched network work and release decoded audio.
  function stop(){
-  token++;active=false;paused=false;
+  token++;active=false;paused=false;combined=false;
   for(const request of requests)request.abort();
   requests.clear();
   if(audio){
-   audio.onended=audio.onerror=audio.ontimeupdate=audio.onseeked=null;
+   audio.onloadedmetadata=audio.ondurationchange=audio.onended=audio.onerror=audio.ontimeupdate=audio.onseeked=null;
    audio.pause();audio.removeAttribute('src');audio.load();
   }
   for(const ready of prepared)URL.revokeObjectURL(ready.url);
@@ -258,6 +259,41 @@ export function createReadAloud({getText,next,peekNextText=()=>null,onState,getC
   void say();
  }
 
+ async function playSelection(passages){
+  if(active||!passages.length)return;
+  if(!audio){audio=new Audio();audio.preload='auto';}
+  const session=++token,selectedVoice=voice;
+  active=true;combined=true;paused=false;notify();
+  onState?.({preparing:true});
+  try{
+   const clips=[],ends=[];
+   let bytes=0;
+   for(const passage of passages){
+    for(const chunk of splitSpeechChunks(passage)){
+     const {blob}=await requestSpeech(chunk,selectedVoice);
+     if(!valid(session))return;
+     clips.push(blob);bytes+=blob.size;
+    }
+    ends.push(bytes);
+   }
+   if(!bytes)throw Error('The selection has no speech audio.');
+   // Edge returns raw constant-bitrate MP3 frames in a common format.
+   const url=URL.createObjectURL(new Blob(clips,{type:'audio/mpeg'}));
+   prepared.add({url});audioUrl=url;
+   const update=()=>{
+    if(!valid(session)||!Number.isFinite(audio.duration)||audio.duration<=0)return;
+    const position=bytes*audio.currentTime/audio.duration;
+    const index=ends.findIndex(end=>end>position);
+    onState?.({passage:index<0?ends.length-1:index,
+     remaining:Math.ceil(Math.max(0,audio.duration-audio.currentTime)/rate)});
+   };
+   audio.onloadedmetadata=audio.ondurationchange=audio.ontimeupdate=audio.onseeked=update;
+   audio.onended=()=>{if(valid(session))stop();};
+   audio.onerror=()=>{if(valid(session)){stop();onState?.({error:'Could not play the selected audio.'});}};
+   audio.src=url;audio.playbackRate=rate;
+   if(!paused)await audio.play();
+  }catch(error){if(valid(session)){stop();onState?.({error:error.message});}}
+ }
  function play(){
   if(active&&paused){if(audioUrl)void audio.play().catch(error=>onState?.({error:error.message}));paused=false;notify();return;}
   if(active)return;
@@ -275,11 +311,13 @@ export function createReadAloud({getText,next,peekNextText=()=>null,onState,getC
  }
  function setRate(value){
   rate=Math.max(.5,Math.min(2,Number(value)||1));
-  if(active){stop();play();}else notify();
+  if(combined){audio.playbackRate=rate;audio.ontimeupdate?.();}
+  else if(active){stop();play();}else notify();
  }
  function setVoice(value){
   voice=value;
+  if(combined)return;
   if(active){stop();play();}else notify();
  }
- return {play,pause,stop,seek,setRate,setVoice,get active(){return active;},get paused(){return paused;}};
+ return {play,playSelection,pause,stop,seek,setRate,setVoice,get active(){return active;},get paused(){return paused;}};
 }

@@ -817,6 +817,7 @@ function refreshNumberedSelection(kind){
  if(kind==='pdf')renderNumberedMarkers();
 }
 function addNumberedParagraph(kind,entry){
+ if(numberedPlayback[kind]){toast('Stop playback to edit this track.');return;}
  const list=numberedParagraphs[kind];
  const index=list.findIndex(current=>current.key===entry.key);
  if(index>=0){
@@ -855,7 +856,7 @@ async function playNumberedParagraphs(kind){
   const first=numberedParagraphs[kind][0];
   if(kind==='pdf'){pdfSpeechPage=first.page;showPdfSpeechPage(first.page);}
   speechPlayer(kind,true);refreshNumberedSelection(kind);
-  controller.play();
+  void controller.playSelection(numberedParagraphs[kind].map(entry=>entry.text));
  }finally{numberedPlayPending[kind]=false;}
 }
 const paragraphLayouts=new WeakMap();
@@ -1046,6 +1047,20 @@ function clearSpeechHighlight(kind){
  else epubController?.clearReadingHighlight?.();
 }
 function speechState(kind,state){
+ const timer=$(kind+'-remaining');
+ if(state.preparing){timer.hidden=false;timer.textContent='Preparing audio…';return;}
+ if(state.remaining!==undefined){
+  const seconds=state.remaining;
+  const label=Math.floor(seconds/60)+':'+String(seconds%60).padStart(2,'0')+' left';
+  if(timer.textContent!==label)timer.textContent=label;
+  if(numberedCursor[kind]!==state.passage){
+   numberedCursor[kind]=state.passage;
+   if(kind==='pdf'){pdfSpeechPage=numberedParagraphs.pdf[state.passage].page;showPdfSpeechPage(pdfSpeechPage);}
+   refreshNumberedSelection(kind);
+  }
+  return;
+ }
+ if(state.active===false)timer.hidden=true;
  if(state.clipEnded){clearSpeechHighlight(kind);return;}
  if(state.active===false)clearSpeechHighlight(kind);
  if(state.notice){toast(state.notice);return;}
