@@ -266,15 +266,35 @@ export function createReadAloud({getText,next,peekNextText=()=>null,onState,getC
   active=true;combined=true;paused=false;notify();
   onState?.({preparing:true});
   try{
-   const clips=[],ends=[];
-   let bytes=0;
+   // Pack short paragraphs from the same passage into one synthesis request.
+   const jobs=[],ends=[];
    for(const passage of passages){
+    let phrase='';
     for(const chunk of splitSpeechChunks(passage)){
-     const {blob}=await requestSpeech(chunk,selectedVoice);
-     if(!valid(session))return;
-     clips.push(blob);bytes+=blob.size;
+     if(phrase&&phrase.length+1+chunk.length>MAX_CHUNK_LENGTH){
+      jobs.push(phrase);phrase='';
+     }
+     phrase=phrase?phrase+'\n'+chunk:chunk;
     }
-    ends.push(bytes);
+    if(phrase)jobs.push(phrase);
+    ends.push(jobs.length);
+   }
+   const clips=new Array(jobs.length);
+   let cursor=0;
+   async function synthesize(){
+    while(valid(session)&&cursor<jobs.length){
+     const index=cursor++;
+     const {blob}=await requestSpeech(jobs[index],selectedVoice);
+     clips[index]=blob;
+    }
+   }
+   // The PiShelf speech endpoint admits two simultaneous requests.
+   await Promise.all([synthesize(),synthesize()]);
+   if(!valid(session))return;
+   let bytes=0,clipIndex=0;
+   for(let i=0;i<ends.length;i++){
+    while(clipIndex<ends[i])bytes+=clips[clipIndex++].size;
+    ends[i]=bytes;
    }
    if(!bytes)throw Error('The selection has no speech audio.');
    // Edge returns raw constant-bitrate MP3 frames in a common format.
