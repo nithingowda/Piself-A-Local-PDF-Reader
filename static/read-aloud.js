@@ -280,38 +280,64 @@ export function createReadAloud({getText,next,peekNextText=()=>null,onState,getC
     ends.push(jobs.length);
    }
    const clips=new Array(jobs.length);
-   let cursor=0;
+   if(!jobs.length)throw Error('The selection has no speech audio.');
+   const offsets=[0];
+   const wordCounts=jobs.map(text=>text.trim().split(/\s+/).length);
+   const totalWords=wordCounts.reduce((sum,n)=>sum+n,0);
+   let cursor=0,nextClip=0,playing=false,scheduled=false,readyWords=0;
+   function fail(error){
+    if(valid(session)){stop();onState?.({error:error.message});}
+   }
+   async function playReady(){
+    if(!valid(session)||playing||!clips[nextClip])return;
+    playing=true;
+    const first=nextClip;
+    while(nextClip<clips.length&&clips[nextClip])nextClip++;
+    const batch=clips.slice(first,nextClip);
+    clips.fill(null,first,nextClip);
+    const bytes=offsets[nextClip]-offsets[first];
+    const url=URL.createObjectURL(new Blob(batch,{type:'audio/mpeg'}));
+    const ready={url};prepared.add(ready);audioUrl=url;
+    const update=()=>{
+     if(!valid(session)||audioUrl!==url||!Number.isFinite(audio.duration)||audio.duration<=0)return;
+     const bytesPerSecond=bytes/audio.duration;
+     const position=offsets[first]+bytesPerSecond*audio.currentTime;
+     const complete=offsets.length===jobs.length+1;
+     const size=complete?offsets.at(-1):offsets.at(-1)*totalWords/readyWords;
+     const index=ends.findIndex(end=>offsets[end]===undefined||offsets[end]>position);
+     onState?.({passage:index<0?ends.length-1:index,
+      ...(!complete&&{estimated:true}),remaining:Math.ceil(Math.max(0,size-position)/bytesPerSecond/rate)});
+    };
+    audio.onloadedmetadata=audio.ondurationchange=audio.ontimeupdate=audio.onseeked=update;
+    audio.onended=()=>{
+     if(!valid(session)||audioUrl!==url)return;
+     audioUrl=null;playing=false;
+     URL.revokeObjectURL(url);prepared.delete(ready);
+     if(nextClip===jobs.length)stop();
+     else void playReady().catch(fail);
+    };
+    audio.onerror=()=>fail(Error('Could not play the selected audio.'));
+    audio.src=url;audio.playbackRate=rate;
+    if(!paused)await audio.play();
+   }
    async function synthesize(){
     while(valid(session)&&cursor<jobs.length){
      const index=cursor++;
      const {blob}=await requestSpeech(jobs[index],selectedVoice);
+     if(!valid(session))return;
      clips[index]=blob;
+     while(clips[offsets.length-1]){
+      const i=offsets.length-1;
+      offsets.push(offsets[i]+clips[i].size);readyWords+=wordCounts[i];
+     }
+     if(!playing&&!scheduled&&clips[nextClip]){
+      scheduled=true;
+      setTimeout(()=>{scheduled=false;void playReady().catch(fail);},0);
+     }
     }
    }
-   // The PiShelf speech endpoint admits two simultaneous requests.
    await Promise.all([synthesize(),synthesize()]);
-   if(!valid(session))return;
-   let bytes=0,clipIndex=0;
-   for(let i=0;i<ends.length;i++){
-    while(clipIndex<ends[i])bytes+=clips[clipIndex++].size;
-    ends[i]=bytes;
-   }
-   if(!bytes)throw Error('The selection has no speech audio.');
-   // Edge returns raw constant-bitrate MP3 frames in a common format.
-   const url=URL.createObjectURL(new Blob(clips,{type:'audio/mpeg'}));
-   prepared.add({url});audioUrl=url;
-   const update=()=>{
-    if(!valid(session)||!Number.isFinite(audio.duration)||audio.duration<=0)return;
-    const position=bytes*audio.currentTime/audio.duration;
-    const index=ends.findIndex(end=>end>position);
-    onState?.({passage:index<0?ends.length-1:index,
-     remaining:Math.ceil(Math.max(0,audio.duration-audio.currentTime)/rate)});
-   };
-   audio.onloadedmetadata=audio.ondurationchange=audio.ontimeupdate=audio.onseeked=update;
-   audio.onended=()=>{if(valid(session))stop();};
-   audio.onerror=()=>{if(valid(session)){stop();onState?.({error:'Could not play the selected audio.'});}};
-   audio.src=url;audio.playbackRate=rate;
-   if(!paused)await audio.play();
+   await playReady();
   }catch(error){if(valid(session)){stop();onState?.({error:error.message});}}
  }
  function play(){
