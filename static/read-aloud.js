@@ -118,6 +118,7 @@ export function createReadAloud({getText,next,peekNextText=()=>null,onState,getC
 
  // Cancel current and prefetched network work and release decoded audio.
  function stop(){
+  if(combined){try{globalThis.navigator?.mediaSession?.setPositionState?.();}catch{}}
   clearInterval(clockTimer);clockTimer=null;
   token++;active=false;paused=false;combined=false;
   for(const request of requests)request.abort();
@@ -292,10 +293,12 @@ export function createReadAloud({getText,next,peekNextText=()=>null,onState,getC
    async function playReady(){
     if(!valid(session)||playing||!clips[nextClip])return;
     playing=true;
-    const first=nextClip;
+    const resumeBytes=offsets[nextClip];
+    // Once synthesis finishes, give native players a single full-length source.
+    const first=offsets.length===jobs.length+1?0:nextClip;
     while(nextClip<clips.length&&clips[nextClip])nextClip++;
     const batch=clips.slice(first,nextClip);
-    clips.fill(null,first,nextClip);
+    if(nextClip===jobs.length)clips.fill(null);
     const bytes=offsets[nextClip]-offsets[first];
     const url=URL.createObjectURL(new Blob(batch,{type:'audio/mpeg'}));
     const ready={url};prepared.add(ready);audioUrl=url;
@@ -307,11 +310,24 @@ export function createReadAloud({getText,next,peekNextText=()=>null,onState,getC
      const position=offsets[first]+bytesPerSecond*(audio.currentTime||0);
      const complete=offsets.length===jobs.length+1;
      const size=complete?offsets.at(-1):offsets.at(-1)*totalWords/readyWords;
+     try{
+      globalThis.navigator?.mediaSession?.setPositionState?.({
+       duration:size/bytesPerSecond,position:Math.min(size,position)/bytesPerSecond,playbackRate:rate
+      });
+     }catch{/* Native position reporting is optional. */}
      const index=ends.findIndex(end=>offsets[end]===undefined||offsets[end]>position);
      onState?.({passage:index<0?ends.length-1:index,
       ...(!(complete&&measured)&&{estimated:true}),remaining:Math.ceil(Math.max(0,size-position)/bytesPerSecond/rate)});
     };
-    audio.onloadedmetadata=audio.ondurationchange=audio.ontimeupdate=audio.onseeked=update;
+    audio.ondurationchange=audio.ontimeupdate=audio.onseeked=update;
+    audio.onloadedmetadata=()=>{
+     if(!valid(session)||audioUrl!==url)return;
+     if(first===0&&resumeBytes){
+      const duration=Number.isFinite(audio.duration)&&audio.duration>0?audio.duration:bytes/6000;
+      audio.currentTime=duration*resumeBytes/bytes;
+     }
+     update();
+    };
     audio.onended=()=>{
      if(!valid(session)||audioUrl!==url)return;
      clearInterval(clockTimer);clockTimer=null;
