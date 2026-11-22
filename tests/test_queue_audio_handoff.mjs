@@ -58,3 +58,25 @@ test('selected passages share one track and report time left at playback speed',
  assert.deepEqual(states.at(-1),{passage:1,remaining:13});
  player.onended();assert.equal(controller.active,false);
 });
+
+test('preparation packs short paragraphs and keeps out-of-order responses in reading order',async t=>{
+ const pending=[],calls=[];
+ const original=globalThis.Audio;
+ globalThis.Audio=class{async play(){} pause(){} removeAttribute(){} load(){}};
+ t.after(()=>{if(original)globalThis.Audio=original;else delete globalThis.Audio;});
+ t.mock.method(globalThis,'fetch',(_url,options)=>new Promise(resolve=>{
+  const text=JSON.parse(options.body).text;
+  calls.push(text);
+  pending.push(()=>resolve({ok:true,headers:new Headers(),blob:async()=>new Blob([text])}));
+ }));
+ let track;
+ t.mock.method(URL,'createObjectURL',blob=>{track=blob;return 'blob:test';});
+ const controller=createReadAloud({});
+ const playing=controller.playSelection(['First.\nSecond.','Third.','Fourth.']);
+ assert.deepEqual(calls,['First.\nSecond.','Third.']);
+ pending[1]();await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(calls[2],'Fourth.');
+ pending[2]();pending[0]();await playing;
+ assert.equal(await track.text(),'First.\nSecond.Third.Fourth.');
+ controller.stop();
+});
