@@ -1051,7 +1051,7 @@ function speechState(kind,state){
  if(state.preparing){timer.hidden=false;timer.textContent='Preparing audio…';return;}
  if(state.remaining!==undefined){
   const seconds=state.remaining;
-  const label=Math.floor(seconds/60)+':'+String(seconds%60).padStart(2,'0')+' left';
+  const label=(state.estimated?'≈ ':'')+Math.floor(seconds/60)+':'+String(seconds%60).padStart(2,'0')+' left';
   if(timer.textContent!==label)timer.textContent=label;
   if(numberedCursor[kind]!==state.passage){
    numberedCursor[kind]=state.passage;

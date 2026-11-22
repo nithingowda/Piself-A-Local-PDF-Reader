@@ -80,3 +80,26 @@ test('preparation packs short paragraphs and keeps out-of-order responses in rea
  assert.equal(await track.text(),'First.\nSecond.Third.Fourth.');
  controller.stop();
 });
+
+test('playback starts while the next speech request is still pending',async t=>{
+ const pending=[],played=[];
+ let player,started;
+ const firstPlay=new Promise(resolve=>{started=resolve;});
+ const original=globalThis.Audio;
+ globalThis.Audio=class{
+  constructor(){player=this;}
+  async play(){played.push(this.src);started();}
+  pause(){} removeAttribute(){} load(){}
+ };
+ t.after(()=>{if(original)globalThis.Audio=original;else delete globalThis.Audio;});
+ t.mock.method(globalThis,'fetch',()=>new Promise(resolve=>pending.push(()=>
+  resolve({ok:true,headers:new Headers(),blob:async()=>new Blob(['frames'])}))));
+ const controller=createReadAloud({});
+ const preparing=controller.playSelection(['First passage.','Second passage.']);
+ pending[0]();await firstPlay;
+ assert.equal(played.length,1);
+ player.onended();
+ pending[1]();await preparing;
+ assert.equal(played.length,2);
+ player.onended();assert.equal(controller.active,false);
+});
