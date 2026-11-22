@@ -26,7 +26,7 @@ class BookSpreadTests(unittest.TestCase):
   self.assertIn('function turnBook(direction)',JS)
   self.assertIn("$('book-turn-prev').onclick=()=>turnFromControl(-1)",JS)
   self.assertIn("$('book-turn-next').onclick=()=>turnFromControl(1)",JS)
-  self.assertIn("turnFromControl(dx<0?1:-1)",JS)
+  self.assertIn("turnBook(dx<0?1:-1)",JS)
   self.assertIn('function preloadMagazineNeighbors()',JS)
   self.assertIn('const prefetched=takeDecodedPreview(n)',JS)
   self.assertNotIn('activePageTurn',JS)

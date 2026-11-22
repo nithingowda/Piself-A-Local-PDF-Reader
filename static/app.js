@@ -1068,10 +1068,7 @@ function speechState(kind,state){
   if(state.spokenText!==undefined){
    return;
   }
-  if(state.active===false){
-   resetNumberedParagraphs(kind);
-   numberedPickMode[kind]=!$(kind+'-speech-player').hidden;
-  }
+  if(state.active===false){resetNumberedParagraphs(kind);refreshNumberedSelection(kind);}
  }
  if(state.spokenText!==undefined){
   if(kind==='pdf')void markPdfReading(state.spokenText,state.readingOffset||0,state.readingLength||0);
@@ -1886,11 +1883,11 @@ function beginCurl(direction,start){
  const edge=pages=>direction>0?pages[pages.length-1]:pages[0];
  const slot=slots.find(item=>Number(item.dataset.page)===edge(visible));
  const front=slot?.querySelector('img,canvas'),preview=imagePrefetches.get(edge(incoming));
- if(!front)return;
+ if(!front||!preview?.ready)return;
  const rect=slot.getBoundingClientRect(),canvas=document.createElement('canvas');
  const opposite=spread&&slots.length===2?slots[direction>0?0:1].getBoundingClientRect():null;
  const reverse=spread?imagePrefetches.get(direction>0?incoming[0]:incoming[incoming.length-1]):null;
- const book=opposite&&incoming.length===2;
+ const book=opposite&&reverse?.ready&&incoming.length===2;
  const bounds=book?{left:Math.min(rect.left,opposite.left),top:Math.min(rect.top,opposite.top),
   width:Math.max(rect.right,opposite.right)-Math.min(rect.left,opposite.left),
   height:Math.max(rect.bottom,opposite.bottom)-Math.min(rect.top,opposite.top)}:rect;
@@ -1903,7 +1900,7 @@ function beginCurl(direction,start){
  Object.assign(canvas.style,{position:'fixed',pointerEvents:'none',left:bounds.left+'px',top:bounds.top+'px',
   width:bounds.width+'px',height:bounds.height+'px',filter:getComputedStyle(front).filter,zIndex:'1'});
  $('reader').append(canvas);
- curl={canvas,ctx,book,reverse:reverse?.ready?reverse.img:null,opposite,bounds,front,under:preview?.ready?preview.img:null,rect,direction,progress:0,frame:0,
+ curl={canvas,ctx,book,reverse:reverse?.img,opposite,bounds,front,under:preview.img,rect,direction,progress:0,frame:0,
   tilt:start.y<rect.top+rect.height/2?1:-1,slot,epoch:layoutEpoch,origin:page};
 }
 function drawCurl(progress){
@@ -1916,11 +1913,7 @@ function drawCurl(progress){
   ctx.clearRect(0,0,w,h);
   ctx.scale(w/bounds.width,h/bounds.height);
   ctx.translate(-bounds.left,-bounds.top);
-  if(under)ctx.drawImage(under,rect.left,rect.top,rect.width,rect.height);
-  else{
-   ctx.fillStyle='#f6f3ed';
-   ctx.fillRect(rect.left,rect.top,rect.width,rect.height);
-  }
+  ctx.drawImage(under,rect.left,rect.top,rect.width,rect.height);
   const angle=Math.PI*progress,spine=direction>0?(rect.left+opposite.right)/2:(rect.right+opposite.left)/2;
   const landing=(1-Math.cos(angle))/2;
   const height=rect.height+(opposite.height-rect.height)*landing;
@@ -1932,22 +1925,16 @@ function drawCurl(progress){
   for(let i=0;i<strips;i++){
    const u=i/strips,v=(i+1)/strips,x=projected(u),next=projected(v);
    const frontFacing=(next-x)*direction>0,img=frontFacing?front:reverse;
-   const lift=16*Math.sin(angle)*u;
-   if(img){
-    const iw=img.naturalWidth||img.width,ih=img.naturalHeight||img.height;
-    const source=(next>x?u:1-v)*iw;
-    ctx.drawImage(img,source,0,iw/strips,ih,Math.min(x,next),top-lift,Math.abs(next-x)+.65,height+2*lift);
-   }else{
-    ctx.fillStyle='#f6f3ed';
-    ctx.fillRect(Math.min(x,next),top-lift,Math.abs(next-x)+.65,height+2*lift);
-   }
+   const iw=img.naturalWidth||img.width,ih=img.naturalHeight||img.height;
+   const source=(next>x?u:1-v)*iw,lift=16*Math.sin(angle)*u;
+   ctx.drawImage(img,source,0,iw/strips,ih,Math.min(x,next),top-lift,Math.abs(next-x)+.65,height+2*lift);
    ctx.fillStyle='rgba(0,0,0,'+(.22*Math.sin(angle)*(1-u))+')';
    ctx.fillRect(Math.min(x,next),top-lift,Math.abs(next-x)+.65,height+2*lift);
   }
   return;
  }
  ctx.fillStyle='white';ctx.fillRect(0,0,w,h);
- if(under)ctx.drawImage(under,0,0,w,h);
+ ctx.drawImage(under,0,0,w,h);
  // Reflect the lifted portion across an inclined crease. Flatten the
  // crease at either endpoint so the first and last frames meet the page.
  const slope=tilt*.23*Math.sin(Math.PI*progress)*Math.min(1,w/h);
@@ -2016,7 +2003,7 @@ $('page-area').addEventListener('pointerup',e=>{
  if(curl){settleCurl(curl.progress>=.32||(curl.progress>.08&&elapsed<300));lastTap=null;return;}
  if(prefs.gestures&&documentPDF&&zoom<=fitEntirePageZoom(page)+.04
     &&Math.abs(dx)>70&&Math.abs(dx)>Math.abs(dy)*2&&elapsed<700){
-  turnFromControl(dx<0?1:-1);lastTap=null;return;
+  turnBook(dx<0?1:-1);lastTap=null;return;
  }
  if(Math.hypot(dx,dy)<18&&elapsed<300){
   const now=performance.now();

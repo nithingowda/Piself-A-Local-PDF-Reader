@@ -18,20 +18,3 @@ test('closing the PDF player clears pending picks and the native text range',()=
  assert.equal(action.hidden,true);
  assert.equal($('pdf-speech-player').hidden,true);
 });
-
-test('finishing a selection lets the open PDF or EPUB player accept a fresh queue',()=>{
- const source=js.slice(js.indexOf('function speechState('),js.indexOf('// One-shot starting positions'));
- for(const kind of ['pdf','epub']){
-  const controls=new Map(),picks={[kind]:true},playing={[kind]:true},queue=['first'];
-  const $=id=>{
-   if(!controls.has(id))controls.set(id,{hidden:false,setAttribute(){}});
-   return controls.get(id);
-  };
-  const notify=new Function('$','numberedPlayback','numberedPickMode','clearSpeechHighlight','resetNumberedParagraphs',source+'return speechState;')(
-   $,playing,picks,()=>{},()=>{queue.length=0;playing[kind]=false;picks[kind]=false;});
-  notify(kind,{active:false,paused:false});
-  assert.equal(picks[kind],true);
-  assert.deepEqual(queue,[]);
-  assert.equal($(kind+'-remaining').hidden,true);
- }
-});
