@@ -111,13 +111,14 @@ export function speechSentenceRanges(chunk,marks=[]){
 
 export function createReadAloud({getText,next,peekNextText=()=>null,onState,getCsrfToken=()=>''}){
  let active=false,paused=false,token=0,voice=DEFAULT_VOICE,rate=1,audio=null,audioUrl=null;
- let combined=false;
+ let combined=false,clockTimer=null;
  const requests=new Set(),prepared=new Set();
  const notify=()=>onState?.({active,paused,rate,voice});
  const valid=session=>active&&session===token;
 
  // Cancel current and prefetched network work and release decoded audio.
  function stop(){
+  clearInterval(clockTimer);clockTimer=null;
   token++;active=false;paused=false;combined=false;
   for(const request of requests)request.abort();
   requests.clear();
@@ -299,18 +300,21 @@ export function createReadAloud({getText,next,peekNextText=()=>null,onState,getC
     const url=URL.createObjectURL(new Blob(batch,{type:'audio/mpeg'}));
     const ready={url};prepared.add(ready);audioUrl=url;
     const update=()=>{
-     if(!valid(session)||audioUrl!==url||!Number.isFinite(audio.duration)||audio.duration<=0)return;
-     const bytesPerSecond=bytes/audio.duration;
-     const position=offsets[first]+bytesPerSecond*audio.currentTime;
+     if(!valid(session)||audioUrl!==url)return;
+     const measured=Number.isFinite(audio.duration)&&audio.duration>0;
+     // Edge serves 48-kbit/s MP3. Use its byte rate while duration is unknown.
+     const bytesPerSecond=measured?bytes/audio.duration:6000;
+     const position=offsets[first]+bytesPerSecond*(audio.currentTime||0);
      const complete=offsets.length===jobs.length+1;
      const size=complete?offsets.at(-1):offsets.at(-1)*totalWords/readyWords;
      const index=ends.findIndex(end=>offsets[end]===undefined||offsets[end]>position);
      onState?.({passage:index<0?ends.length-1:index,
-      ...(!complete&&{estimated:true}),remaining:Math.ceil(Math.max(0,size-position)/bytesPerSecond/rate)});
+      ...(!(complete&&measured)&&{estimated:true}),remaining:Math.ceil(Math.max(0,size-position)/bytesPerSecond/rate)});
     };
     audio.onloadedmetadata=audio.ondurationchange=audio.ontimeupdate=audio.onseeked=update;
     audio.onended=()=>{
      if(!valid(session)||audioUrl!==url)return;
+     clearInterval(clockTimer);clockTimer=null;
      audioUrl=null;playing=false;
      URL.revokeObjectURL(url);prepared.delete(ready);
      if(nextClip===jobs.length)stop();
@@ -318,6 +322,8 @@ export function createReadAloud({getText,next,peekNextText=()=>null,onState,getC
     };
     audio.onerror=()=>fail(Error('Could not play the selected audio.'));
     audio.src=url;audio.playbackRate=rate;
+    update();
+    clockTimer=setInterval(()=>{if(!paused)update();},1000);
     if(!paused)await audio.play();
    }
    async function synthesize(){

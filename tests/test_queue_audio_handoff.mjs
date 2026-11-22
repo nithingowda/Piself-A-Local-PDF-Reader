@@ -103,3 +103,19 @@ test('playback starts while the next speech request is still pending',async t=>{
  assert.equal(played.length,2);
  player.onended();assert.equal(controller.active,false);
 });
+
+test('selected countdown follows the media clock without duration metadata or timeupdate',async t=>{
+ let player,pulse;
+ const states=[],original=globalThis.Audio;
+ globalThis.Audio=class{constructor(){player=this;this.duration=Infinity;this.currentTime=0;} async play(){} pause(){} load(){} removeAttribute(){}};
+ t.after(()=>{if(original)globalThis.Audio=original;else delete globalThis.Audio;});
+ t.mock.method(globalThis,'setInterval',fn=>{pulse=fn;return 1;});
+ t.mock.method(globalThis,'fetch',async()=>({ok:true,headers:new Headers(),blob:async()=>new Blob([new Uint8Array(60000)])}));
+ const controller=createReadAloud({onState:s=>states.push(s)});
+ await controller.playSelection(['First passage.']);
+ assert.equal(states.at(-1).remaining,10);
+ assert.equal(states.at(-1).estimated,true);
+ player.currentTime=3;pulse();assert.equal(states.at(-1).remaining,7);
+ player.duration=9;pulse();assert.equal(states.at(-1).remaining,6);
+ controller.stop();
+});
