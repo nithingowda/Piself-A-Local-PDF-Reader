@@ -1367,7 +1367,8 @@ async function openMagazine(item,start){
   readerHistoryActive=true;
  }
  clearMagazinePrefetches();cancelAllSharpImages();current=item;const g=++generation;const reading=saved[item.id]||{};
- zoom=1;rotation=reading.rotation||0;dimensions.clear();
+ // Open in the PDF's native orientation. Manual rotation lasts for this reading session.
+ zoom=1;rotation=0;dimensions.clear();
  $('reader').hidden=false;document.body.classList.add('reader-open');setReaderFocus(true);
  $('library').hidden=true;$('reader-title').textContent=item.title;
  $('view-mode').value=['scroll','single','book'].includes(reading.mode||prefs.mode)?(reading.mode||prefs.mode):'scroll';$('pages').replaceChildren();
