@@ -56,7 +56,7 @@ const pdfURL=i=>'/'+(i.source||'magazines')+'/' +i.path.split('/').map(encodeURI
 const isEpub=item=>item.format==='epub'||item.path.toLowerCase().endsWith('.epub');
 const started=i=>!!(saved[i.id]?.page||saved[i.id]?.epubCfi);
 const finished=i=>!!saved[i.id]?.completed||(!!saved[i.id]?.total&&saved[i.id]?.total>1&&saved[i.id]?.page>=saved[i.id]?.total);
-const itemKind=i=>i.source==='books'?'Book':i.source==='newspapers'?'Newspaper':'Magazine';
+const itemKind=i=>i.source==='books'?'Book':i.source==='newspapers'?'Newspaper':i.source?.startsWith('menu-')?sourceLabel(i.source):'Magazine';
 const fileSize=n=>n<1048576?Math.max(1,Math.round(n/1024))+' KB':(n/1048576).toFixed(1)+' MB';
 const thumbs=new Map();let coverQueue=[],coverBusy=false;
 const coverURL=item=>'/api/covers/'+item.coverKey;
@@ -159,9 +159,13 @@ function editShelves(){
 const shelfResizeObserver=new ResizeObserver(entries=>{
  for(const {target} of entries)target.dispatchEvent(new Event('scroll'));
 });
+let configuredSources=['magazines','newspapers','books'];
+function sourceLabel(key){
+ return key.replace(/^menu-/,'').split('-').map(word=>word==='pdf'?'PDF':word[0].toUpperCase()+word.slice(1)).join(' ');
+}
 function drawSourceShelves(items){
  const groups=new Map(homeShelves.map(s=>[s.title,[]]));
- const sources={magazines:[],newspapers:[],books:[]};
+ const sources=Object.fromEntries(configuredSources.map(key=>[key,[]]));
  // A nested assignment takes precedence over its parent folder.
  const rules=[...homeShelves].sort((a,b)=>b.category.length-a.category.length);
  for(const item of items){
@@ -172,7 +176,7 @@ function drawSourceShelves(items){
  }
  // Reuse an admin shelf with the same name and keep source rows at the bottom.
  for(const [source,items] of Object.entries(sources)){
-  const title=source[0].toUpperCase()+source.slice(1);
+  const title=sourceLabel(source);
   const assigned=groups.get(title)||[];
   groups.delete(title);
   groups.set(title,assigned.concat(items));
@@ -207,6 +211,15 @@ function drawSourceShelves(items){
    forward.hidden=shown>=publications.length&&cards.scrollLeft+cards.clientWidth>=cards.scrollWidth-1;
   }
   cards.addEventListener('scroll',updateArrows,{passive:true});
+  const all=el('button','','Show more');
+  all.setAttribute('aria-label','View all '+title);
+  all.onclick=()=>{
+   const expanded=track.classList.toggle('expanded');
+   if(expanded)while(shown<publications.length)appendBatch();
+   all.textContent=expanded?'Show less':'Show more';
+   all.setAttribute('aria-expanded',String(expanded));updateArrows();
+  };
+  all.setAttribute('aria-expanded','false');heading.append(all);
   appendBatch();updateArrows();
   shelfResizeObserver.observe(cards);
  }
@@ -1769,11 +1782,11 @@ $('backup-file').onchange=async e=>{const file=e.target.files[0];e.target.value=
 // Uploads stream one File at a time; the browser never reads the entire file into JS memory.
 let uploadXHR=null,uploading=false,uploadCancelled=false;
 /** populate Upload Sources: Support the PiShelf reader or library interface. */
-function populateUploadSources(){const selected=$('upload-source').value;const sources=[...new Set(categories.map(c=>c.source))];$('upload-source').replaceChildren(...sources.map(s=>new Option(s==='newspapers'?'Newspapers':s==='books'?'Books':'Magazines',s)));if(sources.includes(selected))$('upload-source').value=selected;populateUploadCategories();}
+function populateUploadSources(){const selected=$('upload-source').value;const sources=configuredSources;$('upload-source').replaceChildren(...sources.map(s=>new Option(sourceLabel(s),s)));if(sources.includes(selected))$('upload-source').value=selected;populateUploadCategories();}
 /** populate Upload Categories: Support the PiShelf reader or library interface. */
 function populateUploadCategories(){const source=$('upload-source').value;
  $('upload-files').accept=source==='books'?'.pdf,application/pdf,.epub,application/epub+zip':'.pdf,application/pdf';
- $('upload-category').replaceChildren(...categories.filter(c=>c.source===source).map(c=>new Option(c.path==='.'?'Uncategorised':c.path,c.path)));}
+ $('upload-category').replaceChildren(new Option('Source folder','.'),...categories.filter(c=>c.source===source&&c.path!=='.').map(c=>new Option(c.path==='.'?'Uncategorised':c.path,c.path)));}
 $('upload-source').onchange=populateUploadCategories;
 /** upload File: Support the PiShelf reader or library interface. */
 function uploadFile(file,source,category){return new Promise((resolve,reject)=>{const xhr=uploadXHR=new XMLHttpRequest();xhr.open('POST','/api/upload?'+new URLSearchParams({source,category,filename:file.name}));xhr.setRequestHeader('Content-Type',file.name.toLowerCase().endsWith('.epub')?'application/epub+zip':'application/pdf');
@@ -1800,7 +1813,7 @@ $('settings-paths-set-pin').onclick=async()=>{const password=$('settings-paths-p
  try{await api('/api/admin/paths/pin',{password,pin});$('settings-paths-password').value='';$('settings-paths-new-pin').value='';await prepareFolderPathSettings();toast('Access PIN configured.');}catch(error){toast(error.message);}
 };
 $('settings-paths-unlock').onclick=async()=>{const pin=$('settings-paths-pin').value;
- try{await api('/api/admin/paths/verify',{pin});folderAccessPin=pin;const paths=await api('/api/admin/paths');const form=$('settings-paths-form');for(const key of ['magazines','newspapers','books'])form.elements[key].value=paths[key]||'';form.hidden=false;$('settings-paths-locked').hidden=true;$('settings-paths-pin').value='';}catch(error){$('settings-paths-pin-status').textContent=error.message;}
+ try{await api('/api/admin/paths/verify',{pin});folderAccessPin=pin;const paths=await api('/api/admin/paths');const form=$('settings-paths-form');for(const key of ['magazines','newspapers','books'])form.elements[key].value=paths[key]||'';form.elements.menus.value=Object.entries(paths).filter(([key])=>key.startsWith('menu-')).map(([key,path])=>sourceLabel(key)+' | '+path).join('\n');form.hidden=false;$('settings-paths-locked').hidden=true;$('settings-paths-pin').value='';}catch(error){$('settings-paths-pin-status').textContent=error.message;}
 };
 $('settings-paths-form').onsubmit=async event=>{event.preventDefault();const form=event.currentTarget;const button=form.querySelector('[type=submit]');button.disabled=true;
  try{await api('/api/admin/paths',{...Object.fromEntries(new FormData(form)),pin:folderAccessPin});$('settings-paths-status').textContent='Saved. Restart PiShelf to apply new folders.';}catch(error){$('settings-paths-status').textContent=error.message;}finally{button.disabled=false;}
@@ -2175,6 +2188,13 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{if(pre
    $('settings').close();
    dialog.showModal();
   };
+  try{
+   configuredSources=await api('/api/sources');
+   for(const id of ['source-filter','category-source']){
+    const select=$(id);
+    select.replaceChildren(...(id==='source-filter'?[new Option('All publications','')]:[]),...configuredSources.map(key=>new Option(sourceLabel(key),key)));
+   }
+  }catch(e){toast(e.message);}
   try{homeShelves=await api('/api/home-shelves')||[];}catch(e){toast(e.message);}
   applyPrefs();await refresh();
   const resume=history.state?.pishelfReader&&library.find(item=>item.id===history.state.pdfId);
