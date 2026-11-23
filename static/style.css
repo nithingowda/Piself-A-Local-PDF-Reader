@@ -403,3 +403,6 @@ body.epub-open{overflow:hidden}
 .source-covers .card{scroll-snap-align:start}
 .shelf-editor-row{display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-block:8px}
 .shelf-editor-row input{flex:1 1 130px;min-width:0}
+
+#library.home-overview #shelf-label,
+#library.home-overview .browse-filters { display: none; }
