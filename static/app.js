@@ -158,15 +158,23 @@ function editShelves(){
 }
 function drawSourceShelves(items){
  const groups=new Map(homeShelves.map(s=>[s.title,[]]));
- const other=[];
+ const sources={magazines:[],newspapers:[],books:[]};
  // A nested assignment takes precedence over its parent folder.
  const rules=[...homeShelves].sort((a,b)=>b.category.length-a.category.length);
  for(const item of items){
   const rule=rules.find(s=>s.source===(item.source||'magazines')&&
    (!s.category||item.category===s.category||item.category?.startsWith(s.category+'/')));
-  (rule?groups.get(rule.title):other).push(item);
+  if(rule)groups.get(rule.title).push(item);
+  else sources[item.source||'magazines']?.push(item);
  }
- for(const [title,publications] of [...groups,['Uncategorised',other]]){
+ // Reuse an admin shelf with the same name and keep source rows at the bottom.
+ for(const [source,items] of Object.entries(sources)){
+  const title=source[0].toUpperCase()+source.slice(1);
+  const assigned=groups.get(title)||[];
+  groups.delete(title);
+  groups.set(title,assigned.concat(items));
+ }
+ for(const [title,publications] of groups){
   if(!publications.length)continue;
   const section=el('section','source-shelf'),heading=el('div','section-title');
   heading.append(el('h2','',title));section.append(heading);
@@ -187,6 +195,7 @@ function drawLibrary(){
  const q=$('search').value.trim().toLowerCase();const terms=q.split(/\s+/).filter(Boolean);const items=library.filter(i=>(!collectionFilter||collectionSets.get(collectionFilter)?.has(i.id))&&(!sourceFilter||i.source===sourceFilter)&&(!seriesFilter||i.series===seriesFilter)&&(!tagFilter||(i.tags||[]).includes(tagFilter))&&(!category||i.category===category)&&terms.every(term=>(i.title+' '+i.series+' '+dateLabel(i)+' '+i.issueDate+' '+i.category+' '+(i.tags||[]).join(' ')).toLowerCase().includes(term))).filter(i=>filter==='all'||filter==='favorites'&&saved[i.id]?.favorite||filter==='reading'&&started(i)&&!finished(i)||filter==='unread'&&!started(i)&&!finished(i)||filter==='completed'&&finished(i));
  const order=filter==='reading'?'recent':$('sort').value;items.sort((a,b)=>order==='title'?a.title.localeCompare(b.title):order==='recent'?(saved[b.id]?.lastRead||0)-(saved[a.id]?.lastRead||0):order==='size'?b.size-a.size:order==='issue'?(b.issueDate||'').localeCompare(a.issueDate||'')||b.modified-a.modified:b.modified-a.modified);
  const overview=filter==='all'&&!q&&!sourceFilter&&!seriesFilter&&!tagFilter&&!category&&!collectionFilter;
+ $('library').classList.toggle('home-overview',overview);
  $('grid').classList.toggle('source-overview',overview);
  if(overview)drawSourceShelves(items);
  else items.slice(0,visibleLimit).forEach(i=>cardFor(i,$('grid')));
