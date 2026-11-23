@@ -394,18 +394,3 @@ body.epub-open{overflow:hidden}
   #reader .reader-bar{padding-top:max(6px,env(safe-area-inset-top))}
   #reader .controls{padding-bottom:max(6px,env(safe-area-inset-bottom))}
 }
-
-@media(max-width:650px){
-  #reader .controls{
-    display:grid;
-    grid-template-columns:auto auto auto auto auto minmax(0,1fr);
-    gap:3px;
-    padding:4px 6px max(4px,env(safe-area-inset-bottom));
-  }
-  #reader .controls .reader-scrubber{grid-column:1/-1}
-  #reader .controls .divider{display:none}
-  #reader .controls button,#reader .controls #view-mode{
-    min-height:32px;padding:4px 5px;font-size:11px;
-  }
-  #reader .controls #view-mode{width:100%;min-width:0;max-width:112px}
-}
