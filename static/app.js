@@ -164,7 +164,7 @@ function applyPrefs(){const sortOptions=[...$('sort').options].map(o=>o.value);i
 /** store Prefs: Support the PiShelf reader or library interface. */
 function storePrefs(){try{localStorage.setItem('pishelf-settings',JSON.stringify(prefs));}catch{toast('Browser settings storage is unavailable.');}applyPrefs();}
 /** open Settings: Support the PiShelf reader or library interface. */
-function openSettings(){$('pref-comfort').value=prefs.comfort||'custom';$('pref-readerBrightness').value=prefs.readerBrightness;$('reader-brightness-value').textContent=prefs.readerBrightness+'%';for(const k of ['siteTheme','theme','mode','quality','density'])$('pref-'+k).value=prefs[k];$('pref-gestures').checked=prefs.gestures;if(!uploading)populateUploadSources();drawCollectionManager();drawCategoryManager();activateSettingsTab('upload');prepareFolderPathSettings();$('settings').showModal();loadTrash();loadWebPCacheStats();}
+function openSettings(){$('pdf-navigation-settings').hidden=$('reader').hidden;$('pref-comfort').value=prefs.comfort||'custom';$('pref-readerBrightness').value=prefs.readerBrightness;$('reader-brightness-value').textContent=prefs.readerBrightness+'%';for(const k of ['siteTheme','theme','mode','quality','density'])$('pref-'+k).value=prefs[k];$('pref-gestures').checked=prefs.gestures;if(!uploading)populateUploadSources();drawCollectionManager();drawCategoryManager();activateSettingsTab('upload');prepareFolderPathSettings();$('settings').showModal();loadTrash();loadWebPCacheStats();}
 // Reading comfort presets are display-only and never alter PDF bytes.
 const comfortPresets={daylight:{theme:'light',readerBrightness:100},bedtime:{theme:'night',readerBrightness:55},amoled:{theme:'amoled',readerBrightness:80}};
 $('pref-comfort').onchange=e=>{
@@ -348,7 +348,7 @@ $('page-area').addEventListener('pointercancel',event=>{if(annotationStroke?.id=
 let slots=[],renderQueue=[],renderBusy=false,pageObserver=null;
 const dimensions=new Map(),renderedSlots=new Set();
 /** update Page UI: Keep the visible PDF page and navigation state in sync. */
-function updatePageUI(){if(!documentPDF)return;const percent=Math.round(page/documentPDF.numPages*100);$('reader-progress-fill').style.width=percent+'%';document.querySelector('.reader-progress').setAttribute('aria-valuenow',String(percent));document.querySelector('.reader-progress').setAttribute('aria-valuetext',page+' of '+documentPDF.numPages+' pages · '+percent+'%');$('page-number').value=page;$('reader-page-slider').max=documentPDF.numPages;$('reader-page-slider').value=page;$('reader-page-slider-label').textContent=page+' / '+documentPDF.numPages+' · '+percent+'%';$('page-total').textContent='/ '+documentPDF.numPages;$('prev').disabled=page<=1;$('next').disabled=isBookSpread()?(page===1?documentPDF.numPages===1:spreadStart(page)+1>=documentPDF.numPages):page>=documentPDF.numPages;$('book-turn-prev').disabled=page<=1;$('book-turn-next').disabled=$('next').disabled;const marks=saved[current.id]?.bookmarks||[];$('bookmark').textContent=marks.includes(page)?'★':'☆';$('bookmark').setAttribute('aria-pressed',marks.includes(page));}
+function updatePageUI(){if(!documentPDF)return;const percent=Math.round(page/documentPDF.numPages*100);$('reader-progress-fill').style.width=percent+'%';document.querySelector('.reader-progress').setAttribute('aria-valuenow',String(percent));document.querySelector('.reader-progress').setAttribute('aria-valuetext',page+' of '+documentPDF.numPages+' pages · '+percent+'%');$('reader-page-slider').max=documentPDF.numPages;$('reader-page-slider').value=page;$('reader-page-slider-label').textContent=page+' / '+documentPDF.numPages+' · '+percent+'%';$('book-turn-prev').disabled=page<=1;$('book-turn-next').disabled=isBookSpread()?spreadPages(page).at(-1)>=documentPDF.numPages:page>=documentPDF.numPages;const marks=saved[current.id]?.bookmarks||[];$('bookmark').textContent=marks.includes(page)?'Remove bookmark':'Bookmark this page';$('bookmark').setAttribute('aria-pressed',marks.includes(page));}
 // Scrub previews page numbers without rerendering dozens of pages while
 // dragging; the final change uses the existing move() navigation path.
 $('reader-page-slider').addEventListener('input',e=>{
@@ -1381,7 +1381,6 @@ async function openMagazine(item,start){
   await annotationLoad(item.id);
   if(g!==generation||documentPDF!==doc)return;
   page=Math.max(1,Math.min(start||reading.page||1,doc.numPages));
-  $('page-number').max=doc.numPages;
   // Open immediately using the current page dimensions. Hydrate other page
   // sizes in small idle batches to avoid blocking large magazines on startup.
   const first=await doc.getPage(page),firstView=first.getViewport({scale:1});
@@ -1507,6 +1506,7 @@ function showThumbnailRange(begin){
 let thumbnailObserver=null;
 $('page-thumbnails').onclick=()=>{
  if(!documentPDF)return;
+ if($('settings').open)$('settings').close();
  showThumbnailRange(Math.floor((page-1)/60)*60+1);
  $('thumbnail-dialog').showModal();
 };
@@ -1523,7 +1523,7 @@ $('cache-clear').onclick=async()=>{
  try{const result=await api('/api/webp-cache/clear',{});toast('Removed '+result.removed+' cached images.');loadWebPCacheStats();}
  catch(e){toast(e.message);}
 };
-$('back').onclick=closeReader;$('prev').onclick=()=>turnFromControl(-1);$('next').onclick=()=>turnFromControl(1);$('book-turn-prev').onclick=()=>turnFromControl(-1);$('book-turn-next').onclick=()=>turnFromControl(1);$('page-number').onchange=e=>move(parseInt(e.target.value)||1);
+$('back').onclick=closeReader;$('book-turn-prev').onclick=()=>turnFromControl(-1);$('book-turn-next').onclick=()=>turnFromControl(1);
 /** Button zoom keeps the page point under the viewport center visible.
  * rebuild() recreates page slots and normally scrolls to the page top; restore
  * a fractional anchor afterwards to avoid jumping left or losing the paragraph.
@@ -1635,7 +1635,7 @@ desktopZoomArea.addEventListener('pointercancel',endDesktopPan);
 
 $('fit-page').onclick=()=>{if(documentPDF){automaticFit='auto';void rebuild();}};
 $('rotate').onclick=()=>{rotation=(rotation+90)%360;rebuild();};$('view-mode').onchange=()=>{prefs.mode=$('view-mode').value;automaticFit='auto';storePrefs();if(documentPDF){if(isBookSpread())page=spreadStart(page);zoom=fitEntirePageZoom(page);rebuild();}};
-$('bookmark').onclick=()=>{if(!documentPDF)return;const marks=saved[current.id]?.bookmarks||[];persist(current.id,{bookmarks:marks.includes(page)?marks.filter(n=>n!==page):[...marks,page].sort((a,b)=>a-b)});updatePageUI();updateBookmarks();};$('bookmarks').onchange=e=>{if(e.target.value)move(+e.target.value);e.target.value='';};
+$('bookmark').onclick=()=>{if(!documentPDF)return;const marks=saved[current.id]?.bookmarks||[];persist(current.id,{bookmarks:marks.includes(page)?marks.filter(n=>n!==page):[...marks,page].sort((a,b)=>a-b)});updatePageUI();updateBookmarks();};$('bookmarks').onchange=e=>{if(e.target.value){$('settings').close();move(+e.target.value);}e.target.value='';};
 $('fullscreen-exit').onclick=()=>$('fullscreen').click();
 $('fullscreen').onclick=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await $('reader').requestFullscreen();}catch{toast('Fullscreen is unavailable in this browser.');}};
 let searchTimer;$('search').oninput=()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>{visibleLimit=60;drawLibrary();},150);};$('sort').onchange=e=>{prefs.sort=e.target.value;storePrefs();drawLibrary();};$('refresh').onclick=()=>refresh();document.querySelectorAll('[data-filter]').forEach(b=>b.onclick=()=>{filter=b.dataset.filter;category=collectionFilter='';visibleLimit=60;document.querySelectorAll('.tab,.category').forEach(t=>t.classList.toggle('active',t===b));drawLibrary();});
