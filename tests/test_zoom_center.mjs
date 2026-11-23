@@ -72,3 +72,18 @@ test('two quick taps magnify a fitted page, then restore fit on the next pair',(
  assert.match(css,/#page-area\.zoomed-in #pages\{min-width:100%;width:max-content\}/);
  assert.match(css,/#page-area\.zoomed-in \.pdf-slot\{margin-left:auto;margin-right:auto\}/);
 });
+test('startup preferences apply to elements present on the library homepage',()=>{
+ const html=readFileSync(new URL('../static/index.html',import.meta.url),'utf8');
+ const nodes=new Map([...html.matchAll(/\bid="([^"]+)"/g)].map(([,id])=>[
+  id,{dataset:{},style:{setProperty(){}},setAttribute(){}}
+ ]));
+ nodes.get('sort').options=[{value:'issue'}];
+ const document={body:{dataset:{}},querySelector:tag=>html.includes('<'+tag+'>')?{}:null};
+ const prefs={sort:'issue',siteTheme:'light',theme:'night',density:'compact',readerBrightness:75};
+ const start=js.indexOf('function applyPrefs()'),end=js.indexOf('function storePrefs()',start);
+ assert.ok(start>=0&&end>start);
+ const apply=new Function('document','$','prefs',js.slice(start,end)+'\napplyPrefs();');
+ apply(document,id=>nodes.get(id),prefs);
+ assert.equal(document.body.dataset.theme,'light');
+ assert.equal(nodes.get('reader').dataset.pageTheme,'night');
+});

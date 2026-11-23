@@ -1,6 +1,4 @@
-# PiShelf
-
-<img src="static/pishelf-logo.webp" alt="PiShelf logo" width="240">
+# ▥ PiShelf
 
 PiShelf is a self-hosted reading room for PDF magazines, newspapers and DRM-free EPUB books. Point it at folders on your server or mounted NAS, then open your shelf from a phone, tablet or desktop browser.
 
