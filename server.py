@@ -130,8 +130,9 @@ class Handler(BaseHTTPRequestHandler):
 
     # categories: handle this step of the server request or library workflow.
     def categories(self):
-        self.library_items()
-        return self.server.scan_categories
+        with sqlite3.connect(self.server.state_db) as db:
+            return [dict(source=source,path=path) for source,path in db.execute(
+                'SELECT source,path FROM managed_categories ORDER BY source,path COLLATE NOCASE')]
 
     # upload pdf: handle this step of the server request or library workflow.
     def upload_pdf(self):
@@ -484,7 +485,7 @@ class Handler(BaseHTTPRequestHandler):
         route = urlsplit(self.path).path
         if route == '/api/home-shelves':
             shelves = data.get('shelves')
-            if not isinstance(shelves, list) or not 1 <= len(shelves) <= 32:
+            if not isinstance(shelves, list) or len(shelves) > 32:
                 raise ValueError()
             for shelf in shelves:
                 if not isinstance(shelf, dict) or set(shelf) != {'source','title','category'}:
@@ -554,6 +555,9 @@ class Handler(BaseHTTPRequestHandler):
             if root is None: raise ValueError()
             path = safe_relative(data['path'])
             folder = checked_path(root, path)
+            if data.get('action') in ('rename','delete') and not db.execute(
+                    'SELECT 1 FROM managed_categories WHERE source=? AND path=?',(source,path)).fetchone():
+                raise APIError(404,'Category not found.')
             if data.get('action') == 'rename':
                 if path == '.' or folder == root: raise APIError(400,'Cannot rename a library root.')
                 new_path = safe_relative(data.get('newPath',''))
@@ -566,6 +570,7 @@ class Handler(BaseHTTPRequestHandler):
                     if any(folder.iterdir()): raise APIError(409,'Only empty categories can be renamed.')
                     folder.rename(destination)
                 except OSError: raise APIError(409,'Unable to rename this category.')
+                db.execute('UPDATE managed_categories SET path=? WHERE source=? AND path=?',(new_path,source,path))
                 self.server.scan_time=float('-inf')
                 return {'ok': True}
             if data.get('action') == 'delete':
@@ -573,9 +578,11 @@ class Handler(BaseHTTPRequestHandler):
                 try: folder.rmdir()
                 except FileNotFoundError: raise APIError(404,'Category no longer exists.')
                 except OSError: raise APIError(409,'Category is not empty. Move or remove its files and subcategories first.')
+                db.execute('DELETE FROM managed_categories WHERE source=? AND path=?',(source,path))
                 self.server.scan_time=float('-inf')
                 return {'ok': True}
             folder.mkdir(parents=True, exist_ok=True)
+            db.execute('INSERT OR IGNORE INTO managed_categories VALUES (?,?)',(source,path))
             self.server.scan_time=float('-inf')
             return {'ok': True}
         if route == '/api/issue/edit':
@@ -651,6 +658,9 @@ class Handler(BaseHTTPRequestHandler):
                 if category.get('path') == '.': continue
                 folders.append(checked_path(root,safe_relative(category['path'])))
             for folder in folders: folder.mkdir(parents=True,exist_ok=True)
+            if data.get('managedCategories') is True:
+                db.executemany('INSERT OR IGNORE INTO managed_categories VALUES (?,?)',
+                               [(c['source'],c['path']) for c in categories if c['path']!='.'])
             for key,value in progress.items(): db.execute('INSERT OR REPLACE INTO progress VALUES (?,?)',(key,json.dumps(value)))
             for key,value in metadata.items(): db.execute('INSERT OR REPLACE INTO metadata VALUES (?,?)',(key,json.dumps(value)))
             for collection in collections:
@@ -911,7 +921,7 @@ class Handler(BaseHTTPRequestHandler):
                     db.execute('BEGIN')
                     value=dict(format='pishelf-backup',version=1,created=datetime.datetime.now(datetime.timezone.utc).isoformat(),
                         progress={k:json.loads(v) for k,v in db.execute('SELECT id,value FROM progress')},
-                        metadata={k:json.loads(v) for k,v in db.execute('SELECT id,value FROM metadata')},categories=self.categories(),collections=read_collections(db))
+                        metadata={k:json.loads(v) for k,v in db.execute('SELECT id,value FROM metadata')},categories=self.categories(),managedCategories=True,collections=read_collections(db))
                 self.json_response(value,head=head); return
 
             if path == '/api/annotations':
@@ -1210,6 +1220,7 @@ def make_server(host,port,library,data,newspapers=None,books=None):
         if row:
             server.roots={k:Path(v) for k,v in json.loads(row[0]).items()}
             server.library=server.roots['magazines']
+        db.execute('CREATE TABLE IF NOT EXISTS managed_categories (source TEXT,path TEXT,PRIMARY KEY(source,path))')
         db.execute('CREATE TABLE IF NOT EXISTS homepage (id INTEGER PRIMARY KEY,shelves TEXT NOT NULL)')
         db.execute('CREATE TABLE IF NOT EXISTS collections (id TEXT PRIMARY KEY,name TEXT NOT NULL COLLATE NOCASE UNIQUE)')
         db.execute('CREATE TABLE IF NOT EXISTS collection_items (collection_id TEXT NOT NULL,item_id TEXT NOT NULL,PRIMARY KEY(collection_id,item_id))')
