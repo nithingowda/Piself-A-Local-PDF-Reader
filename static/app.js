@@ -156,6 +156,9 @@ function editShelves(){
  };
  render();
 }
+const shelfResizeObserver=new ResizeObserver(entries=>{
+ for(const {target} of entries)target.dispatchEvent(new Event('scroll'));
+});
 function drawSourceShelves(items){
  const groups=new Map(homeShelves.map(s=>[s.title,[]]));
  const sources={magazines:[],newspapers:[],books:[]};
@@ -186,10 +189,25 @@ function drawSourceShelves(items){
    for(const item of publications.slice(shown,shown+12))cardFor(item,cards);
    shown+=12;more.hidden=shown>=publications.length;
   }
-  more.onclick=appendBatch;heading.append(more);appendBatch();
+  const actions=el('div','shelf-actions'),next=el('button','','→');
+  next.type='button';next.setAttribute('aria-label','Scroll '+title+' right');
+  function updateArrow(){
+   const end=cards.scrollWidth-cards.clientWidth;
+   next.hidden=end<=1;
+   next.disabled=cards.scrollLeft>=end-1;
+  }
+  next.onclick=()=>cards.scrollBy({
+   left:cards.clientWidth,
+   behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'
+  });
+  cards.addEventListener('scroll',updateArrow,{passive:true});
+  more.onclick=()=>{appendBatch();updateArrow();};
+  actions.append(more,next);heading.append(actions);appendBatch();
+  shelfResizeObserver.observe(cards);
  }
 }
 function drawLibrary(){
+ shelfResizeObserver.disconnect();
  coverObserver.disconnect();coverQueue=[];$('grid').replaceChildren();$('resume-grid').replaceChildren();$('count').textContent=library.length;
  $('shelf-label').textContent=collections.find(c=>c.id===collectionFilter)?.name||category||({all:'Categories',reading:'Continue reading',favorites:'Favourites',unread:'Unread',completed:'Finished'}[filter]);
  const q=$('search').value.trim().toLowerCase();const terms=q.split(/\s+/).filter(Boolean);const items=library.filter(i=>(!collectionFilter||collectionSets.get(collectionFilter)?.has(i.id))&&(!sourceFilter||i.source===sourceFilter)&&(!seriesFilter||i.series===seriesFilter)&&(!tagFilter||(i.tags||[]).includes(tagFilter))&&(!category||i.category===category)&&terms.every(term=>(i.title+' '+i.series+' '+dateLabel(i)+' '+i.issueDate+' '+i.category+' '+(i.tags||[]).join(' ')).toLowerCase().includes(term))).filter(i=>filter==='all'||filter==='favorites'&&saved[i.id]?.favorite||filter==='reading'&&started(i)&&!finished(i)||filter==='unread'&&!started(i)&&!finished(i)||filter==='completed'&&finished(i));
