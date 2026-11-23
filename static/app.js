@@ -121,7 +121,6 @@ function cardFor(item,target){
 /** draw Library: Support the PiShelf reader or library interface. */
 // === Library grid ===========================================================
 // Only create cards for the current visibleLimit; covers are loaded lazily.
-const sourceRoots=['magazines','newspapers','books'].map(source=>({source,title:source[0].toUpperCase()+source.slice(1),category:''}));
 let homeShelves=[];
 function editShelves(){
  const panel=$('home-shelf-settings');
@@ -130,7 +129,7 @@ function editShelves(){
  const draft=homeShelves.map(s=>({...s}));
  const folder=$('shelf-folder');
  folder.replaceChildren();
- const choices=[...sourceRoots,...categories.map(c=>({source:c.source,category:c.path,title:c.path.split('/').pop()}))];
+ const choices=categories.map(c=>({source:c.source,category:c.path,title:c.path.split('/').pop()}));
  choices.forEach((s,i)=>folder.add(new Option(s.category?s.source+' / '+s.category:s.title,i)));
  function render(){
   const list=$('shelf-list');list.replaceChildren();
@@ -147,6 +146,7 @@ function editShelves(){
    list.append(row);
   });
  }
+ $('shelf-add').disabled=!choices.length;
  $('shelf-add').onclick=()=>{if(draft.length>=32)return toast('Maximum 32 shelves');const choice=choices[folder.value];if(draft.some(s=>s.source===choice.source&&s.category===choice.category))return toast('This folder already has a category.');draft.push({...choice});render();};
  $('shelf-save').onclick=async()=>{
   if(draft.some(s=>!s.title||s.title.toLowerCase()==='uncategorised'))return toast('Enter a category name other than Uncategorised.');
