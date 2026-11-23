@@ -165,21 +165,16 @@ function sourceLabel(key){
 }
 function drawSourceShelves(items){
  const groups=new Map(homeShelves.map(s=>[s.title,[]]));
- const sources=Object.fromEntries(configuredSources.map(key=>[key,[]]));
- // A nested assignment takes precedence over its parent folder.
+ // Keep source shelves at the bottom while preserving the chosen item order.
+ for(const key of configuredSources){
+  const title=sourceLabel(key);
+  groups.delete(title);groups.set(title,[]);
+ }
  const rules=[...homeShelves].sort((a,b)=>b.category.length-a.category.length);
  for(const item of items){
-  const rule=rules.find(s=>s.source===(item.source||'magazines')&&
-   (!s.category||item.category===s.category||item.category?.startsWith(s.category+'/')));
-  if(rule)groups.get(rule.title).push(item);
-  else sources[item.source||'magazines']?.push(item);
- }
- // Reuse an admin shelf with the same name and keep source rows at the bottom.
- for(const [source,items] of Object.entries(sources)){
-  const title=sourceLabel(source);
-  const assigned=groups.get(title)||[];
-  groups.delete(title);
-  groups.set(title,assigned.concat(items));
+  const source=item.source||'magazines';
+  const rule=rules.find(s=>s.source===source&&(!s.category||item.category===s.category||item.category?.startsWith(s.category+'/')));
+  groups.get(rule?.title||sourceLabel(source))?.push(item);
  }
  for(const [title,publications] of groups){
   if(!publications.length)continue;
@@ -211,12 +206,12 @@ function drawSourceShelves(items){
    forward.hidden=shown>=publications.length&&cards.scrollLeft+cards.clientWidth>=cards.scrollWidth-1;
   }
   cards.addEventListener('scroll',updateArrows,{passive:true});
-  const all=el('button','','Show more');
+  const all=el('button','','View all ('+publications.length+')');
   all.setAttribute('aria-label','View all '+title);
   all.onclick=()=>{
    const expanded=track.classList.toggle('expanded');
    if(expanded)while(shown<publications.length)appendBatch();
-   all.textContent=expanded?'Show less':'Show more';
+   all.textContent=expanded?'Back to row':'View all ('+publications.length+')';
    all.setAttribute('aria-expanded',String(expanded));updateArrows();
   };
   all.setAttribute('aria-expanded','false');heading.append(all);
@@ -229,7 +224,7 @@ function drawLibrary(){
  coverObserver.disconnect();coverQueue=[];$('grid').replaceChildren();$('resume-grid').replaceChildren();$('count').textContent=library.length;
  $('shelf-label').textContent=collections.find(c=>c.id===collectionFilter)?.name||category||({all:'Categories',reading:'Continue reading',favorites:'Favourites',unread:'Unread',completed:'Finished'}[filter]);
  const q=$('search').value.trim().toLowerCase();const terms=q.split(/\s+/).filter(Boolean);const items=library.filter(i=>(!collectionFilter||collectionSets.get(collectionFilter)?.has(i.id))&&(!sourceFilter||i.source===sourceFilter)&&(!seriesFilter||i.series===seriesFilter)&&(!tagFilter||(i.tags||[]).includes(tagFilter))&&(!category||i.category===category)&&terms.every(term=>(i.title+' '+i.series+' '+dateLabel(i)+' '+i.issueDate+' '+i.category+' '+(i.tags||[]).join(' ')).toLowerCase().includes(term))).filter(i=>filter==='all'||filter==='favorites'&&saved[i.id]?.favorite||filter==='reading'&&started(i)&&!finished(i)||filter==='unread'&&!started(i)&&!finished(i)||filter==='completed'&&finished(i));
- const order=filter==='reading'?'recent':$('sort').value;items.sort((a,b)=>order==='title'?a.title.localeCompare(b.title):order==='recent'?(saved[b.id]?.lastRead||0)-(saved[a.id]?.lastRead||0):order==='size'?b.size-a.size:order==='issue'?(b.issueDate||'').localeCompare(a.issueDate||'')||b.modified-a.modified:b.modified-a.modified);
+ const order=filter==='reading'?'recent':$('sort').value;items.sort((a,b)=>order==='title'?a.title.localeCompare(b.title):order==='recent'?(saved[b.id]?.lastRead||0)-(saved[a.id]?.lastRead||0):order==='size'?b.size-a.size:order==='issue'?(b.issueDate||'').localeCompare(a.issueDate||'')||b.modified-a.modified:(b.added??b.modified)-(a.added??a.modified)||b.modified-a.modified||a.title.localeCompare(b.title));
  const overview=filter==='all'&&!q&&!sourceFilter&&!seriesFilter&&!tagFilter&&!category&&!collectionFilter;
  $('library').classList.toggle('home-overview',overview);
  $('grid').classList.toggle('source-overview',overview);
