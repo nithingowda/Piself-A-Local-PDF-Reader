@@ -99,3 +99,17 @@ test('a cold preview cache still animates both directions before navigating',()=
   assert.equal(turns,1);
  }
 });
+
+test('automatic PDF fit follows portrait touch width or desktop height',()=>{
+ for(const book of [false,true])for(const portrait of [false,true]){
+  const area=portrait?{clientWidth:390,clientHeight:500}:{clientWidth:1200,clientHeight:740};
+  const ctx={rotation:0,dimensions:new Map([[1,{width:600,height:1000}]]),
+   isBookSpread:()=>book,spreadPages:()=>[1,2],$:()=>area,
+   matchMedia:()=>({matches:portrait})};
+  const fit=production('function bookPageBaseWidth()','/** size Slot:', 'deviceFitZoom',ctx);
+  const before=fit(1);
+  area.clientHeight-=100;
+  if(portrait)assert.equal(fit(1),before);
+  else assert.ok(fit(1)<before);
+ }
+});

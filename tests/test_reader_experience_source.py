@@ -19,7 +19,7 @@ class ReaderExperienceTests(unittest.TestCase):
         self.assertIn('await rebuild();',JS)
         self.assertIn('area.scrollLeft+=changed.left+changed.width*anchor.x-centerX;',JS)
         self.assertIn('area.scrollTop+=changed.top+changed.height*anchor.y-centerY;',JS)
-        for control in ('minus','plus','fit','fit-page'):
+        for control in ('minus','plus'):
             self.assertIn("$('"+control+"').onclick=()=>zoomWithControls(",JS)
         self.assertIn('min-width:100%;width:max-content',CSS)
         self.assertIn('margin-left:auto;margin-right:auto',CSS)

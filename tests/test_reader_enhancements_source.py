@@ -36,7 +36,7 @@ class ReaderEnhancementTests(unittest.TestCase):
     def test_original_zoom_and_history_remain(self):
         self.assertIn('function fitEntirePageZoom(',JS)
         self.assertIn('function finishPinch(',JS)
-        self.assertIn("history.pushState({pishelfReader:true}",JS)
+        self.assertIn("history.pushState({pishelfReader:true,pdfId:item.id}",JS)
 
 if __name__=='__main__':
     unittest.main()
