@@ -406,3 +406,6 @@ body.epub-open{overflow:hidden}
 
 #library.home-overview #shelf-label,
 #library.home-overview .browse-filters { display: none; }
+
+#library.home-overview .toolbar { justify-content: flex-end; }
+.shelf-actions { display: flex; align-items: center; gap: 8px; }
