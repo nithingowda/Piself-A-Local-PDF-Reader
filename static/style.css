@@ -390,13 +390,13 @@ body.epub-open{overflow:hidden}
 #reader > #page-area{min-height:0}
 
 /* Library masthead and shelves */
-body > header:has(.brand img){
+body > header:has(.brand){
   background:#faf8f1;
   color:#073c3b;
   border-bottom:3px solid #d49728;
   padding-inline:clamp(16px,3vw,48px);
 }
-.brand img{display:block;width:166px;height:auto}
+body > header .brand{color:#073c3b}
 body > header .header-search input,body > header .header-button{
   color:#133f40;background:#fff;border-color:#cbd2ca;color-scheme:light;
 }
@@ -419,7 +419,6 @@ body > header .header-search input::placeholder{color:#5f716e}
 #library .progress{height:3px}
 #library .progress span{background:#bc842a}
 @media(max-width:650px){
-  .brand img{width:128px}
   #library aside nav{flex-wrap:wrap}
   #library .toolbar{flex-wrap:wrap}
   #library #resume-section{margin-top:16px}
