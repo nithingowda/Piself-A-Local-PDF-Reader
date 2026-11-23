@@ -15,7 +15,7 @@ class ReaderExperienceTests(unittest.TestCase):
         self.assertIn("$('reader-page-slider').addEventListener('change'",JS)
         self.assertIn("move(Math.max(1,Math.min(documentPDF.numPages",JS)
     def test_button_zoom_preserves_center_and_safari_pinch(self):
-        self.assertIn('async function zoomWithControls(targetZoom)',JS)
+        self.assertIn('async function zoomWithControls(targetZoom,tap)',JS)
         self.assertIn('await rebuild();',JS)
         self.assertIn('area.scrollLeft+=changed.left+changed.width*anchor.x-centerX;',JS)
         self.assertIn('area.scrollTop+=changed.top+changed.height*anchor.y-centerY;',JS)

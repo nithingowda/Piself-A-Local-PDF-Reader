@@ -1543,18 +1543,20 @@ function showZoomBadge(value=zoom){
  clearTimeout(zoomBadgeTimer);
  zoomBadgeTimer=setTimeout(()=>{badge.classList.remove('visible');zoomBadgeTimer=0;},2000);
 }
-async function zoomWithControls(targetZoom){
+async function zoomWithControls(targetZoom,tap){
  automaticFit=null;
  if(!documentPDF||pinch||!layoutReady)return;
  const area=$('page-area'),view=area.getBoundingClientRect();
- const centerX=view.left+view.width/2,centerY=view.top+view.height/2;
+ const centerX=tap?.clientX??(view.left+view.width/2);
+ const centerY=tap?.clientY??(view.top+view.height/2);
+ const tappedSlot=tap?.target.closest('.pdf-slot');
  const spreadMode=isBookSpread();
- const anchorElement=spreadMode
+ const anchorElement=tappedSlot||(spreadMode
   ?$('pages').querySelector('.book-spread')
   :slots.find(candidate=>{
     const rect=candidate.getBoundingClientRect();
     return rect.top<=centerY&&rect.bottom>=centerY;
-   })||slots.find(candidate=>Number(candidate.dataset.page)===page);
+   })||slots.find(candidate=>Number(candidate.dataset.page)===page));
  if(!anchorElement)return;
  const rect=anchorElement.getBoundingClientRect();
  const anchor={
@@ -1578,8 +1580,8 @@ async function zoomWithControls(targetZoom){
   // The spread is CSS-centered when it fits; scroll offsets must not override it.
   area.scrollLeft=0;area.scrollTop=0;
  }else{
-  const updated=spreadMode?$('pages').querySelector('.book-spread')
-   :slots.find(candidate=>Number(candidate.dataset.page)===anchor.number);
+  const updated=spreadMode&&!tappedSlot?$('pages').querySelector('.book-spread')
+   :slots.find(candidate=>Number(candidate.dataset.page)===Number(tappedSlot?.dataset.page??anchor.number));
   if(updated){
    const changed=updated.getBoundingClientRect();
    area.scrollLeft+=changed.left+changed.width*anchor.x-centerX;
@@ -2010,7 +2012,7 @@ $('page-area').addEventListener('pointerup',e=>{
     Math.hypot(e.clientX-lastTap.x,e.clientY-lastTap.y)<35){
   lastTap=null;
   const fit=deviceFitZoom(page);
-  if(automaticFit||Math.abs(zoom-fit)<.04)void zoomWithControls(fit*2);
+  if(automaticFit||Math.abs(zoom-fit)<.04)void zoomWithControls(fit*2,e);
   else{automaticFit='auto';void rebuild();}
   return;
  }

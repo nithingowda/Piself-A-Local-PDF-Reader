@@ -43,7 +43,7 @@ test('zooming out to minimum resets stale horizontal pan and centers full spread
   performance:{now:()=>1000},fitEntirePageZoom:()=>.8,
   rebuild:async()=>{},updatePageUI:()=>{},remember:()=>{}
  };
- const zoom=production('async function zoomWithControls(targetZoom)',"$('minus').onclick=", 'zoomWithControls',ctx);
+ const zoom=production('async function zoomWithControls(targetZoom,tap)',"$('minus').onclick=", 'zoomWithControls',ctx);
  await zoom(.5);
  assert.equal(ctx.zoom,.8);
  assert.equal(area.scrollLeft,0);

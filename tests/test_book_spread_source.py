@@ -43,7 +43,7 @@ class BookSpreadTests(unittest.TestCase):
   self.assertIn("addEventListener('touchmove'",JS)
   self.assertIn("addEventListener('touchend'",JS)
   self.assertIn('function renderPages()',JS)
-  self.assertIn('function zoomWithControls(targetZoom)',JS)
+  self.assertIn('function zoomWithControls(targetZoom,tap)',JS)
   self.assertIn("function openEpubBook(item,start)",JS)
 
 if __name__=='__main__':
