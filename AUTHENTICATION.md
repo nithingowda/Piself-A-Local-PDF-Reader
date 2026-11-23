@@ -18,7 +18,7 @@ PiShelf requires a login for all PDFs, WebP images, the library and API endpoint
    ```sh
    docker compose up -d --build --remove-orphans
    ```
-3. Open `http://YOUR_PI_IP:8098`. When no users exist, PiShelf automatically redirects to **First-time Setup**.
+3. Open `http://SERVER_IP:8098`. When no users exist, PiShelf automatically redirects to **First-time Setup**.
 4. Enter an administrator username, a unique password of at least 12 characters, and confirm the password.
 5. Click **Create administrator**, then sign in at the login page.
 6. Use **Manage users** or `/admin.html` to add normal readers or other administrators.

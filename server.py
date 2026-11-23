@@ -26,7 +26,7 @@ import subprocess
 import tempfile
 import asyncio
 
-# Bound concurrent external synthesis calls to protect the Pi and remote service.
+# Bound concurrent external synthesis calls to protect the server and remote service.
 EDGE_TTS_SLOTS=threading.BoundedSemaphore(2)
 
 # Optional raster engine is installed in Docker; errors are reported per request.
@@ -38,7 +38,7 @@ BASE = Path(__file__).resolve().parent
 # Serialize WebP conversions, cache eviction and clearing across HTTP threads.
 WEBP_CACHE_LOCK = threading.RLock()
 WEBP_CACHE_LIMIT = 512*1024*1024
-# Keep malicious or malformed PDF dimensions from exhausting Raspberry Pi RAM.
+# Keep malicious or malformed PDF dimensions from exhausting server memory.
 MAX_RENDER_PIXELS = 16_000_000
 MAX_PDF_PAGE_DIMENSION = 20_000
 MAX_WEBP_SOURCE_BYTES = 512*1024*1024

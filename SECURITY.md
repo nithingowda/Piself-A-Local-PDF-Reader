@@ -7,7 +7,7 @@ PiShelf is a personal PDF library for a **trusted home network**. It does **not*
 1. Restrict PiShelf to your trusted LAN using router and host firewall rules. Do not configure internet port forwarding.
 2. For remote access, use Tailscale or another private VPN. Limit access to the PiShelf port in your VPN access rules.
 3. If exposing PiShelf through a reverse proxy, require authentication and HTTPS at the proxy before forwarding any request. Authentication must cover **all** routes, including PDF and API endpoints.
-4. Use a dedicated unprivileged user with only the necessary PDF folder permissions. Keep Docker and the Pi patched.
+4. Use a dedicated unprivileged user with only the necessary PDF folder permissions. Keep Docker and the server patched.
 5. Back up original PDFs and the persistent `piself` Docker volume. Avoid `docker compose down -v` during upgrades.
 
 ## Application protections
