@@ -182,27 +182,32 @@ function drawSourceShelves(items){
   const section=el('section','source-shelf'),heading=el('div','section-title');
   heading.append(el('h2','',title));section.append(heading);
   const cards=el('div','source-covers');cards.tabIndex=0;cards.setAttribute('aria-label',title);
-  section.append(cards);$('grid').append(section);
+  const track=el('div','shelf-track');
+  track.append(cards);section.append(track);$('grid').append(section);
   let shown=0;
-  const more=el('button','','Show more');
   function appendBatch(){
    for(const item of publications.slice(shown,shown+12))cardFor(item,cards);
-   shown+=12;more.hidden=shown>=publications.length;
+   shown=Math.min(shown+12,publications.length);
   }
-  const actions=el('div','shelf-actions'),next=el('button','','→');
-  next.type='button';next.setAttribute('aria-label','Scroll '+title+' right');
-  function updateArrow(){
-   const end=cards.scrollWidth-cards.clientWidth;
-   next.hidden=end<=1;
-   next.disabled=cards.scrollLeft>=end-1;
+  function edgeButton(direction,label,symbol){
+   const button=el('button','shelf-edge '+direction,symbol);
+   button.type='button';button.setAttribute('aria-label','Scroll '+title+' '+label);
+   button.onclick=()=>{
+    if(direction==='next'&&shown<publications.length&&cards.scrollLeft+2*cards.clientWidth>=cards.scrollWidth-1)appendBatch();
+    cards.scrollBy({left:(direction==='next'?1:-1)*cards.clientWidth,
+     behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});
+    updateArrows();
+   };
+   track.append(button);
+   return button;
   }
-  next.onclick=()=>cards.scrollBy({
-   left:cards.clientWidth,
-   behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'
-  });
-  cards.addEventListener('scroll',updateArrow,{passive:true});
-  more.onclick=()=>{appendBatch();updateArrow();};
-  actions.append(more,next);heading.append(actions);appendBatch();
+  const back=edgeButton('previous','left','‹'),forward=edgeButton('next','right','›');
+  function updateArrows(){
+   back.hidden=cards.scrollLeft<=1;
+   forward.hidden=shown>=publications.length&&cards.scrollLeft+cards.clientWidth>=cards.scrollWidth-1;
+  }
+  cards.addEventListener('scroll',updateArrows,{passive:true});
+  appendBatch();updateArrows();
   shelfResizeObserver.observe(cards);
  }
 }
