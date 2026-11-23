@@ -26,11 +26,8 @@ class ReaderExperienceTests(unittest.TestCase):
         self.assertIn('function finishPinch(cancelled=false)',JS)
         for touch in ('touchstart','touchmove','touchend'):
             self.assertIn("addEventListener('"+touch+"'",JS)
-    def test_double_tap_no_longer_zooms(self):
-        self.assertNotIn('smartDoubleTapZoom',JS)
-        self.assertNotIn('const next=zoom>1.35?1:2;',JS)
-        self.assertIn('toggleReaderControls();lastTap=null;',JS)
-        self.assertIn("e.preventDefault();toggleReaderControls();",JS)
+    def test_double_tap_zoom_hint(self):
+        self.assertIn('Double-tap to zoom in or fit the page',HTML)
     def test_immersive_controls(self):
         self.assertIn('id="reader-focus"',HTML)
         self.assertIn('function scheduleImmersiveHide()',JS)
