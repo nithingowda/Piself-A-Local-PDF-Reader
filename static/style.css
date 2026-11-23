@@ -388,3 +388,39 @@ body.epub-open{overflow:hidden}
 #reader:not(.focused):not(.speech-immersive) > .reader-bar,
 #reader:not(.focused):not(.speech-immersive) > .controls{position:relative;inset:auto;flex:none}
 #reader > #page-area{min-height:0}
+
+/* Library masthead and shelves */
+body > header:has(.brand img){
+  background:#faf8f1;
+  color:#073c3b;
+  border-bottom:3px solid #d49728;
+  padding-inline:clamp(16px,3vw,48px);
+}
+.brand img{display:block;width:166px;height:auto}
+body > header .header-search input,body > header .header-button{
+  color:#133f40;background:#fff;border-color:#cbd2ca;color-scheme:light;
+}
+body > header .header-search input::placeholder{color:#5f716e}
+#library{--shelf-tint:color-mix(in srgb,var(--card) 92%,#dcaa54)}
+#library aside{background:var(--shelf-tint)}
+#library .tab.active,#library .category.active{color:#fff;background:#174e4b}
+#library .collection{padding-inline:clamp(16px,3vw,48px);padding-bottom:32px}
+#library .toolbar h1,#library .section-title h2{
+  font-family:"Iowan Old Style",Georgia,serif;font-weight:600;letter-spacing:-.035em;
+}
+#library .toolbar h1{font-size:clamp(24px,3vw,38px);line-height:1.1}
+#library #resume-section{
+  margin-top:24px;padding:0 clamp(14px,2vw,26px) 22px;
+  border:1px solid var(--line);border-top:3px solid #ce9234;
+  border-radius:12px;background:var(--shelf-tint);
+}
+#library .section-title h2{font-size:clamp(21px,2.2vw,30px)}
+#library .cover{border:1px solid var(--line);box-shadow:0 3px 9px #182e2820}
+#library .progress{height:3px}
+#library .progress span{background:#bc842a}
+@media(max-width:650px){
+  .brand img{width:128px}
+  #library aside nav{flex-wrap:wrap}
+  #library .toolbar{flex-wrap:wrap}
+  #library #resume-section{margin-top:16px}
+}

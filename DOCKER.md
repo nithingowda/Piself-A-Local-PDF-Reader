@@ -1,6 +1,6 @@
 # Docker volume setup
 
-PiShelf stores its SQLite database in the Docker volume `piself`, mounted at `/data`. PDFs remain in the host directory mounted at `/magazines` in `compose.yaml`. The default URL is `http://YOUR_PI_IP:8098`; the app still listens on port 8080 inside the container.
+PiShelf stores its SQLite database in the Docker volume `piself`, mounted at `/data`. PDFs remain in the host directory mounted at `/magazines` in `compose.yaml`. The default URL is `http://SERVER_IP:8098`; the app still listens on port 8080 inside the container.
 
 ## First installation or Dockhand redeployment
 

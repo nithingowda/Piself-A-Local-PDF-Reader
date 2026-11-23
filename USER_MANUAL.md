@@ -1,6 +1,6 @@
 # PiShelf — User Manual
 
-PiShelf is a self-hosted magazine, newspaper and book library for Raspberry Pi and other Docker hosts. It displays PDF covers and offers a browser reader with WebP page images.
+PiShelf is a self-hosted magazine, newspaper and book library for self-managed servers. It displays PDF covers and offers a browser reader with WebP page images.
 
 ## 1. Features at a glance
 
@@ -26,10 +26,10 @@ PDF and EPUB files remain in your configured folders. PiShelf stores metadata an
 
 To add books, configure `BOOK_DIR=/path/to/Books` in `.env` and restart PiShelf with `docker compose up -d --build`. PDF and DRM-free EPUB books appear under the **Books** source. EPUB books have adjustable font size, chapters, reading themes and shared last-read positions. EPUB requires internet access to load EPUB.js and JSZip from jsDelivr on first use.
 
-## 2. Raspberry Pi requirements
+## 2. Server requirements
 
-- Raspberry Pi OS 64-bit, Docker Engine and Docker Compose plugin.
-- An accessible PDF folder on the Pi (local disk, USB SSD or mounted NAS).
+- A Linux server with Docker Engine and Docker Compose plugin.
+- An accessible PDF folder on the server (local disk, USB SSD or mounted NAS).
 - A browser such as Safari on iPhone/iPad, or a desktop browser.
 
 Check Docker:
@@ -58,7 +58,7 @@ MAGAZINE_DIR=/media/pi/SSD/Magazines
 NEWSPAPER_DIR=/media/pi/SSD/Newspapers
 ```
 
-**Replace both example paths with the real absolute paths on your Raspberry Pi.** These are **host paths**, not paths inside Docker. Do not put `/magazines` as the host value unless that directory truly exists on your Pi.
+**Replace both example paths with the real absolute paths on your server.** These are **host paths**, not paths inside Docker. Do not put `/magazines` as the host value unless that directory truly exists on your server.
 
 For example, if your PDFs are on a mounted NAS:
 
@@ -90,7 +90,7 @@ docker compose ps
 docker compose logs --tail=100
 ```
 
-Open `http://YOUR_PI_IP:8098` in Safari, replacing `YOUR_PI_IP` with the Pi's actual IP address. If you changed `PISHELF_PORT`, use that port.
+Open `http://SERVER_IP:8098` in Safari, replacing `SERVER_IP` with the server's actual IP address. If you changed `PISHELF_PORT`, use that port.
 
 **Upgrading?** Keep your existing `.env`, source folders and Docker volume. Do not run `docker compose down -v` because `-v` deletes volumes containing saved PiShelf state.
 
@@ -147,7 +147,7 @@ The Docker `piself` volume stores reading progress and application state. Back u
 
 1. Reload the page (the library scans on reload).
 2. Confirm `MAGAZINE_DIR` and `NEWSPAPER_DIR` in your existing `.env` point to real host directories.
-3. Run `ls -lah /your/real/pdf/folder` on the Pi; check the NAS/SSD mount and file permissions.
+3. Run `ls -lah /your/real/pdf/folder` on the server; check the NAS/SSD mount and file permissions.
 4. Run `docker compose ps` and `docker compose logs --tail=100`.
 5. If you recently changed `.env`, run `docker compose up -d --build --remove-orphans` to recreate the container with the new mounts.
 6. Try a fresh browser reload; if the page remains empty, inspect Safari's JavaScript console or report the error.
@@ -160,11 +160,11 @@ Use the balanced quality setting, close other memory-heavy Safari tabs, and avoi
 
 ### PDF conversion fails
 
-Check that the PDF opens normally, the Pi has free disk space and the Docker logs contain no conversion errors. The reader retains a PDF.js fallback for WebP conversion failures.
+Check that the PDF opens normally, the server has free disk space and the Docker logs contain no conversion errors. The reader retains a PDF.js fallback for WebP conversion failures.
 
 ### NAS PDF folder looks empty
 
-Check the NAS is mounted on the host **before** Docker starts. A directory may exist on the Pi even when the NAS mount has failed.
+Check the NAS is mounted on the host **before** Docker starts. A directory may exist on the server even when the NAS mount has failed.
 
 ## 8. Safety and maintenance
 
