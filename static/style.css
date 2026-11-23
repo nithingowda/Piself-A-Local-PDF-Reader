@@ -395,12 +395,11 @@ body.epub-open{overflow:hidden}
   #reader .controls{padding-bottom:max(6px,env(safe-area-inset-bottom))}
 }
 
-#library #grid.source-overview{grid-template-columns:repeat(3,minmax(0,1fr));align-items:start}
+
+#library #grid.source-overview{grid-template-columns:minmax(0,1fr)}
 .source-shelf{min-width:0;border-top:1px solid var(--line)}
-.source-shelf .section-title{flex-wrap:wrap;padding:12px 0}
-.source-shelf .section-title button{font-size:12px;padding:6px 10px}
-.source-covers{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
-@media(max-width:1000px){
- #library #grid.source-overview{grid-template-columns:minmax(0,1fr)}
- .source-covers{grid-template-columns:repeat(2,minmax(0,190px))}
-}
+.source-shelf .section-title{padding:12px 0}
+.source-covers{display:grid;grid-auto-flow:column;grid-auto-columns:clamp(130px,40%,185px);gap:12px;overflow-x:auto;scroll-snap-type:x proximity;padding:4px}
+.source-covers .card{scroll-snap-align:start}
+.shelf-editor-row{display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-block:8px}
+.shelf-editor-row input{flex:1 1 130px;min-width:0}
