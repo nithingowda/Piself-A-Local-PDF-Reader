@@ -92,7 +92,13 @@ export function orderPdfSpeechItems(items,viewport){
   // Bounding-box gutters fail when PDF text boxes overlap neighboring columns.
   const tolerance=Math.max(5,viewport.width*.018);
   const starts=[];
+  const rowEnds=new Map();
   for(const item of [...group].sort((a,b)=>a.x-b.x)){
+   // Count line starts, excluding words next to another item on this baseline.
+   const row=Math.round(item.y);
+   const end=Math.max(...[row-1,row,row+1].map(y=>rowEnds.get(y)??-Infinity));
+   rowEnds.set(row,Math.max(rowEnds.get(row)??-Infinity,item.x+item.boxWidth));
+   if(item.x-end<item.boxHeight*.8)continue;
    const anchor=starts.find(entry=>Math.abs(entry.x-item.x)<=tolerance);
    if(anchor){anchor.x=(anchor.x*anchor.count+item.x)/(anchor.count+1);anchor.count++;}
    else starts.push({x:item.x,count:1});
