@@ -121,15 +121,36 @@ function cardFor(item,target){
 /** draw Library: Support the PiShelf reader or library interface. */
 // === Library grid ===========================================================
 // Only create cards for the current visibleLimit; covers are loaded lazily.
+function drawSourceShelves(items){
+ const picker=$('source-filter');
+ for(const [source,title] of [['magazines','Magazines'],['newspapers','Newspapers'],['books','Books']]){
+  const section=el('section','source-shelf'),heading=el('div','section-title');
+  heading.append(el('h2','',title));section.append(heading);
+  const publications=items.filter(item=>(item.source||'magazines')===source);
+  if(publications.length){
+   const browse=el('button','','View all');
+   browse.setAttribute('aria-label','View all '+title.toLowerCase());
+   browse.onclick=()=>{picker.value=source;picker.dispatchEvent(new Event('change'));};
+   heading.append(browse);
+   const cards=el('div','source-covers');section.append(cards);
+   publications.slice(0,2).forEach(item=>cardFor(item,cards));
+  }else section.append(el('p','hint','No '+title.toLowerCase()+' yet.'));
+  $('grid').append(section);
+ }
+}
 function drawLibrary(){
  coverObserver.disconnect();coverQueue=[];$('grid').replaceChildren();$('resume-grid').replaceChildren();$('count').textContent=library.length;
  $('shelf-label').textContent=collections.find(c=>c.id===collectionFilter)?.name||category||({all:'All publications',reading:'Continue reading',favorites:'Favourites',unread:'Unread',completed:'Finished'}[filter]);
  const q=$('search').value.trim().toLowerCase();const terms=q.split(/\s+/).filter(Boolean);const items=library.filter(i=>(!collectionFilter||collectionSets.get(collectionFilter)?.has(i.id))&&(!sourceFilter||i.source===sourceFilter)&&(!seriesFilter||i.series===seriesFilter)&&(!tagFilter||(i.tags||[]).includes(tagFilter))&&(!category||i.category===category)&&terms.every(term=>(i.title+' '+i.series+' '+dateLabel(i)+' '+i.issueDate+' '+i.category+' '+(i.tags||[]).join(' ')).toLowerCase().includes(term))).filter(i=>filter==='all'||filter==='favorites'&&saved[i.id]?.favorite||filter==='reading'&&started(i)&&!finished(i)||filter==='unread'&&!started(i)&&!finished(i)||filter==='completed'&&finished(i));
  const order=filter==='reading'?'recent':$('sort').value;items.sort((a,b)=>order==='title'?a.title.localeCompare(b.title):order==='recent'?(saved[b.id]?.lastRead||0)-(saved[a.id]?.lastRead||0):order==='size'?b.size-a.size:order==='issue'?(b.issueDate||'').localeCompare(a.issueDate||'')||b.modified-a.modified:b.modified-a.modified);
- items.slice(0,visibleLimit).forEach(i=>cardFor(i,$('grid')));$('load-more').hidden=items.length<=visibleLimit;$('active-filters').textContent=[collections.find(c=>c.id===collectionFilter)?.name,sourceFilter,seriesFilter,tagFilter&&'#'+tagFilter,category,`${items.length} items`].filter(Boolean).join(' · ');
+ const overview=filter==='all'&&!q&&!sourceFilter&&!seriesFilter&&!tagFilter&&!category&&!collectionFilter;
+ $('grid').classList.toggle('source-overview',overview);
+ if(overview)drawSourceShelves(items);
+ else items.slice(0,visibleLimit).forEach(i=>cardFor(i,$('grid')));
+ $('load-more').hidden=overview||items.length<=visibleLimit;$('active-filters').textContent=[collections.find(c=>c.id===collectionFilter)?.name,sourceFilter,seriesFilter,tagFilter&&'#'+tagFilter,category,`${items.length} items`].filter(Boolean).join(' · ');
  const recent=library.filter(i=>started(i)&&!finished(i)).sort((a,b)=>(saved[b.id].lastRead||0)-(saved[a.id].lastRead||0)).slice(0,6);
  $('resume-section').hidden=filter!=='all'||!!category||!!q||!!sourceFilter||!!seriesFilter||!!tagFilter||!!collectionFilter||!recent.length;if(!$('resume-section').hidden)recent.forEach(i=>cardFor(i,$('resume-grid')));
- if(!items.length){const empty=el('div','empty');empty.append(el('h2','',library.length?'No matching items.':'Your reading room is ready.'),el('p','',library.length?'Try another category, search or filter.':'Copy PDFs or EPUB books into your configured library folders. Subfolders become categories.'));$('grid').append(empty);}
+ if(!overview&&!items.length){const empty=el('div','empty');empty.append(el('h2','',library.length?'No matching items.':'Your reading room is ready.'),el('p','',library.length?'Try another category, search or filter.':'Copy PDFs or EPUB books into your configured library folders. Subfolders become categories.'));$('grid').append(empty);}
 }
 /** refresh: Support the PiShelf reader or library interface. */
 // === Library refresh =======================================================
