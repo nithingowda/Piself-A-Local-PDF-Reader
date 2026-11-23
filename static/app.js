@@ -260,7 +260,7 @@ async function installTextSurface(slot,pixels,doc){
   ]);
   const content=await pdfPage.getTextContent();
   if(!slot.isConnected||documentPDF!==doc||slot.dataset.ready!=='yes'||slot.querySelector('.pdf-text-surface'))return;
-  const viewport=pdfPage.getViewport({scale:1,rotation:pixels.tagName==='IMG'?pdfPage.rotate:rotation});
+  const viewport=pdfPage.getViewport({scale:1,rotation:(pdfPage.rotate+rotation)%360});
   slot.style.setProperty('--pdf-aspect',String(viewport.width/viewport.height));
   slot.append(buildTextSurface(content,viewport,engine.Util.transform));
  }catch{/* Image-only or unreadable text still leaves the page usable. */}
@@ -406,7 +406,7 @@ function fitEntirePageZoom(n,axis='page'){
  if(!d)return 1;
  const width=swapped?d.height:d.width,height=swapped?d.width:d.height;
  const inset=Math.min(16,Math.max(4,Math.round(area.clientWidth*.015)));
- const availableWidth=Math.max(100,area.clientWidth-inset*2);
+ const availableWidth=Math.max(100,axis==='width'?area.clientWidth:area.clientWidth-inset*2);
  const availableHeight=Math.max(100,area.clientHeight-inset*2);
  const baseWidth=Math.min(Math.max(200,area.clientWidth-40),1100);
  const widthScale=availableWidth/baseWidth,heightScale=availableHeight*width/(baseWidth*height);
@@ -449,7 +449,7 @@ async function renderPages(){
   const n=+slot.dataset.page;
   try{
    // Prefer cached magazine images; retain PDF.js rendering as a fallback.
-   if(current?.id){
+   if(current?.id&&!rotation){
     const prefetched=takeDecodedPreview(n);
     const img=prefetched||document.createElement('img');
     img.draggable=false;
@@ -499,11 +499,11 @@ async function renderPages(){
    sizeSlot(slot,n);
    if(above&&!pinch)area.scrollTop+=slot.getBoundingClientRect().height-before.height;
    const cssWidth=parseFloat(slot.style.width);
-   const viewport=pdfPage.getViewport({scale:1,rotation});
+   const viewport=pdfPage.getViewport({scale:1,rotation:(pdfPage.rotate+rotation)%360});
    // Limit memory on phones while preserving extra detail for tablet screens.
    const maxPixels=matchMedia('(max-width: 700px)').matches?4500000:7000000;
    const scale=Math.min(cssWidth*Math.min(devicePixelRatio||1,2)/viewport.width,Math.sqrt(maxPixels/(viewport.width*viewport.height)));
-   const view=pdfPage.getViewport({scale,rotation});
+   const view=pdfPage.getViewport({scale,rotation:(pdfPage.rotate+rotation)%360});
    const canvas=document.createElement('canvas');
    canvas.width=Math.max(1,Math.ceil(view.width));canvas.height=Math.max(1,Math.ceil(view.height));
    canvas.style.cssText='display:block;width:100%;height:100%';
@@ -859,7 +859,7 @@ async function pickNumberedPdfParagraph(event,slot){
  const touched=event.target.closest('.pdf-text-surface span[data-item]');
  const pdfPage=await documentPDF.getPage(pageNumber);
  const image=slot.firstElementChild?.tagName==='IMG';
- const viewport=pdfPage.getViewport({scale:1,rotation:image?pdfPage.rotate:rotation});
+ const viewport=pdfPage.getViewport({scale:1,rotation:(pdfPage.rotate+rotation)%360});
  slot.style.setProperty('--pdf-aspect',String(viewport.width/viewport.height));
  const rect=(slot.querySelector('.pdf-text-surface')||slot).getBoundingClientRect();
  if(!rect.width||!rect.height)return;
@@ -977,7 +977,7 @@ async function markPdfReading(text,offset=0,length=0){
   const pdfPage=await documentPDF.getPage(currentPage);
   if(pdfSpeechItemsPage!==currentPage||!pdfSpeechItems){
    const {orderPdfSpeechItems}=await import('./pdf-reading-order.js');
-   pdfSpeechItems=orderPdfSpeechItems((await pdfPage.getTextContent()).items,pdfPage.getViewport({scale:1,rotation}));
+   pdfSpeechItems=orderPdfSpeechItems((await pdfPage.getTextContent()).items,pdfPage.getViewport({scale:1,rotation:(pdfPage.rotate+rotation)%360}));
    pdfSpeechItemsPage=currentPage;
   }
   if(readingMarkText!==key||pdfSpeechCurrentPage()!==currentPage)return;
@@ -993,7 +993,7 @@ async function markPdfReading(text,offset=0,length=0){
    pdfSpeechSpansPage=currentPage;
   }
   const end=offset+length;
-  const viewport=pdfPage.getViewport({scale:1,rotation});
+  const viewport=pdfPage.getViewport({scale:1,rotation:(pdfPage.rotate+rotation)%360});
   const overlay=document.createElement('div');
   overlay.className='speech-paragraph-overlay';
   for(const {item,from,to} of pdfSpeechHighlightSpans){
@@ -1140,7 +1140,7 @@ async function readPdfFromTap(event){
  if(!Number.isInteger(targetPage)||targetPage<1)return;
  const rect=slot.getBoundingClientRect();
  const pdfPage=await documentPDF.getPage(targetPage);
- const viewport=pdfPage.getViewport({scale:1,rotation});
+ const viewport=pdfPage.getViewport({scale:1,rotation:(pdfPage.rotate+rotation)%360});
  const {orderPdfSpeechItems}=await import('./pdf-reading-order.js');
  const rawItems=(await pdfPage.getTextContent()).items;
  const items=orderPdfSpeechItems(rawItems,viewport);
@@ -1189,7 +1189,7 @@ async function startPdfSpeech(){
    const content=await pdfPage.getTextContent();
    // Read from the tapped page, not the first page of a book spread.
    const {orderPdfSpeechItems,pdfSpeechText}=await import('./pdf-reading-order.js');
-   const ordered=orderPdfSpeechItems(content.items,pdfPage.getViewport({scale:1,rotation}));
+   const ordered=orderPdfSpeechItems(content.items,pdfPage.getViewport({scale:1,rotation:(pdfPage.rotate+rotation)%360}));
    const start=pdfSpeechStart?.page===speechPage
     ?Math.max(0,ordered.findIndex(item=>item.sourceIndex===pdfSpeechStart.index)):0;
    pdfSpeechStart=null;
@@ -1204,7 +1204,7 @@ async function startPdfSpeech(){
    const pdfPage=await documentPDF.getPage(upcoming);
    const content=await pdfPage.getTextContent();
    const {orderPdfSpeechItems,pdfSpeechText}=await import('./pdf-reading-order.js');
-   return pdfSpeechText(orderPdfSpeechItems(content.items,pdfPage.getViewport({scale:1,rotation})));
+   return pdfSpeechText(orderPdfSpeechItems(content.items,pdfPage.getViewport({scale:1,rotation:(pdfPage.rotate+rotation)%360})));
   },
   async next(){
    if(numberedPlayback.pdf){
