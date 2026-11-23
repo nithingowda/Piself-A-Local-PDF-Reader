@@ -482,6 +482,21 @@ class Handler(BaseHTTPRequestHandler):
     # mutate: handle this step of the server request or library workflow.
     def mutate(self, data, db):
         route = urlsplit(self.path).path
+        if route == '/api/home-shelves':
+            shelves = data.get('shelves')
+            if not isinstance(shelves, list) or not 1 <= len(shelves) <= 32:
+                raise ValueError()
+            for shelf in shelves:
+                if not isinstance(shelf, dict) or set(shelf) != {'source','title','category'}:
+                    raise ValueError()
+                if shelf['source'] not in ('magazines','newspapers','books'):
+                    raise ValueError()
+                if not isinstance(shelf['title'], str) or not 1 <= len(shelf['title'].strip()) <= 60:
+                    raise ValueError()
+                if not isinstance(shelf['category'], str) or len(shelf['category']) > 512:
+                    raise ValueError()
+            db.execute('INSERT OR REPLACE INTO homepage VALUES (1,?)',(json.dumps(shelves),))
+            return {'ok':True}
         if route == '/api/collections':
             action=data.get('action','create')
             if action not in ('create','rename','delete'): raise ValueError()
@@ -882,6 +897,11 @@ class Handler(BaseHTTPRequestHandler):
             if path == '/api/library':
                 if 'refresh=1' in urlsplit(self.path).query: self.server.scan_time=float('-inf')
                 self.json_response(self.library_items(),head=head); return
+            if path == '/api/home-shelves':
+                with sqlite3.connect(self.server.state_db) as db:
+                    row=db.execute('SELECT shelves FROM homepage WHERE id=1').fetchone()
+                self.json_response(json.loads(row[0]) if row else None,head=head)
+                return
             if path == '/api/categories': self.json_response(self.categories(),head=head); return
             if path == '/api/collections':
                 with sqlite3.connect(self.server.state_db) as db: self.json_response(read_collections(db),head=head)
@@ -1190,6 +1210,7 @@ def make_server(host,port,library,data,newspapers=None,books=None):
         if row:
             server.roots={k:Path(v) for k,v in json.loads(row[0]).items()}
             server.library=server.roots['magazines']
+        db.execute('CREATE TABLE IF NOT EXISTS homepage (id INTEGER PRIMARY KEY,shelves TEXT NOT NULL)')
         db.execute('CREATE TABLE IF NOT EXISTS collections (id TEXT PRIMARY KEY,name TEXT NOT NULL COLLATE NOCASE UNIQUE)')
         db.execute('CREATE TABLE IF NOT EXISTS collection_items (collection_id TEXT NOT NULL,item_id TEXT NOT NULL,PRIMARY KEY(collection_id,item_id))')
         db.execute('CREATE INDEX IF NOT EXISTS collection_item_lookup ON collection_items(item_id)')
