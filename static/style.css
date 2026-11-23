@@ -404,8 +404,7 @@ body.epub-open{overflow:hidden}
 .shelf-editor-row{display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-block:8px}
 .shelf-editor-row input{flex:1 1 130px;min-width:0}
 
-#library.home-overview #shelf-label,
-#library.home-overview .browse-filters { display: none; }
+#library.home-overview #shelf-label { display: none; }
 
 #library.home-overview .toolbar { justify-content: flex-end; }
 .shelf-track { position: relative; min-width: 0; }
@@ -415,3 +414,6 @@ body.epub-open{overflow:hidden}
 .shelf-edge.next { right: 4px; }
 .shelf-edge.previous { left: 4px; }
 .shelf-edge[hidden] { display: none; }
+
+.shelf-track.expanded .source-covers { grid-auto-flow: row; grid-template-columns: repeat(auto-fill,minmax(min(145px,100%),1fr)); }
+.shelf-track.expanded .shelf-edge { display: none; }
