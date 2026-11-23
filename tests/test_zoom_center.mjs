@@ -51,9 +51,16 @@ test('zoom buttons keep the visible PDF paragraph centered horizontally and vert
  assert.equal(saves,2);
 });
 
-test('double tap toggles controls but cannot zoom or modify pinch geometry',()=>{
- assert.equal(js.includes('smartDoubleTapZoom'),false);
- assert.match(js,/toggleReaderControls\(\);lastTap=null;/);
+test('two quick taps magnify a fitted page, then restore fit on the next pair',()=>{
+ const start=js.indexOf(" if(Math.hypot(dx,dy)>=18");
+ const end=js.indexOf("\n},{passive:true});",start);
+ const ctx={dx:0,dy:0,elapsed:50,e:{target:{closest:()=>true},clientX:50,clientY:70},
+  annotationActive:false,numberedPickMode:{pdf:false},speechPickMode:null,lastTap:null,
+  performance:{now:()=>100},documentPDF:{},page:2,fitEntirePageZoom:()=>.6,zoom:.6,
+  setTimeout:()=>{},zoomWithControls:value=>{ctx.zoom=value;}};
+ const tap=new Function('ctx','with(ctx){'+js.slice(start,end)+'}');
+ tap(ctx);tap(ctx);assert.equal(ctx.zoom,1.2);
+ tap(ctx);tap(ctx);assert.equal(ctx.zoom,.6);
  assert.match(js,/addEventListener\('dblclick',[^\n]*toggleReaderControls\(\)/);
  assert.match(js,/function finishPinch\(cancelled=false\)/);
  assert.match(js,/addEventListener\('touchstart'/);

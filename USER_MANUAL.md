@@ -16,7 +16,7 @@ PiShelf is a self-hosted magazine, newspaper and book library for Raspberry Pi a
 | Progressive loading | Lower-resolution page preview is upgraded to a sharper WebP |
 | Page thumbnails | In the reader, choose **Pages** to jump through groups of 60 pages |
 | Reader modes | Continuous scroll or single page, plus zoom, rotation and fullscreen |
-| Touch controls | Pinch zoom on iPhone/iPad; double-tap to toggle reader controls |
+| Touch controls | Pinch zoom on iPhone/iPad; tap once for controls and double-tap to zoom in or fit the page |
 | Cache controls | Settings shows WebP cache usage and allows clearing generated images |
 | Trash and backup | Recover deleted issues and export/restore reading metadata |
 

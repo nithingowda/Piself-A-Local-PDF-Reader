@@ -224,7 +224,7 @@ The reader toolbar provides:
 - Zoom in, zoom out, and fit width.
 - Clockwise page rotation and fullscreen.
 - Page bookmarks and a bookmark jump menu.
-- Swipe page navigation, mobile pinch zoom, and double-tap to show or hide controls; reading settings remembered per issue.
+- Swipe page navigation, mobile pinch zoom, and double-tap to zoom in or fit the page; reading settings remembered per issue.
 - In Two-page Book mode, use the side navigation buttons, keyboard arrows, or swipes to switch spreads immediately, with no page-turn animation.
 
 Reading position is saved at the **page level**, not the exact scroll position within a page. Nearby pages render on demand, and distant page images are released to reduce memory use.
