@@ -49,14 +49,34 @@ class APIError(Exception):
         self.status, self.message = status, message
 
 def save_library_paths(db, values, defaults, data_dir):
-    if not isinstance(values, dict) or set(values)-{'magazines','newspapers','books'}:
+    if not isinstance(values, dict) or set(values)-{'magazines','newspapers','books','menus'}:
         raise APIError(400,'Invalid library paths.')
-    roots = dict(defaults)
+    values=dict(values)
+    menus=values.pop('menus',None)
+    roots=dict(defaults)
+    if menus is not None:
+        if not isinstance(menus,str) or len(menus)>8000: raise APIError(400,'Invalid publication menus.')
+        roots={k:v for k,v in roots.items() if not k.startswith('menu-')}
+        for line in menus.splitlines():
+            if not line.strip(): continue
+            name,_,folder=line.partition('|')
+            name=name.strip()
+            if not re.fullmatch(r'[A-Za-z0-9]+(?: [A-Za-z0-9]+)*',name) or len(name)>48:
+                raise APIError(400,'Use letters, numbers and spaces for menu names.')
+            key='menu-'+name.lower().replace(' ','-')
+            if key in values or key[5:] in ('magazines','newspapers','books'):
+                raise APIError(400,'Choose a unique menu name.')
+            values[key]=folder.strip() or '@storage'
     for source, raw in values.items():
         if not isinstance(raw,str):
             raise APIError(400,'Enter a folder path.')
         if not raw.strip():
             roots.pop(source,None)
+            continue
+        if raw=='@storage':
+            path=data_dir/'publications'/source
+            if path.resolve()!=path: raise APIError(400,'Invalid default storage folder.')
+            roots[source]=path
             continue
         path = Path(raw.strip())
         if not path.is_absolute() or not path.is_dir() or not os.access(path,os.R_OK|os.X_OK):
@@ -65,9 +85,13 @@ def save_library_paths(db, values, defaults, data_dir):
     if 'magazines' not in roots:
         raise APIError(400,'A magazine folder is required.')
     for source,path in roots.items():
-        protected = [data_dir]+[p for key,p in roots.items() if key!=source]
+        managed=data_dir/'publications'/source
+        protected=[p for key,p in roots.items() if key!=source]
+        if path!=managed: protected.append(data_dir)
         if any(path.is_relative_to(p) or p.is_relative_to(path) for p in protected):
             raise APIError(400,'Library folders and the data folder must be separate.')
+    for key,path in roots.items():
+        if path==data_dir/'publications'/key: path.mkdir(parents=True,exist_ok=True)
     db.execute('INSERT OR REPLACE INTO library_config VALUES (1,?)',
                (json.dumps({k:str(v) for k,v in roots.items()}),))
     return roots
@@ -101,6 +125,8 @@ class Handler(BaseHTTPRequestHandler):
             items = []
             categories = []
             with sqlite3.connect(self.server.state_db) as db:
+                additions=dict(db.execute('SELECT id,added FROM library_additions'))
+                scanned_at=time.time()
                 metadata = {key: json.loads(raw) for key, raw in db.execute('SELECT id,value FROM metadata')}
             for source, root in self.server.roots.items():
                 for folder, dirs, files in os.walk(root, followlinks=False):
@@ -123,6 +149,19 @@ class Handler(BaseHTTPRequestHandler):
                         items.append(dict(id=key, path=relative, title=path.stem.replace('_',' '), source=source,
                             category=path.parent.relative_to(root).as_posix(), size=info.st_size,
                             modified=info.st_mtime, coverKey=cover_key, format=fmt, **inferred))
+            # Before the first scan, file timestamps are the only available history.
+            pending=[]
+            if '' not in additions: pending.append(('',scanned_at))
+            for item in items:
+                key=item['id']
+                if key not in additions:
+                    added=scanned_at if '' in additions else min(scanned_at,item['modified'])
+                    pending.append((key,added))
+                else: added=additions[key]
+                item['added']=added
+            if pending:
+                with sqlite3.connect(self.server.state_db) as db:
+                    db.executemany('INSERT OR IGNORE INTO library_additions VALUES (?,?)',pending)
             self.server.scan_items = sorted(items, key=lambda i:(i['source'],i['path']))
             self.server.scan_categories = categories
             self.server.scan_time = time.monotonic()
@@ -257,7 +296,11 @@ class Handler(BaseHTTPRequestHandler):
                     if not self.is_private_setup_client():
                         raise APIError(403,'Initial setup requires access from your private network.')
                     auth.create_user(db,data.get('username'),data.get('password'),'admin')
-                    roots = save_library_paths(db,data['paths'],self.server.roots,self.server.state_db.parent) if data.get('paths') else self.server.roots
+                    initial={key:'@storage' for key in ('books','newspapers') if key not in self.server.roots}
+                    supplied=data.get('paths',{})
+                    if not isinstance(supplied,dict): raise APIError(400,'Invalid library paths.')
+                    initial.update(supplied)
+                    roots=save_library_paths(db,initial,self.server.roots,self.server.state_db.parent)
                 self.server.roots=roots
                 self.server.library=roots['magazines']
             self.json_response({'ok':True})
@@ -490,7 +533,7 @@ class Handler(BaseHTTPRequestHandler):
             for shelf in shelves:
                 if not isinstance(shelf, dict) or set(shelf) != {'source','title','category'}:
                     raise ValueError()
-                if shelf['source'] not in ('magazines','newspapers','books'):
+                if shelf['source'] not in self.server.roots:
                     raise ValueError()
                 if not isinstance(shelf['title'], str) or not 1 <= len(shelf['title'].strip()) <= 60:
                     raise ValueError()
@@ -912,6 +955,7 @@ class Handler(BaseHTTPRequestHandler):
                     row=db.execute('SELECT shelves FROM homepage WHERE id=1').fetchone()
                 self.json_response(json.loads(row[0]) if row else None,head=head)
                 return
+            if path == '/api/sources': self.json_response(list(self.server.roots),head=head); return
             if path == '/api/categories': self.json_response(self.categories(),head=head); return
             if path == '/api/collections':
                 with sqlite3.connect(self.server.state_db) as db: self.json_response(read_collections(db),head=head)
@@ -981,6 +1025,11 @@ class Handler(BaseHTTPRequestHandler):
                 root,relative=self.server.roots.get('books'),path[len('/books/'):]
                 if root is None or Path(relative).suffix.lower() not in ('.pdf','.epub') or any(p.startswith('.') for p in Path(relative).parts):
                     self.send_error(404); return
+            elif path.startswith('/menu-') and path.split('/')[1] in self.server.roots:
+                _,source,relative=path.split('/',2) if path.count('/')>=2 else ('','','')
+                if not source or Path(relative).suffix.lower()!='.pdf' or any(p.startswith('.') for p in Path(relative).parts):
+                    self.send_error(404); return
+                root=self.server.roots[source]
             elif path.startswith('/newspapers/'):
                 root,relative=self.server.roots.get('newspapers'),path[len('/newspapers/'):]
                 if root is None or Path(relative).suffix.lower()!='.pdf' or any(p.startswith('.') for p in Path(relative).parts):
@@ -1221,6 +1270,7 @@ def make_server(host,port,library,data,newspapers=None,books=None):
             server.roots={k:Path(v) for k,v in json.loads(row[0]).items()}
             server.library=server.roots['magazines']
         db.execute('CREATE TABLE IF NOT EXISTS managed_categories (source TEXT,path TEXT,PRIMARY KEY(source,path))')
+        db.execute('CREATE TABLE IF NOT EXISTS library_additions (id TEXT PRIMARY KEY,added REAL NOT NULL)')
         db.execute('CREATE TABLE IF NOT EXISTS homepage (id INTEGER PRIMARY KEY,shelves TEXT NOT NULL)')
         db.execute('CREATE TABLE IF NOT EXISTS collections (id TEXT PRIMARY KEY,name TEXT NOT NULL COLLATE NOCASE UNIQUE)')
         db.execute('CREATE TABLE IF NOT EXISTS collection_items (collection_id TEXT NOT NULL,item_id TEXT NOT NULL,PRIMARY KEY(collection_id,item_id))')
