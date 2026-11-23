@@ -56,8 +56,8 @@ test('two quick taps magnify a fitted page, then restore fit on the next pair',(
  const end=js.indexOf("\n},{passive:true});",start);
  const ctx={dx:0,dy:0,elapsed:50,e:{target:{closest:()=>true},clientX:50,clientY:70},
   annotationActive:false,numberedPickMode:{pdf:false},speechPickMode:null,lastTap:null,
-  performance:{now:()=>100},documentPDF:{},page:2,fitEntirePageZoom:()=>.6,zoom:.6,
-  setTimeout:()=>{},zoomWithControls:value=>{ctx.zoom=value;}};
+  performance:{now:()=>100},documentPDF:{},page:2,automaticFit:"auto",deviceFitZoom:()=>.6,zoom:.6,
+  setTimeout:()=>{},zoomWithControls:value=>{ctx.automaticFit=null;ctx.zoom=value;},rebuild:()=>{ctx.zoom=ctx.deviceFitZoom();}};
  const tap=new Function('ctx','with(ctx){'+js.slice(start,end)+'}');
  tap(ctx);tap(ctx);assert.equal(ctx.zoom,1.2);
  tap(ctx);tap(ctx);assert.equal(ctx.zoom,.6);

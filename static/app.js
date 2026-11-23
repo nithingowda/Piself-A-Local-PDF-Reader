@@ -373,16 +373,9 @@ function bookPageBaseWidth(){
  return Math.max(90,Math.min(550,(available-12)/2));
 }
 let automaticFit=null;
-function defaultPagedFit(){
- const mode=$('view-mode').value;
- return mode==='single'||mode==='book'?'page':null;
-}
-function heightFitZoom(n){
- const d=dimensions.get(n)||dimensions.get(1);
- if(!d)return fitEntirePageZoom(n);
- const area=$('page-area'),swapped=rotation%180!==0;
- const base=Math.min(Math.max(200,area.clientWidth-40),1100);
- return area.clientHeight*(swapped?d.height:d.width)/(base*(swapped?d.width:d.height));
+function deviceFitZoom(n){
+ const portraitTouch=matchMedia('(pointer: coarse) and (orientation: portrait)').matches;
+ return fitEntirePageZoom(n,portraitTouch?'width':'height');
 }
 function pageWidth(){
  const available=Math.max(200,$('page-area').clientWidth-40);
@@ -392,7 +385,7 @@ function pageWidth(){
  * Width includes the gutter and padding. Height accounts for both aspect ratios.
  * Page 1 is a single cover; later spreads contain at most two PDF pages.
  */
-function fitEntirePageZoom(n){
+function fitEntirePageZoom(n,axis='page'){
  const area=$('page-area'),swapped=rotation%180!==0;
  if(isBookSpread()){
   const pages=spreadPages(n),base=bookPageBaseWidth();
@@ -407,7 +400,7 @@ function fitEntirePageZoom(n){
   const availableHeight=Math.max(80,area.clientHeight-12);
   const widthScale=(availableWidth-paddingX-gap*(pages.length-1))/(base*pages.length);
   const heightScale=(availableHeight-paddingY)/maxHeight;
-  return Math.max(.1,Math.min(widthScale,heightScale));
+  return Math.max(.1,axis==='width'?widthScale:axis==='height'?heightScale:Math.min(widthScale,heightScale));
  }
  const d=dimensions.get(n)||dimensions.get(1);
  if(!d)return 1;
@@ -416,7 +409,8 @@ function fitEntirePageZoom(n){
  const availableWidth=Math.max(100,area.clientWidth-inset*2);
  const availableHeight=Math.max(100,area.clientHeight-inset*2);
  const baseWidth=Math.min(Math.max(200,area.clientWidth-40),1100);
- return Math.max(.1,Math.min(availableWidth/baseWidth,availableHeight*width/(baseWidth*height)));
+ const widthScale=availableWidth/baseWidth,heightScale=availableHeight*width/(baseWidth*height);
+ return Math.max(.1,axis==='width'?widthScale:axis==='height'?heightScale:Math.min(widthScale,heightScale));
 }
 /** Resolve real PDF dimensions before a new book spread is displayed.
  * Image prefetch provides decoded pixels but not PDF page aspect ratios.
@@ -631,7 +625,7 @@ async function rebuild(){if(!documentPDF)return;cancelAllSharpImages();$('pages'
   const fittedPage=page;
   await primeSpreadDimensions(isBookSpread()?spreadPages(page):[page]);
   if(g!==generation||epoch!==layoutEpoch||page!==fittedPage)return;
-  zoom=automaticFit==='height'?heightFitZoom(page):fitEntirePageZoom(page);
+  zoom=deviceFitZoom(page);
   cssZoomBase=zoom;updateTouchMode();
  }
  if(g!==generation||epoch!==layoutEpoch)return;
@@ -1369,7 +1363,7 @@ window.addEventListener('popstate',()=>{
 async function openMagazine(item,start){
  resetNumberedParagraphs('pdf');pdfSpeech?.stop();
  if($('reader').hidden){
-  history.pushState({pishelfReader:true},'',location.href);
+  if(history.state?.pdfId!==item.id)history.pushState({pishelfReader:true,pdfId:item.id},'',location.href);
   readerHistoryActive=true;
  }
  clearMagazinePrefetches();cancelAllSharpImages();current=item;const g=++generation;const reading=saved[item.id]||{};
@@ -1403,7 +1397,7 @@ async function openMagazine(item,start){
   if(isBookSpread())await primeSpreadDimensions(spreadPages(page),doc,g);
   if(g!==generation||documentPDF!==doc)return;
   // Start with the entire page visible and a small margin on every side.
-  automaticFit=defaultPagedFit();zoom=fitEntirePageZoom(page);
+  automaticFit='auto';zoom=fitEntirePageZoom(page);
   await rebuild();$('page-area').focus({preventScroll:true});
   // Read remaining dimensions in the background. Adjust slot heights while
   // preserving the reader's current scroll anchor when pages above it change.
@@ -1436,7 +1430,7 @@ function move(n){
  const target=Math.max(1,Math.min(documentPDF.numPages,Number(n)||1));
  page=isBookSpread()?spreadStart(target):target;
  if(page===oldPage)return;
- automaticFit='page';
+ automaticFit='auto';
  updatePageUI();
  rebuild();
 }
@@ -1615,7 +1609,7 @@ document.addEventListener('keydown',event=>{
  const key=event.key;
  if(key==='+'||key==='='||key==='Add'){event.preventDefault();void zoomWithControls(zoom+.25);}
  else if(key==='-'||key==='_'||key==='Subtract'){event.preventDefault();void zoomWithControls(zoom-.25);}
- else if(key==='0'){event.preventDefault();automaticFit='page';void rebuild();}
+ else if(key==='0'){event.preventDefault();automaticFit='auto';void rebuild();}
 });
 desktopZoomArea.addEventListener('pointerdown',event=>{
  if(event.target.closest('.pdf-text-surface span'))return;
@@ -1637,20 +1631,8 @@ function endDesktopPan(event){if(!desktopDrag||event.pointerId!==desktopDrag.id)
 desktopZoomArea.addEventListener('pointerup',endDesktopPan);
 desktopZoomArea.addEventListener('pointercancel',endDesktopPan);
 
-$('fit-height').onclick=()=>{
- if(!documentPDF)return;
- if($('view-mode').value!=='single')$('view-mode').value='single';
- automaticFit='height';rebuild();
- showZoomBadge(heightFitZoom(page));
-};
-function fitWidthZoom(){
- const area=$('page-area');
- if(!isBookSpread())return area.clientWidth/Math.min(Math.max(200,area.clientWidth-40),1100);
- const count=spreadPages(page).length,compact=matchMedia('(max-width:600px)').matches;
- return (area.clientWidth-(compact?10:32)-(count-1)*(compact?4:8))/(count*bookPageBaseWidth());
-}
-$('fit').onclick=()=>zoomWithControls(fitWidthZoom());
-$('fit-page').onclick=()=>zoomWithControls(fitEntirePageZoom(page));$('rotate').onclick=()=>{rotation=(rotation+90)%360;rebuild();};$('view-mode').onchange=()=>{prefs.mode=$('view-mode').value;automaticFit=defaultPagedFit();storePrefs();if(documentPDF){if(isBookSpread())page=spreadStart(page);zoom=fitEntirePageZoom(page);rebuild();}};
+$('fit-page').onclick=()=>{if(documentPDF){automaticFit='auto';void rebuild();}};
+$('rotate').onclick=()=>{rotation=(rotation+90)%360;rebuild();};$('view-mode').onchange=()=>{prefs.mode=$('view-mode').value;automaticFit='auto';storePrefs();if(documentPDF){if(isBookSpread())page=spreadStart(page);zoom=fitEntirePageZoom(page);rebuild();}};
 $('bookmark').onclick=()=>{if(!documentPDF)return;const marks=saved[current.id]?.bookmarks||[];persist(current.id,{bookmarks:marks.includes(page)?marks.filter(n=>n!==page):[...marks,page].sort((a,b)=>a-b)});updatePageUI();updateBookmarks();};$('bookmarks').onchange=e=>{if(e.target.value)move(+e.target.value);e.target.value='';};
 $('fullscreen-exit').onclick=()=>$('fullscreen').click();
 $('fullscreen').onclick=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await $('reader').requestFullscreen();}catch{toast('Fullscreen is unavailable in this browser.');}};
@@ -1758,7 +1740,7 @@ function drawCollectionManager(){const box=$('collection-manager');box.replaceCh
 // Double-tap controls remain available even when swipe/pinch gestures are disabled.
 const gesturePointers=new Set();let gestureStart=null,lastTap=null,lastTouchTime=-Infinity,pinch=null,pinchFrame=0,suppressTapUntil=0;
 /** update Touch Mode: Handle touch zoom while maintaining the reader position. */
-function updateTouchMode(){const area=$('page-area');area.classList.toggle('gesture-navigation',!!prefs.gestures&&!!documentPDF&&zoom<=fitEntirePageZoom(page)+.04);area.classList.toggle('zoomed-in',!!documentPDF&&zoom>fitEntirePageZoom(page)+.01);}
+function updateTouchMode(){const area=$('page-area');area.classList.toggle('gesture-navigation',!!prefs.gestures&&!!documentPDF&&(automaticFit||zoom<=fitEntirePageZoom(page)+.04));area.classList.toggle('zoomed-in',!!documentPDF&&zoom>fitEntirePageZoom(page)+.01);}
 /** toggle Reader Controls: Support the PiShelf reader or library interface. */
 let immersiveTimer=null;
 function scheduleImmersiveHide(){
@@ -1999,7 +1981,7 @@ $('page-area').addEventListener('pointerdown',e=>{
 $('page-area').addEventListener('pointermove',e=>{
  if(!window.getSelection()?.isCollapsed)return;
  if(!gestureStart||gestureStart.multi||!gesturePointers.has(e.pointerId)||pinch||
-    !documentPDF||!prefs.gestures||zoom>fitEntirePageZoom(page)+.04)return;
+    !documentPDF||!prefs.gestures||(!automaticFit&&zoom>fitEntirePageZoom(page)+.04))return;
  const dx=e.clientX-gestureStart.x,dy=e.clientY-gestureStart.y;
  if(!curl&&Math.abs(dx)>10&&Math.abs(dx)>2*Math.abs(dy))beginCurl(dx<0?1:-1,gestureStart);
  if(curl)drawCurl(Math.max(0,Math.min(1,-curl.direction*dx/curl.rect.width)));
@@ -2015,7 +1997,7 @@ $('page-area').addEventListener('pointerup',e=>{
  const start=gestureStart;gestureStart=null;
  const dx=e.clientX-start.x,dy=e.clientY-start.y,elapsed=performance.now()-start.time;
  if(curl){settleCurl(curl.progress>=.32||(curl.progress>.08&&elapsed<300));lastTap=null;return;}
- if(prefs.gestures&&documentPDF&&zoom<=fitEntirePageZoom(page)+.04
+ if(prefs.gestures&&documentPDF&&(automaticFit||zoom<=fitEntirePageZoom(page)+.04)
     &&Math.abs(dx)>70&&Math.abs(dx)>Math.abs(dy)*2&&elapsed<700){
   turnFromControl(dx<0?1:-1);lastTap=null;return;
  }
@@ -2027,8 +2009,9 @@ $('page-area').addEventListener('pointerup',e=>{
  if(lastTap&&lastTap.doc===documentPDF&&lastTap.page===page&&now-lastTap.time<320&&
     Math.hypot(e.clientX-lastTap.x,e.clientY-lastTap.y)<35){
   lastTap=null;
-  const fit=fitEntirePageZoom(page);
-  void zoomWithControls(zoom>fit+.04?fit:fit*2);
+  const fit=deviceFitZoom(page);
+  if(automaticFit||Math.abs(zoom-fit)<.04)void zoomWithControls(fit*2);
+  else{automaticFit='auto';void rebuild();}
   return;
  }
  const tap={time:now,x:e.clientX,y:e.clientY,doc:documentPDF,page};
@@ -2044,7 +2027,7 @@ $('reader-accessibility-controls').onclick=toggleReaderControls;
 /** set Reader Focus: Support the PiShelf reader or library interface. */
 function setReaderFocus(focused){$('reader').classList.toggle('focused',focused);$('reader-focus').setAttribute('aria-pressed',String(focused));$('reader-focus').textContent=focused?'Show controls':'Immersive';$('reader-accessibility-controls').setAttribute('aria-expanded',String(!focused));if(focused&&$('reader').contains(document.activeElement))$('page-area').focus({preventScroll:true});}
 $('reader-focus').onclick=()=>{setReaderFocus(true);};
-$('page-area').addEventListener('click',e=>{if(!documentPDF||pinch||curl||performance.now()<suppressTapUntil)return;if($('reader').classList.contains('focused')){setReaderFocus(false);scheduleImmersiveHide();}}, {passive:true});
+$('page-area').addEventListener('click',e=>{if(performance.now()-lastTouchTime<600||!documentPDF||pinch||curl||performance.now()<suppressTapUntil)return;if($('reader').classList.contains('focused')){setReaderFocus(false);scheduleImmersiveHide();}}, {passive:true});
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{if(prefs.siteTheme==='system')applyPrefs();});
 // === Session bootstrap ======================================================
 // The server is authoritative: hiding controls is only a UX improvement;
@@ -2092,5 +2075,7 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{if(pre
    dialog.showModal();
   };
   applyPrefs();await refresh();
+  const resume=history.state?.pishelfReader&&library.find(item=>item.id===history.state.pdfId);
+  if(resume)await openMagazine(resume);
  }catch(e){console.error('PiShelf startup:',e);}
 })();

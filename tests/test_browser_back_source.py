@@ -6,7 +6,7 @@ APP=(Path(__file__).resolve().parents[1]/'static'/'app.js').read_text()
 
 class BrowserBackTests(unittest.TestCase):
     def test_open_reader_pushes_one_history_entry(self):
-        self.assertIn("if($('reader').hidden){\n  history.pushState",APP)
+        self.assertIn("if(history.state?.pdfId!==item.id)history.pushState",APP)
         self.assertIn("readerHistoryActive=true",APP)
 
     def test_back_closes_reader_without_extra_navigation(self):

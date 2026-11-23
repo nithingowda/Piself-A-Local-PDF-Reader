@@ -42,7 +42,7 @@ test('book spread navigates without a secondary animation',()=>{
  assert.ok(start>=0&&end>start);
  const navigation=source.slice(start,end);
  assert.doesNotMatch(navigation,/animate\(|paper-turn|paper-dragging|turn-forward|turn-backward/);
- assert.match(navigation,/if\(page===oldPage\)return;\s+automaticFit='page';[\s\S]*?rebuild\(\)/);
+ assert.match(navigation,/if\(page===oldPage\)return;\s+automaticFit='auto';[\s\S]*?rebuild\(\)/);
  assert.match(source,/if\(isBookSpread\(\)\)await primeSpreadDimensions\(spreadPages\(page\),doc,g\)/);
  assert.match(source,/function finishPinch\(cancelled=false\)/);
 });

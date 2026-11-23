@@ -383,3 +383,8 @@ body.epub-open{overflow:hidden}
 #fullscreen-exit{display:none}
 #reader:fullscreen #fullscreen-exit{display:grid;place-items:center;position:absolute;z-index:13;top:max(4px,env(safe-area-inset-top));left:max(4px,env(safe-area-inset-left));width:44px;height:44px;padding:0;border:0;border-radius:50%;background:transparent;color:#fff;font-size:18px;text-shadow:0 1px 3px #000;opacity:.65}
 #reader:fullscreen #fullscreen-exit:is(:hover,:focus-visible){opacity:1;background:#0003}
+
+/* Let the PDF viewport use the space between visible toolbars. */
+#reader:not(.focused):not(.speech-immersive) > .reader-bar,
+#reader:not(.focused):not(.speech-immersive) > .controls{position:relative;inset:auto;flex:none}
+#reader > #page-area{min-height:0}
