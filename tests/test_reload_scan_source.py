@@ -16,9 +16,9 @@ class ReloadScanTests(unittest.TestCase):
         self.assertNotIn('prefs.interval',APP)
         self.assertNotIn('pollTimer',APP)
 
-    def test_manual_refresh_button_removed(self):
-        self.assertNotIn('id="refresh"',HTML)
-        self.assertNotIn("$('refresh').onclick",APP)
+    def test_manual_refresh_button_remains(self):
+        self.assertIn('id="refresh"',HTML)
+        self.assertIn("$('refresh').onclick=()=>refresh()",APP)
 
 if __name__=='__main__':
     unittest.main()
