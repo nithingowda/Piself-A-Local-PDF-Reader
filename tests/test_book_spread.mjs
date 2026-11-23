@@ -54,5 +54,5 @@ test('legacy single and continuous readers and pinch handler remain in source',(
  assert.match(src,/mode==='single'\?page:1/);
  assert.match(src,/function finishPinch\(cancelled=false\)/);
  assert.match(src,/function renderPages\(\)/);
- assert.match(src,/function zoomWithControls\(targetZoom\)/);
+ assert.match(src,/function zoomWithControls\(targetZoom,tap\)/);
 });

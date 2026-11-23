@@ -24,7 +24,7 @@ class CoverSourceTests(unittest.TestCase):
     def test_reader_unmodified(self):
         self.assertIn("function finishPinch(cancelled=false)",CLIENT)
         self.assertIn("function renderPages()",CLIENT)
-        self.assertIn("async function zoomWithControls(targetZoom)",CLIENT)
+        self.assertIn("async function zoomWithControls(targetZoom,tap)",CLIENT)
         self.assertNotIn("function smartDoubleTapZoom(",CLIENT)
         self.assertIn("function openEpubBook(item,start)",CLIENT)
 

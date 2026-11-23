@@ -5,7 +5,7 @@ import test from 'node:test';
 
 const js=readFileSync(new URL('../static/app.js',import.meta.url),'utf8');
 const css=readFileSync(new URL('../static/style.css',import.meta.url),'utf8');
-const start=js.indexOf('async function zoomWithControls(targetZoom)');
+const start=js.indexOf('async function zoomWithControls(targetZoom,tap)');
 const stop=js.indexOf("\n$('minus').onclick=",start);
 assert.ok(start>=0&&stop>start,'Expected the standalone button zoom function');
 // Isolate the production function; provide only the browser geometry that it uses.
@@ -49,6 +49,9 @@ test('zoom buttons keep the visible PDF paragraph centered horizontally and vert
  assert.equal(redraws,2);
  assert.equal(updates,2);
  assert.equal(saves,2);
+ await zoomWithControls(2,{clientX:110,clientY:90,target:{closest:()=>compact}});
+ assert.equal(area.scrollLeft,10);
+ assert.equal(area.scrollTop,590);
 });
 
 test('two quick taps magnify a fitted page, then restore fit on the next pair',()=>{
