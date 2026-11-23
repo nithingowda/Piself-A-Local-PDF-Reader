@@ -2,6 +2,15 @@
 <html lang="en"><head>
   <!-- PiShelf page metadata, styles, and application bootstrapping. --><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PiShelf · Your magazine shelf</title><link rel="stylesheet" href="style.css"></head>
 <body>
+<script>
+  // Paint the saved shelf theme before the library or account requests start.
+  try {
+    const theme = JSON.parse(localStorage.getItem('pishelf-settings') || '{}').siteTheme;
+    if (theme === 'dark' || theme === 'amoled') document.body.dataset.theme = theme;
+    else if (theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches)
+      document.body.dataset.theme = 'dark';
+  } catch {}
+</script>
   <!-- Reader and library controls; JavaScript attaches behavior using element IDs. -->
 <header><a href="/" class="brand">▥ PiShelf</a><div class="header-search"><input id="search" type="search" placeholder="Search title, month, tags…" aria-label="Search titles, series, months and tags"></div><button id="settings-open" class="header-button">⚙ Settings</button></header>
 <main id="library"><aside><h2>MY LIBRARY</h2><nav aria-label="Library filter"><button class="tab active" data-filter="all">All publications <span id="count">0</span></button><button class="tab" data-filter="reading">Continue reading</button><button class="tab" data-filter="favorites">Favourites</button><button class="tab" data-filter="unread">Unread</button><button class="tab" data-filter="completed">Finished</button></nav><h2>COLLECTIONS</h2><button id="collection-create">＋ New collection</button><div id="collections"></div><h2>SOURCES</h2><select id="source-filter" aria-label="Library source"><option value="">All publications</option><option value="magazines">Magazines</option><option value="newspapers">Newspapers</option><option value="books">Books</option></select><h2>CATEGORIES</h2><button id="category-create">＋ New category</button><div id="categories"></div></aside><div class="collection"><section id="resume-section" hidden><div class="section-title"><h2>Continue reading</h2></div><div id="resume-grid"></div></section><section class="toolbar"><h1 id="shelf-label">All publications</h1><div><select id="sort" aria-label="Sort publications"><option value="issue">Issue date · newest</option><option value="newest">Recently added</option><option value="title">Title A–Z</option><option value="recent">Last read</option><option value="size">File size</option></select><button id="refresh" title="Refresh library" aria-label="Refresh library">↻</button></div></section><div class="browse-filters"><select id="series-filter" aria-label="Publication"><option value="">All publications</option></select><select id="tag-filter" aria-label="Tag"><option value="">All tags</option></select><button id="filters-clear">Clear filters</button></div><div id="active-filters" role="status"></div><div id="grid"></div><button id="load-more" hidden>Show more issues</button><p id="status" role="status"></p></div></main>
