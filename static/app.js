@@ -121,8 +121,8 @@ function cardFor(item,target){
 /** draw Library: Support the PiShelf reader or library interface. */
 // === Library grid ===========================================================
 // Only create cards for the current visibleLimit; covers are loaded lazily.
-const defaultShelves=['magazines','newspapers','books'].map(source=>({source,title:source[0].toUpperCase()+source.slice(1),category:''}));
-let homeShelves=defaultShelves;
+const sourceRoots=['magazines','newspapers','books'].map(source=>({source,title:source[0].toUpperCase()+source.slice(1),category:''}));
+let homeShelves=[];
 function editShelves(){
  const panel=$('home-shelf-settings');
  panel.hidden=signedInUser?.role!=='admin';
@@ -130,52 +130,60 @@ function editShelves(){
  const draft=homeShelves.map(s=>({...s}));
  const folder=$('shelf-folder');
  folder.replaceChildren();
- const choices=[...defaultShelves,...categories.map(c=>({source:c.source,category:c.path,title:c.path}))];
+ const choices=[...sourceRoots,...categories.map(c=>({source:c.source,category:c.path,title:c.path.split('/').pop()}))];
  choices.forEach((s,i)=>folder.add(new Option(s.category?s.source+' / '+s.category:s.title,i)));
  function render(){
   const list=$('shelf-list');list.replaceChildren();
   draft.forEach((s,i)=>{
    const row=el('div','shelf-editor-row');
    const title=document.createElement('input');title.value=s.title;title.maxLength=60;title.setAttribute('aria-label','Shelf name');
-   title.oninput=()=>{s.title=title.value.trim();};row.append(title);
+   title.oninput=()=>{s.title=title.value.trim();};row.append(title,el('span','hint',s.source+' / '+(s.category||'.')));
    for(const [label,step] of [['Move up',-1],['Move down',1],['Remove',0]]){
     const button=el('button','',label);button.type='button';
-    button.disabled=step?i+step<0||i+step>=draft.length:draft.length===1;
+    button.disabled=step?i+step<0||i+step>=draft.length:false;
     button.onclick=()=>{if(step)[draft[i],draft[i+step]]=[draft[i+step],draft[i]];else draft.splice(i,1);render();};
     row.append(button);
    }
    list.append(row);
   });
  }
- $('shelf-add').onclick=()=>{if(draft.length>=32)return toast('Maximum 32 shelves');draft.push({...choices[folder.value]});render();};
+ $('shelf-add').onclick=()=>{if(draft.length>=32)return toast('Maximum 32 shelves');const choice=choices[folder.value];if(draft.some(s=>s.source===choice.source&&s.category===choice.category))return toast('This folder already has a category.');draft.push({...choice});render();};
  $('shelf-save').onclick=async()=>{
-  if(draft.some(s=>!s.title))return toast('Enter a name for each shelf.');
+  if(draft.some(s=>!s.title||s.title.toLowerCase()==='uncategorised'))return toast('Enter a category name other than Uncategorised.');
   const shelves=draft.map(s=>({...s}));
-  try{await api('/api/home-shelves',{shelves});homeShelves=shelves;drawLibrary();toast('Homepage shelves saved');}
+  try{await api('/api/home-shelves',{shelves});homeShelves=shelves;drawLibrary();toast('Homepage categories saved');}
   catch(e){toast(e.message);}
  };
  render();
 }
 function drawSourceShelves(items){
- const picker=$('source-filter');
- for(const {source,title,category:folder} of homeShelves){
+ const groups=new Map(homeShelves.map(s=>[s.title,[]]));
+ const other=[];
+ // A nested assignment takes precedence over its parent folder.
+ const rules=[...homeShelves].sort((a,b)=>b.category.length-a.category.length);
+ for(const item of items){
+  const rule=rules.find(s=>s.source===(item.source||'magazines')&&
+   (!s.category||item.category===s.category||item.category?.startsWith(s.category+'/')));
+  (rule?groups.get(rule.title):other).push(item);
+ }
+ for(const [title,publications] of [...groups,['Uncategorised',other]]){
+  if(!publications.length)continue;
   const section=el('section','source-shelf'),heading=el('div','section-title');
   heading.append(el('h2','',title));section.append(heading);
-  const publications=items.filter(item=>(item.source||'magazines')===source&&(!folder||item.category===folder));
-  if(publications.length){
-   const browse=el('button','','View all');
-   browse.setAttribute('aria-label','View all '+title.toLowerCase());
-   browse.onclick=()=>{picker.value=source;sourceFilter=source;category=folder;visibleLimit=60;updateFilterOptions();drawLibrary();};
-   heading.append(browse);
-   const cards=el('div','source-covers');section.append(cards);
-   cards.tabIndex=0;cards.setAttribute('aria-label',title);publications.slice(0,12).forEach(item=>cardFor(item,cards));
-  }else section.append(el('p','hint','No '+title.toLowerCase()+' yet.'));
-  $('grid').append(section);
+  const cards=el('div','source-covers');cards.tabIndex=0;cards.setAttribute('aria-label',title);
+  section.append(cards);$('grid').append(section);
+  let shown=0;
+  const more=el('button','','Show more');
+  function appendBatch(){
+   for(const item of publications.slice(shown,shown+12))cardFor(item,cards);
+   shown+=12;more.hidden=shown>=publications.length;
+  }
+  more.onclick=appendBatch;heading.append(more);appendBatch();
  }
 }
 function drawLibrary(){
  coverObserver.disconnect();coverQueue=[];$('grid').replaceChildren();$('resume-grid').replaceChildren();$('count').textContent=library.length;
- $('shelf-label').textContent=collections.find(c=>c.id===collectionFilter)?.name||category||({all:'All publications',reading:'Continue reading',favorites:'Favourites',unread:'Unread',completed:'Finished'}[filter]);
+ $('shelf-label').textContent=collections.find(c=>c.id===collectionFilter)?.name||category||({all:'Categories',reading:'Continue reading',favorites:'Favourites',unread:'Unread',completed:'Finished'}[filter]);
  const q=$('search').value.trim().toLowerCase();const terms=q.split(/\s+/).filter(Boolean);const items=library.filter(i=>(!collectionFilter||collectionSets.get(collectionFilter)?.has(i.id))&&(!sourceFilter||i.source===sourceFilter)&&(!seriesFilter||i.series===seriesFilter)&&(!tagFilter||(i.tags||[]).includes(tagFilter))&&(!category||i.category===category)&&terms.every(term=>(i.title+' '+i.series+' '+dateLabel(i)+' '+i.issueDate+' '+i.category+' '+(i.tags||[]).join(' ')).toLowerCase().includes(term))).filter(i=>filter==='all'||filter==='favorites'&&saved[i.id]?.favorite||filter==='reading'&&started(i)&&!finished(i)||filter==='unread'&&!started(i)&&!finished(i)||filter==='completed'&&finished(i));
  const order=filter==='reading'?'recent':$('sort').value;items.sort((a,b)=>order==='title'?a.title.localeCompare(b.title):order==='recent'?(saved[b.id]?.lastRead||0)-(saved[a.id]?.lastRead||0):order==='size'?b.size-a.size:order==='issue'?(b.issueDate||'').localeCompare(a.issueDate||'')||b.modified-a.modified:b.modified-a.modified);
  const overview=filter==='all'&&!q&&!sourceFilter&&!seriesFilter&&!tagFilter&&!category&&!collectionFilter;
@@ -2135,7 +2143,7 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{if(pre
    $('settings').close();
    dialog.showModal();
   };
-  try{homeShelves=await api('/api/home-shelves')||defaultShelves;}catch(e){toast(e.message);}
+  try{homeShelves=await api('/api/home-shelves')||[];}catch(e){toast(e.message);}
   applyPrefs();await refresh();
   const resume=history.state?.pishelfReader&&library.find(item=>item.id===history.state.pdfId);
   if(resume)await openMagazine(resume);
