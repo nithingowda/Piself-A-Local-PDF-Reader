@@ -484,7 +484,7 @@ class Handler(BaseHTTPRequestHandler):
         route = urlsplit(self.path).path
         if route == '/api/home-shelves':
             shelves = data.get('shelves')
-            if not isinstance(shelves, list) or not 1 <= len(shelves) <= 32:
+            if not isinstance(shelves, list) or len(shelves) > 32:
                 raise ValueError()
             for shelf in shelves:
                 if not isinstance(shelf, dict) or set(shelf) != {'source','title','category'}:
