@@ -125,6 +125,8 @@ class Handler(BaseHTTPRequestHandler):
             items = []
             categories = []
             with sqlite3.connect(self.server.state_db) as db:
+                additions=dict(db.execute('SELECT id,added FROM library_additions'))
+                scanned_at=time.time()
                 metadata = {key: json.loads(raw) for key, raw in db.execute('SELECT id,value FROM metadata')}
             for source, root in self.server.roots.items():
                 for folder, dirs, files in os.walk(root, followlinks=False):
@@ -147,6 +149,19 @@ class Handler(BaseHTTPRequestHandler):
                         items.append(dict(id=key, path=relative, title=path.stem.replace('_',' '), source=source,
                             category=path.parent.relative_to(root).as_posix(), size=info.st_size,
                             modified=info.st_mtime, coverKey=cover_key, format=fmt, **inferred))
+            # Before the first scan, file timestamps are the only available history.
+            pending=[]
+            if '' not in additions: pending.append(('',scanned_at))
+            for item in items:
+                key=item['id']
+                if key not in additions:
+                    added=scanned_at if '' in additions else min(scanned_at,item['modified'])
+                    pending.append((key,added))
+                else: added=additions[key]
+                item['added']=added
+            if pending:
+                with sqlite3.connect(self.server.state_db) as db:
+                    db.executemany('INSERT OR IGNORE INTO library_additions VALUES (?,?)',pending)
             self.server.scan_items = sorted(items, key=lambda i:(i['source'],i['path']))
             self.server.scan_categories = categories
             self.server.scan_time = time.monotonic()
@@ -1255,6 +1270,7 @@ def make_server(host,port,library,data,newspapers=None,books=None):
             server.roots={k:Path(v) for k,v in json.loads(row[0]).items()}
             server.library=server.roots['magazines']
         db.execute('CREATE TABLE IF NOT EXISTS managed_categories (source TEXT,path TEXT,PRIMARY KEY(source,path))')
+        db.execute('CREATE TABLE IF NOT EXISTS library_additions (id TEXT PRIMARY KEY,added REAL NOT NULL)')
         db.execute('CREATE TABLE IF NOT EXISTS homepage (id INTEGER PRIMARY KEY,shelves TEXT NOT NULL)')
         db.execute('CREATE TABLE IF NOT EXISTS collections (id TEXT PRIMARY KEY,name TEXT NOT NULL COLLATE NOCASE UNIQUE)')
         db.execute('CREATE TABLE IF NOT EXISTS collection_items (collection_id TEXT NOT NULL,item_id TEXT NOT NULL,PRIMARY KEY(collection_id,item_id))')
