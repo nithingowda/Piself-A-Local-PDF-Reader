@@ -388,3 +388,30 @@ body.epub-open{overflow:hidden}
 #reader:not(.focused):not(.speech-immersive) > .reader-bar,
 #reader:not(.focused):not(.speech-immersive) > .controls{position:relative;inset:auto;flex:none}
 #reader > #page-area{min-height:0}
+
+/* Toolbar actions share one target size at each screen width. */
+button[data-icon]{
+  inline-size:7rem;
+  block-size:44px;
+  flex:none;
+  display:inline-grid;
+  place-items:center;
+  text-align:center;
+  line-height:1.1;
+}
+#refresh[data-icon]{font:inherit;font-size:12px;border:1px solid var(--line)}
+.speech-player-main{flex-wrap:wrap}
+@media(max-width:700px),(pointer:coarse) and (max-height:500px){
+  button[data-icon]{
+    inline-size:44px;
+    min-inline-size:44px;
+    padding:0!important;
+    font-size:0!important;
+  }
+  button[data-icon]::before{content:attr(data-icon);font:500 20px/1 system-ui}
+  #reader-night-toggle[aria-pressed=true]::before{content:'☀'}
+  #refresh[data-icon]{display:none}
+  #collection-create[data-icon],#category-create[data-icon]{width:44px}
+  #reader .controls,#reader .reader-bar,.epub-controls,.epub-toolbar{flex-wrap:wrap}
+  .speech-player-main{gap:5px}
+}
