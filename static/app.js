@@ -991,7 +991,9 @@ function wireSpeech(kind,controller){
  const play=()=>{
   if(controller.active)return controller.play();
   if(numberedParagraphs[kind].length)return playNumberedParagraphs(kind);
-  if(numberedPickMode[kind])return toast('Select a passage first.');
+  numberedPickMode[kind]=false;
+  if(kind==='pdf'){pdfSpeechPage=page;pdfSpeechStart=null;}
+  refreshNumberedSelection(kind);
   controller.play();
  };
  $(kind+'-read-main').onclick=()=>controller.active&&!controller.paused?controller.pause():play();
@@ -1185,7 +1187,7 @@ async function beginSpeechPick(kind){
   numberedPickMode[kind]=true;
   speechPlayer(kind,true);
   refreshNumberedSelection(kind);
-  toast('Select passages in reading order, then tap Play selected.');
+  toast('Tap Play to read from here, or select passages in reading order.');
  }catch(error){toast('Read aloud: '+error.message);}
 }
 async function readPdfFromTap(event){
