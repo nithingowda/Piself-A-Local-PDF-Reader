@@ -179,6 +179,8 @@ class Handler(BaseHTTPRequestHandler):
         source=params.get('source',['magazines'])[0]
         category=params.get('category',['.'])[0]
         filename=params.get('filename',[''])[0]
+        author=params.get('author',[''])[0].strip()
+        if len(author)>160: raise APIError(400,'Author name must be 160 characters or fewer.')
         try:
             tags=validate_metadata({'tags':[tag.strip() for tag in params.get('tags',[''])[0].split(',') if tag.strip()]})['tags']
         except ValueError:
@@ -221,11 +223,11 @@ class Handler(BaseHTTPRequestHandler):
                     # Exclusive move refuses to replace a file created during the upload.
                     try: move_exclusive(temporary,destination)
                     except FileExistsError: raise APIError(409,'A PDF with this filename already exists.')
-                    if tags:
+                    if tags or author:
                         key=item_id(source,destination.relative_to(root).as_posix())
                         try:
                             with sqlite3.connect(self.server.state_db) as db:
-                                db.execute('INSERT OR REPLACE INTO metadata VALUES (?,?)',(key,json.dumps({'tags':tags})))
+                                db.execute('INSERT OR REPLACE INTO metadata VALUES (?,?)',(key,json.dumps({'tags':tags,'author':author})))
                         except sqlite3.Error:
                             destination.unlink()
                             raise
@@ -654,7 +656,7 @@ class Handler(BaseHTTPRequestHandler):
         if route == '/api/issue/edit':
             item = next((i for i in self.library_items() if i['id']==data.get('id')), None)
             if not item: raise APIError(404, 'Issue not found. Refresh your library.')
-            metadata = validate_metadata({**{k:item[k] for k in ('series','issueDate','tags')}, **{k:data[k] for k in ('series','issueDate','tags') if k in data}})
+            metadata = validate_metadata({**{k:item[k] for k in ('series','issueDate','tags','author')}, **{k:data[k] for k in ('series','issueDate','tags','author') if k in data}})
             collection_ids=data.get('collectionIds')
             if collection_ids is not None:
                 if not isinstance(collection_ids,list) or len(collection_ids)>200 or any(not isinstance(k,str) or not re.fullmatch('[a-f0-9]{32}',k) for k in collection_ids): raise ValueError()
@@ -1195,13 +1197,13 @@ def infer_issue(stem):
             try: datetime.date.fromisoformat(candidate if len(candidate)==10 else candidate+'-01'); date=candidate
             except ValueError: pass
     series=re.split(r'[, ]+vol(?:ume)?\.?\s*\d|\s*\((?:January|February|March|April|May|June|July|August|September|October|November|December)\b|\s+\b(?:19|20)\d{2}[-.]',title,maxsplit=1,flags=re.I)[0].strip(' ,-')
-    return dict(series=series or title,issueDate=date,tags=[])
+    return dict(series=series or title,issueDate=date,author='',tags=[])
 
 
 # validate metadata: handle this step of the server request or library workflow.
 def validate_metadata(value):
-    if not isinstance(value,dict) or set(value)-{'series','issueDate','tags'}: raise ValueError()
-    for field in ('series','issueDate'):
+    if not isinstance(value,dict) or set(value)-{'series','issueDate','tags','author'}: raise ValueError()
+    for field in ('series','issueDate','author'):
         if field in value and (not isinstance(value[field],str) or len(value[field])>160): raise ValueError()
     date=value.get('issueDate','')
     if date:
@@ -1209,7 +1211,7 @@ def validate_metadata(value):
         datetime.date.fromisoformat(date if len(date)==10 else date+'-01')
     tags=value.get('tags',[])
     if not isinstance(tags,list) or len(tags)>30 or any(not isinstance(t,str) or not t.strip() or len(t)>40 for t in tags): raise ValueError()
-    return dict(series=value.get('series','').strip(),issueDate=date,tags=list(dict.fromkeys(t.strip() for t in tags)))
+    return dict(series=value.get('series','').strip(),issueDate=date,author=value.get('author','').strip(),tags=list(dict.fromkeys(t.strip() for t in tags)))
 
 
 # validate reader options: handle this step of the server request or library workflow.
