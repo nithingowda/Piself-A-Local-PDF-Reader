@@ -25,15 +25,17 @@ You need a server with Git, Docker Engine and the Compose plugin, plus three fol
 2. Edit `.env` to use **existing absolute paths on your server**. Set the UID and GID to a non-root account that can read those folders and write uploads. Run `id` as that account to see its IDs.
 
    ```dotenv
-   MAGAZINE_DIR=/srv/library/magazines
-   NEWSPAPER_DIR=/srv/library/newspapers
-   BOOK_DIR=/srv/library/books
+   MAGAZINE_DIR=/mnt/Nithin-Nas/nextcloud/data/nithingowda/files/Magazines
+   NEWSPAPER_DIR=/mnt/Nithin-Nas/nextcloud/data/nithingowda/files/NewsPapers
+   BOOK_DIR=/mnt/Nithin-Nas/nextcloud/data/nithingowda/files/Books
    PISHELF_UID=1000
    PISHELF_GID=1000
    PISHELF_PORT=8098
    ```
 
-3. Start PiShelf.
+   Mount the NAS before starting PiShelf. Docker binds these directories to `/magazines`, `/newspapers` and `/books` when it creates the container. In PiShelf Settings, use those container paths. After changing `.env`, run the command below again to apply the new mounts.
+
+3. Start PiShelf on its project bridge network.
 
    ```sh
    docker compose up -d --build
