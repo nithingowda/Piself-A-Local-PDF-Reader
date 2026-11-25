@@ -10,7 +10,9 @@ const html = readFileSync(new URL('index.html', staticRoot), 'utf8');
 test('PR #99 automatic PDF read-aloud is restored without manual queue', () => {
   assert.match(app, /async function readPdfFromTap\(event\)/);
   assert.match(app, /async function startPdfSpeech\(\)/);
-  assert.match(app, /orderPdfSpeechItems\(content\.items/);
+  assert.match(app, /async function pdfReadAloudItems\(pdfPage,viewport\)/);
+  assert.match(app, /orderPdfSpeechItems\(\(await pdfPage\.getTextContent\(\)\)\.items,viewport\)/);
+  assert.match(app, /\?ocr=1/);
   assert.match(app, /pdfSpeechText\(ordered\.slice\(start\)\)/);
   assert.match(app, /showPdfSpeechPage\(pdfSpeechPage\)/);
   assert.doesNotMatch(app, /speechQueues=\{pdf:\[\],epub:\[\]\}/);
