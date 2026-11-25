@@ -526,3 +526,22 @@ body.epub-open{overflow:hidden}
  background:#252e3b!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;
  }
 }
+
+/* Contrast-adaptive clear glass based on the actual reading theme. */
+#reader .speech-floating-player:not([hidden]),#epub-reader .speech-floating-player:not([hidden]){
+ background:rgba(20,26,35,.18)!important;
+}
+#reader:is([data-page-theme=night],[data-page-theme=amoled]) .speech-floating-player:not([hidden]),
+#epub-reader:is([data-epub-theme=night],[data-epub-theme=amoled]) .speech-floating-player:not([hidden]){
+ background:rgba(255,255,255,.20)!important;
+ border-color:rgba(255,255,255,.42)!important;
+}
+@media(prefers-reduced-transparency:reduce){
+ #reader .speech-floating-player:not([hidden]),#epub-reader .speech-floating-player:not([hidden]){
+ background:#252e3b!important;
+ }
+ #reader:is([data-page-theme=night],[data-page-theme=amoled]) .speech-floating-player:not([hidden]),
+ #epub-reader:is([data-epub-theme=night],[data-epub-theme=amoled]) .speech-floating-player:not([hidden]){
+ background:#424852!important;
+ }
+}
