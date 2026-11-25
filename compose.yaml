@@ -14,9 +14,21 @@ services:
     ports:
       - "${PISHELF_PORT:-8098}:8080"
     volumes:
-      - "${MAGAZINE_DIR:-/mnt/Nithin-Nas/nextcloud/data/nithingowda/files/Magazines}:/magazines"
-      - "${NEWSPAPER_DIR:-/mnt/Nithin-Nas/nextcloud/data/nithingowda/files/NewsPapers}:/newspapers"
-      - "${BOOK_DIR:-/mnt/Nithin-Nas/nextcloud/data/nithingowda/files/Books}:/books"
+      - type: bind
+        source: "${MAGAZINE_DIR:-/mnt/Nithin-Nas/nextcloud/data/nithingowda/files/Magazines}"
+        target: /magazines
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${NEWSPAPER_DIR:-/mnt/Nithin-Nas/nextcloud/data/nithingowda/files/NewsPapers}"
+        target: /newspapers
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${BOOK_DIR:-/mnt/Nithin-Nas/nextcloud/data/nithingowda/files/Books}"
+        target: /books
+        bind:
+          create_host_path: false
       - "piself:/data"
     read_only: true
     tmpfs:
@@ -36,6 +48,10 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+networks:
+  default:
+    driver: bridge
 
 volumes:
   piself:
