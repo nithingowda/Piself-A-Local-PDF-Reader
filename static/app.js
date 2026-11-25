@@ -294,12 +294,6 @@ function storePrefs(){try{localStorage.setItem('pishelf-settings',JSON.stringify
 function drawPublicationSettings(){
  const panel=$('publication-settings');if(!panel)return;
  panel.hidden=signedInUser?.role!=='admin';if(panel.hidden)return;
- const list=$('publication-settings-list');list.replaceChildren();
- for(const source of ['magazines','newspapers']){
-  const names=new Set([...categories.filter(c=>c.source===source&&c.path!=='.').map(c=>c.path),...library.filter(i=>i.source===source&&i.series).map(i=>i.series)]);
-  for(const name of [...names].sort((a,b)=>a.localeCompare(b)))list.append(el('p','hint',sourceLabel(source)+' · '+name));
- }
- if(!list.children.length)list.append(el('p','hint','No publications yet.'));
  $('publication-create').onclick=async()=>{
   const source=$('publication-source').value,name=$('publication-name').value.trim();
   if(!name||name==='.'||name==='..'||/[\\/]/.test(name))return toast('Enter a single publication name.');
