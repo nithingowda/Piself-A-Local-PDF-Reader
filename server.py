@@ -179,6 +179,10 @@ class Handler(BaseHTTPRequestHandler):
         source=params.get('source',['magazines'])[0]
         category=params.get('category',['.'])[0]
         filename=params.get('filename',[''])[0]
+        try:
+            tags=validate_metadata({'tags':[tag.strip() for tag in params.get('tags',[''])[0].split(',') if tag.strip()]})['tags']
+        except ValueError:
+            raise APIError(400,'Use up to 30 tags of 40 characters each.')
         root=self.server.roots.get(source)
         if root is None: raise APIError(400,'Unknown library source.')
         fmt=Path(filename).suffix.lower()
@@ -217,6 +221,14 @@ class Handler(BaseHTTPRequestHandler):
                     # Exclusive move refuses to replace a file created during the upload.
                     try: move_exclusive(temporary,destination)
                     except FileExistsError: raise APIError(409,'A PDF with this filename already exists.')
+                    if tags:
+                        key=item_id(source,destination.relative_to(root).as_posix())
+                        try:
+                            with sqlite3.connect(self.server.state_db) as db:
+                                db.execute('INSERT OR REPLACE INTO metadata VALUES (?,?)',(key,json.dumps({'tags':tags})))
+                        except sqlite3.Error:
+                            destination.unlink()
+                            raise
                     self.server.scan_time=float('-inf')
             finally:
                 self.connection.settimeout(old_timeout)
