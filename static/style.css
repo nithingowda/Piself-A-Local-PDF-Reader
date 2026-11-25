@@ -385,8 +385,10 @@ body.epub-open{overflow:hidden}
 #reader:fullscreen #fullscreen-exit:is(:hover,:focus-visible){opacity:1;background:#0003}
 
 /* Let the PDF viewport use the space between visible toolbars. */
-#reader:not(.focused):not(.speech-immersive) > .reader-bar,
-#reader:not(.focused):not(.speech-immersive) > .controls{position:relative;inset:auto;flex:none}
+/* Overlay reader controls so toggling them never changes the page viewport. */
+#reader > .reader-bar{position:absolute;inset:0 0 auto}
+#reader > .controls{position:absolute;inset:auto 0 0}
+#page-area:focus,#page-area:focus-visible{outline:none}
 #reader > #page-area{min-height:0}
 
 @media(max-width:650px){
