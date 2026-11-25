@@ -37,6 +37,8 @@ from urllib.parse import unquote, urlsplit, quote, parse_qs
 BASE = Path(__file__).resolve().parent
 # Serialize WebP conversions, cache eviction and clearing across HTTP threads.
 WEBP_CACHE_LOCK = threading.RLock()
+OCR_LOCK = threading.Lock()
+OCR_CACHE_LIMIT = 64 * 1024 * 1024
 WEBP_CACHE_LIMIT = 512*1024*1024
 # Keep malicious or malformed PDF dimensions from exhausting server memory.
 MAX_RENDER_PIXELS = 16_000_000
@@ -892,33 +894,60 @@ class Handler(BaseHTTPRequestHandler):
                 if not 1<=n<=5000: raise APIError(400,'Invalid page.')
                 pdf=checked_path(self.server.roots[item['source']],item['path'])
                 if pdf.stat().st_size>MAX_WEBP_SOURCE_BYTES: raise APIError(413,'PDF exceeds size limit.')
-                import fitz
-                with fitz.open(pdf) as document:
-                    if n>len(document): raise APIError(404,'Page not found.')
-                    page=document[n-1]
-                    if not all(0<v<=MAX_PDF_PAGE_DIMENSION for v in (page.rect.width,page.rect.height)):
-                        raise APIError(413,'PDF page exceeds dimension limit.')
-                    flags=fitz.TEXTFLAGS_DICT & ~fitz.TEXT_PRESERVE_IMAGES & ~fitz.TEXT_PRESERVE_LIGATURES
-                    ocr=parse_qs(urlsplit(self.path).query).get('ocr',['0'])[0]=='1'
-                    if ocr:
-                        if page.rect.width*page.rect.height*(220/72)**2>MAX_RENDER_PIXELS:
-                            raise APIError(413,'OCR page exceeds pixel limit.')
-                        with WEBP_CACHE_LOCK:
+                ocr=parse_qs(urlsplit(self.path).query).get('ocr',['0'])[0]=='1'
+                stat=pdf.stat()
+                key=hashlib.sha256(repr(('ocr-v1-eng-220',str(pdf),stat.st_size,stat.st_mtime_ns,n,ocr)).encode()).hexdigest()
+                cache=self.server.state_db.parent/'ocr-text'
+                with OCR_LOCK:
+                    cache.mkdir(exist_ok=True)
+                    target=cache/(key+'.json')
+                    if target.is_file():
+                        try:
+                            result=json.loads(target.read_text(encoding='utf-8'))
+                            os.utime(target,None)
+                        except (OSError,ValueError):
+                            result=None
+                        if result is not None:
+                            self.json_response(result,head=head)
+                            return
+                    import fitz
+                    with fitz.open(pdf) as document:
+                        if n>len(document): raise APIError(404,'Page not found.')
+                        page=document[n-1]
+                        if not all(0<v<=MAX_PDF_PAGE_DIMENSION for v in (page.rect.width,page.rect.height)):
+                            raise APIError(413,'PDF page exceeds dimension limit.')
+                        flags=fitz.TEXTFLAGS_DICT & ~fitz.TEXT_PRESERVE_IMAGES & ~fitz.TEXT_PRESERVE_LIGATURES
+                        if ocr:
+                            if page.rect.width*page.rect.height*(220/72)**2>MAX_RENDER_PIXELS:
+                                raise APIError(413,'OCR page exceeds pixel limit.')
                             tp=page.get_textpage_ocr(language='eng',dpi=220,full=True,tessdata='/usr/share/tesseract-ocr/5/tessdata')
                             data=page.get_text('dict',textpage=tp)
-                    else:
-                        data=page.get_text('dict',flags=flags)
-                    lines=[]
-                    for block in data['blocks']:
-                        for line in block.get('lines',[]):
-                            spans=line.get('spans',[])
-                            if not spans: continue
-                            text=''.join(span['text'] for span in spans)
-                            if text.strip():
-                                lines.append({'str':text,'bbox':line['bbox'],'origin':spans[0]['origin']})
-                    if len(lines)>10000 or sum(len(line['str']) for line in lines)>200000:
-                        raise APIError(413,'Page text exceeds limit.')
-                    self.json_response({'lines':lines,'width':page.cropbox.width,'height':page.cropbox.height},head=head)
+                        else:
+                            data=page.get_text('dict',flags=flags)
+                        lines=[]
+                        for block in data['blocks']:
+                            for line in block.get('lines',[]):
+                                spans=line.get('spans',[])
+                                if not spans: continue
+                                text=''.join(span['text'] for span in spans)
+                                if text.strip():
+                                    lines.append({'str':text,'bbox':line['bbox'],'origin':spans[0]['origin']})
+                        if len(lines)>10000 or sum(len(line['str']) for line in lines)>200000:
+                            raise APIError(413,'Page text exceeds limit.')
+                        result={'lines':lines,'width':page.cropbox.width,'height':page.cropbox.height}
+                    if result['lines']:
+                        try:
+                            payload=json.dumps(result,ensure_ascii=False)
+                            target.write_text(payload,encoding='utf-8')
+                            files=sorted(cache.glob('*.json'),key=lambda p:p.stat().st_mtime)
+                            total=sum(p.stat().st_size for p in files)
+                            for old in files:
+                                if total<=OCR_CACHE_LIMIT: break
+                                total-=old.stat().st_size
+                                old.unlink()
+                        except OSError:
+                            logging.warning('Unable to maintain OCR cache')
+                self.json_response(result,head=head)
                 return
             if path.startswith('/api/page-image/'):
                 parts=path.split('/')
