@@ -277,6 +277,36 @@ async function refresh(quiet=false){
 /** clear Progress: Support the PiShelf reader or library interface. */
 async function clearProgress(id){await saveChain;if(!await confirmAction(id?'Clear reading progress?':'Clear all reading progress?',id?'This issue will return to Unread. Its bookmarks and favourite status stay.':'This resets reading positions for your account. PDFs, bookmarks and favourites stay.','Clear progress'))return;try{await api('/api/progress/clear',id?{id}:{});if(id)pendingSaves.delete(id);else pendingSaves.clear();await refresh();toast('Reading progress cleared.');}catch(e){toast(e.message);}}
 /** show Issue: Support the PiShelf reader or library interface. */
+let publishingId='';
+async function openPublishing(item){
+ const state=await api('/api/catalog/editor',{id:item.id});
+ publishingId=item.id;
+ const form=$('publishing-form');
+ for(const [name,value] of Object.entries(state.draft))form.elements.namedItem(name).value=value;
+ $('publishing-status').textContent=state.published?'Published. Save a draft or publish your changes.':'Private draft. Review these fields before publishing.';
+ $('publishing-withdraw').hidden=!state.published;
+ $('publishing-link').hidden=!state.published;
+ $('publishing-link').href=state.url;
+ $('issue-dialog').close();
+ $('publishing-dialog').showModal();
+}
+$('publishing-close').onclick=()=>$('publishing-dialog').close();
+async function savePublishing(mode){
+ const form=$('publishing-form'),buttons=form.querySelectorAll('button');
+ const draft=Object.fromEntries(new FormData(form));
+ buttons.forEach(button=>button.disabled=true);
+ try{
+  const result=await api('/api/catalog/editor',{id:publishingId,mode,draft});
+  $('publishing-status').textContent={draft:'Draft saved.',publish:'Listing published.',withdraw:'Listing unpublished.'}[mode];
+  if(mode!=='draft'){
+   $('publishing-link').hidden=$('publishing-withdraw').hidden=mode==='withdraw';
+   if(result.url)$('publishing-link').href=result.url;
+  }
+ }catch(error){$('publishing-status').textContent=error.message;}
+ finally{buttons.forEach(button=>button.disabled=false);}
+}
+$('publishing-form').onsubmit=e=>{e.preventDefault();void savePublishing(e.submitter?.value||'draft');};
+$('publishing-withdraw').onclick=()=>savePublishing('withdraw');
 function showIssue(item){issueItem=item;$('issue-title').textContent=item.title;$('issue-info').textContent=item.path+' · '+fileSize(item.size);const box=$('issue-actions');box.replaceChildren();
  if(item.source==='books'){
   const details=el('div','book-details'),cover=el('img','book-detail-cover');cover.src=coverURL(item);cover.alt=item.title;cover.style.cssText='width:110px;max-width:35%;height:auto;object-fit:contain';cover.onerror=()=>cover.remove();
@@ -288,6 +318,7 @@ function showIssue(item){issueItem=item;$('issue-title').textContent=item.title;
  action(started(item)?'Continue reading':'Read '+itemKind(item).toLowerCase(),()=>{$('issue-dialog').close();openDocument(item);});
  action('Read from the beginning',()=>{$('issue-dialog').close();openDocument(item,1);});
  const download=el('a','action-link','Download '+item.format.toUpperCase());download.href=pdfURL(item)+'?download=1';download.download=item.title+'.'+item.format;box.append(download);
+ if(item.source==='books'&&signedInUser?.role==='admin')action('Manage public listing',()=>openPublishing(item));
  action('Edit filename, category & tags',()=>{$('issue-dialog').close();openEdit(item);});
  action('Mark as finished',async()=>{await persist(item.id,{completed:true});$('issue-dialog').close();drawLibrary();});
  action('Clear reading progress',async()=>{$('issue-dialog').close();await clearProgress(item.id);});
