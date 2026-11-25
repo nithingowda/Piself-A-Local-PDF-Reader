@@ -294,14 +294,12 @@ export function createReadAloud({getText,next,peekNextText=()=>null,onState,getC
    async function playReady(){
     if(!valid(session)||playing||!clips[nextClip])return;
     playing=true;
-    const resumeBytes=offsets[nextClip];
-    // Once synthesis finishes, give native players a single full-length source.
-    const first=offsets.length===jobs.length+1?0:nextClip;
-    while(nextClip<clips.length&&clips[nextClip])nextClip++;
-    const batch=clips.slice(first,nextClip);
-    if(nextClip===jobs.length)clips.fill(null);
-    const bytes=offsets[nextClip]-offsets[first];
-    const url=URL.createObjectURL(new Blob(batch,{type:'audio/mpeg'}));
+    // Play each independently encoded MP3 from its beginning. Byte-based
+    // seeking into concatenated MP3s can skip speech at clip boundaries.
+    const first=nextClip++;
+    const clip=clips[first];
+    const bytes=clip.size;
+    const url=URL.createObjectURL(clip);
     const ready={url};prepared.add(ready);audioUrl=url;
     const update=()=>{
      if(!valid(session)||audioUrl!==url)return;
@@ -323,10 +321,6 @@ export function createReadAloud({getText,next,peekNextText=()=>null,onState,getC
     audio.ondurationchange=audio.ontimeupdate=audio.onseeked=update;
     audio.onloadedmetadata=()=>{
      if(!valid(session)||audioUrl!==url)return;
-     if(first===0&&resumeBytes){
-      const duration=Number.isFinite(audio.duration)&&audio.duration>0?audio.duration:bytes/6000;
-      audio.currentTime=duration*resumeBytes/bytes;
-     }
      update();
     };
     audio.onended=()=>{
@@ -334,6 +328,7 @@ export function createReadAloud({getText,next,peekNextText=()=>null,onState,getC
      clearInterval(clockTimer);clockTimer=null;
      audioUrl=null;playing=false;
      URL.revokeObjectURL(url);prepared.delete(ready);
+     clips[first]=null;
      if(nextClip===jobs.length)stop();
      else void playReady().catch(fail);
     };
