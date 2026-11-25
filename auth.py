@@ -15,7 +15,7 @@ import time
 from http.cookies import SimpleCookie
 
 ITERATIONS = 600_000
-SESSION_SECONDS = 12 * 3600
+SESSION_SECONDS = 30 * 24 * 3600
 USERNAME = re.compile(r"^[a-zA-Z0-9_.-]{3,40}$")
 
 
@@ -29,6 +29,13 @@ def initialize(db):
         token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL,
         csrf TEXT NOT NULL, expires REAL NOT NULL,
         FOREIGN KEY(user_id) REFERENCES auth_users(id))""")
+    columns={row[1] for row in db.execute("PRAGMA table_info(auth_sessions)")}
+    for name,definition in (("created","REAL"),("user_agent","TEXT"),("session_id","TEXT")):
+        if name not in columns:
+            db.execute(f"ALTER TABLE auth_sessions ADD COLUMN {name} {definition}")
+    for (digest,) in db.execute("SELECT token_hash FROM auth_sessions WHERE session_id IS NULL").fetchall():
+        db.execute("UPDATE auth_sessions SET session_id=? WHERE token_hash=?",(secrets.token_urlsafe(18),digest))
+
 
 
 def password_hash(password, salt):
@@ -65,12 +72,12 @@ def authenticate(db, username, password):
     return {"id": row[0], "username": username, "role": row[3]}
 
 
-def new_session(db, user_id):
+def new_session(db, user_id, user_agent=''):
     token = secrets.token_urlsafe(48)
     csrf = secrets.token_urlsafe(32)
     db.execute("DELETE FROM auth_sessions WHERE expires<?", (time.time(),))
-    db.execute("INSERT INTO auth_sessions VALUES (?,?,?,?)",
-               (hashlib.sha256(token.encode()).hexdigest(), user_id, csrf, time.time()+SESSION_SECONDS))
+    db.execute("INSERT INTO auth_sessions(token_hash,user_id,csrf,expires,created,user_agent,session_id) VALUES (?,?,?,?,?,?,?)",
+               (hashlib.sha256(token.encode()).hexdigest(), user_id, csrf, time.time()+SESSION_SECONDS,time.time(),user_agent[:512],secrets.token_urlsafe(18)))
     return token, csrf
 
 
