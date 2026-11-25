@@ -892,7 +892,7 @@ function enableSpeechDrag(kind){
  player.dataset.draggable='true';
  let drag=null;
  player.addEventListener('pointerdown',event=>{
-  if(event.button!==0||event.target.closest('button,select,label,input,.read-aloud-panel'))return;
+  if(event.button!==0||event.target.closest('button,select,label,input,textarea,.read-aloud-panel'))return;
   const rect=player.getBoundingClientRect();
   drag={id:event.pointerId,dx:event.clientX-rect.left,dy:event.clientY-rect.top};
   player.setPointerCapture(event.pointerId);
@@ -1114,12 +1114,12 @@ function wireSpeech(kind,controller){
  controller.setVoice(preferredSpeechVoice());
  const panel=$(kind+'-read-panel');
  if(!$(kind+'-reading-text')){
-  const toggle=document.createElement('button');toggle.type='button';toggle.textContent='Show reading text';toggle.setAttribute('aria-expanded','false');
-  const preview=document.createElement('textarea');preview.id=kind+'-reading-text';preview.readOnly=true;preview.hidden=true;preview.rows=6;
+  const toggle=document.createElement('button');toggle.type='button';toggle.textContent='Hide reading text';toggle.setAttribute('aria-expanded','true');
+  const preview=document.createElement('textarea');preview.id=kind+'-reading-text';preview.readOnly=true;preview.hidden=false;preview.rows=4;
   preview.setAttribute('aria-label','Exact text sent to Edge TTS');preview.placeholder='Start reading to see the exact text.';
   preview.style.cssText='width:100%;max-width:320px;box-sizing:border-box;resize:vertical;font:inherit;user-select:text;-webkit-user-select:text';
   toggle.onclick=()=>{preview.hidden=!preview.hidden;toggle.textContent=preview.hidden?'Show reading text':'Hide reading text';toggle.setAttribute('aria-expanded',String(!preview.hidden));};
-  panel.append(toggle,preview);
+  const wrapper=document.createElement('div');wrapper.style.cssText='display:flex;flex-direction:column;gap:4px;width:100%;min-width:0;';wrapper.append(toggle,preview);$(kind+'-speech-player').append(wrapper);
  }
  $(kind+'-read-toggle').onclick=()=>beginSpeechPick(kind);
  $(kind+'-play-selected').onclick=()=>playNumberedParagraphs(kind);
