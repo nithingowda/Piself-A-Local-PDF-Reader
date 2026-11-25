@@ -365,9 +365,10 @@ $('pref-readerBrightness').oninput=e=>{
 $('pref-readerBrightness').onchange=()=>storePrefs();
 $('settings-open').onclick=openSettings;$('reader-settings').onclick=openSettings;$('settings-close').onclick=()=>{folderAccessPin='';$('settings').close();};
 for(const k of ['siteTheme','theme','mode','quality','density'])$('pref-'+k).onchange=e=>{prefs[k]=e.target.value;if(k==='theme'){prefs.comfort='custom';$('pref-comfort').value='custom';}if(k==='theme'&&['light','sepia','dark'].includes(prefs.theme))lastDayTheme=prefs.theme;storePrefs();if(documentPDF&&(k==='mode'||k==='quality')){$('view-mode').value=prefs.mode;rebuild();}};
-function usesWebpRenderer(){return signedInUser?.role==='admin'&&prefs.pdfRenderer==='webp';}
+function canChangePdfRenderer(){return signedInUser?.role==='admin';}
+function usesWebpRenderer(){return canChangePdfRenderer()&&prefs.pdfRenderer==='webp';}
 $('pref-pdfRenderer').onchange=e=>{
- if(signedInUser?.role!=='admin')return;
+ if(!canChangePdfRenderer())return;
  prefs.pdfRenderer=e.target.value;
  clearMagazinePrefetches();
  cancelAllSharpImages();
@@ -2245,7 +2246,7 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{if(pre
   // floating overlay that obscures the PDF reader on small screens.
   $('account-identity').textContent='Signed in as '+signedInUser.username;
   $('account-role').textContent=signedInUser.role==='admin'?'Administrator':'Reader';
-  $('pdf-renderer-setting').hidden=signedInUser.role!=='admin';
+  $('pdf-renderer-setting').hidden=!canChangePdfRenderer();
   $('account-manage-users').hidden=signedInUser.role!=='admin';
   $('account-logout').onclick=async()=>{
    try{await api('/api/auth/logout',{});}finally{location.replace('/login.html');}
