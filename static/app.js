@@ -877,14 +877,22 @@ const EDGE_VOICES=[
 // Keep the user's preferred voice across PDF/EPUB and browser reloads.
 const VOICE_STORAGE_KEY='pishelf-edge-voice';
 function preferredSpeechVoice(){
- try{const value=localStorage.getItem(VOICE_STORAGE_KEY);if(EDGE_VOICES.some(([id])=>id===value))return value;}catch{}
+ try{const value=localStorage.getItem(VOICE_STORAGE_KEY);if(EDGE_VOICES.some(([id])=>id===value)||(value?.startsWith('native:')&&window.speechSynthesis))return value;}catch{}
  return 'en-IN-NeerjaNeural';
 }
 function speechVoices(kind){
  const select=$(kind+'-read-voice');if(!select)return;
- select.replaceChildren(...EDGE_VOICES.map(([id,label])=>new Option(label,id)));
+ const options=EDGE_VOICES.map(([id,label])=>new Option('Edge · '+label,id));
+ if(window.speechSynthesis&&window.SpeechSynthesisUtterance){
+  options.push(new Option('Native · Automatic','native:auto'));
+  for(const voice of speechSynthesis.getVoices())options.push(new Option('Native · '+voice.name+' ('+voice.lang+')','native:'+voice.voiceURI));
+ }
+ const preferred=preferredSpeechVoice();
+ if(preferred.startsWith('native:')&&!options.some(o=>o.value===preferred))options.push(new Option('Native · Saved voice',preferred));
+ select.replaceChildren(...options);
  select.value=preferredSpeechVoice();
 }
+window.speechSynthesis?.addEventListener('voiceschanged',()=>{speechVoices('pdf');speechVoices('epub');});
 // Drag only from the player background: buttons and settings remain clickable.
 function enableSpeechDrag(kind){
  const player=$(kind+'-speech-player');
@@ -1138,7 +1146,7 @@ function wireSpeech(kind,controller){
   refreshNumberedSelection(kind);
  };
  $(kind+'-read-rate').onchange=e=>controller.setRate(e.target.value);
- $(kind+'-read-voice').onchange=e=>{const selected=e.target.value;try{localStorage.setItem(VOICE_STORAGE_KEY,selected);}catch{}controller.setVoice(selected);speechVoices(kind==='pdf'?'epub':'pdf');};
+ $(kind+'-read-voice').onchange=e=>{const selected=e.target.value;try{localStorage.setItem(VOICE_STORAGE_KEY,selected);}catch{}controller.setVoice(selected);(kind==='pdf'?epubSpeech:pdfSpeech)?.setVoice(selected);speechVoices(kind==='pdf'?'epub':'pdf');};
  speechVoices(kind);
 }
 let readingMark=null,readingMarkText='',readingMarkPage=0,readingMarkIndex=-1;
