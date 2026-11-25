@@ -5,8 +5,7 @@ import {selectionsOverlap,selectedPassage} from './pdf-text-selection.js';
  *   Library: refresh(), drawLibrary(), cardFor(), updateFilterOptions()
  *   Settings: applyPrefs(), openSettings(), storePrefs()
  *   Reader: openMagazine(), rebuild(), move(), closeReader()
- *   WebP / memory: renderPages(), preloadMagazineNeighbors(),
- *                  cancelAllSharpImages(), trimCanvases()
+ *   WebP / memory: renderPages(), trimCanvases()
  *   Navigation: trackScroll(), showThumbnailRange(), updatePageUI()
  *   State: persist(), remember(), clearProgress()
  *
@@ -610,9 +609,8 @@ function enqueue(slot){
  renderPages();
 }
 /** render Pages: Manage PDF page rendering and canvas lifecycle. */
-// === WebP-first reader ======================================================
-// Render queue is serialized to bound concurrent decoding. A 960px preview
-// appears first, then a sharper WebP may replace it if the slot is still valid.
+// === Client-side WebP reader ================================================
+// Serialize PDF.js rendering to bound concurrent canvas allocations.
 async function renderPages(){
  if(renderBusy)return;renderBusy=true;
  try{while(renderQueue.length){
@@ -660,100 +658,15 @@ async function renderPages(){
  }finally{renderBusy=false;if(renderQueue.length)renderPages();}
 }
 /** trim Canvases: Manage PDF page rendering and canvas lifecycle. */
-// Keep only nearby magazine images decoded in Safari; page navigation preloads
-// the next two pages and the previous page without allocating large canvases.
-// Decoded 960px previews for adjacent pages. Each cache entry owns a
-// settleable promise, so navigating away cannot leave a page turn hanging.
-let imagePrefetches=new Map();
-const pendingSharpImages=new Map();
-function cancelSharpImage(slot){
- const image=pendingSharpImages.get(slot);
- if(!image)return;
- image.onload=null;image.onerror=null;image.src='';
- pendingSharpImages.delete(slot);
-}
-function cancelAllSharpImages(){
- for(const slot of pendingSharpImages.keys())cancelSharpImage(slot);
-}
-function discardDecodedPreview(n,entry){
- if(imagePrefetches.get(n)===entry)imagePrefetches.delete(n);
- entry.cancelled=true;entry.img.onload=null;entry.img.onerror=null;
- if(!entry.transferred)entry.img.src='';
- entry.finish(false);
-}
-function ensureDecodedPreview(n){return Promise.resolve(false);}
-function legacyServerDecodedPreview(n){
- if(!documentPDF||!current?.id||n<1||n>documentPDF.numPages)return Promise.resolve(false);
- const existing=imagePrefetches.get(n);
- if(existing?.id===current.id&&!existing.cancelled)return existing.promise;
- if(existing)discardDecodedPreview(n,existing);
- const img=new Image();img.decoding='async';
- let resolvePromise;
- const entry={id:current.id,img,ready:false,cancelled:false,transferred:false,settled:false,finish:null,promise:null};
- entry.promise=new Promise(resolve=>{resolvePromise=resolve;});
- entry.finish=ok=>{if(!entry.settled){entry.settled=true;resolvePromise(ok);}};
- imagePrefetches.set(n,entry);
- img.onload=async()=>{
-  try{if(typeof img.decode==='function')await img.decode();}catch{}
-  if(entry.cancelled)return;
-  entry.ready=img.naturalWidth>0&&img.naturalHeight>0;
-  entry.finish(entry.ready);
- };
- img.onerror=()=>{
-  if(entry.cancelled)return;
-  entry.finish(false);
-  if(imagePrefetches.get(n)===entry)imagePrefetches.delete(n);
- };
- img.src='/api/page-image/'+encodeURIComponent(entry.id)+'/'+n+'?width=960';
- return entry.promise;
-}
-// Transfer the decoded original, instead of creating another image whose
-// onload would delay the newly turned page.
-function takeDecodedPreview(n){
- const entry=imagePrefetches.get(n);
- if(!entry||!entry.ready||entry.id!==current?.id)return null;
- imagePrefetches.delete(n);
- entry.transferred=true;entry.img.onload=null;entry.img.onerror=null;
- return entry.img;
-}
-function neighborPreviewPages(){
- if(!documentPDF)return [];
- const count=documentPDF.numPages;
- if(isBookSpread()){
-  const start=spreadStart(page),previous=start<=2?1:start-2;
-  const next=start===1?2:start+2;
-  return [...new Set([
-   ...(previous<start?spreadPages(previous):[]),
-   ...(next<=count?spreadPages(next):[])
-  ].filter(n=>n>=1&&n<=count))];
- }
- return [page-2,page-1,page+1,page+2].filter(n=>n>=1&&n<=count);
-}
-function preloadMagazineNeighbors(){
- if(!documentPDF||!current?.id)return;
- const wanted=new Set(neighborPreviewPages());
- // When the first page of a new book spread is installed, its companion
- // might still be queued. Never evict that ALREADY decoded image before the
- // second slot takes it. Do not start duplicate requests for queued slots.
- if(isBookSpread())for(const n of spreadPages(page)){
-  const slot=slots.find(candidate=>Number(candidate.dataset.page)===n);
-  if(slot?.dataset.ready!=='yes'&&imagePrefetches.has(n))wanted.add(n);
- }
- for(const [n,entry] of imagePrefetches)if(!wanted.has(n))discardDecodedPreview(n,entry);
- for(const n of wanted)void ensureDecodedPreview(n);
-}
-function clearMagazinePrefetches(){
- for(const [n,entry] of imagePrefetches)discardDecodedPreview(n,entry);
- imagePrefetches.clear();
-}
-function trimCanvases(){if(pinch||Math.abs(zoom-cssZoomBase)>.01)return;const area=$('page-area').getBoundingClientRect();for(const slot of renderedSlots){const rect=slot.getBoundingClientRect();if(Math.abs(+slot.dataset.page-page)>2&&(rect.bottom<area.top||rect.top>area.bottom)){cancelSharpImage(slot);for(const c of slot.querySelectorAll('canvas')){c.width=0;c.height=0;}for(const img of slot.querySelectorAll('img')){img.src='';}replacePagePixels(slot,el('span','page-placeholder','Page '+slot.dataset.page));slot.dataset.ready='no';renderedSlots.delete(slot);}}}
+// Release offscreen page pixels to bound memory usage.
+function trimCanvases(){if(pinch||Math.abs(zoom-cssZoomBase)>.01)return;const area=$('page-area').getBoundingClientRect();for(const slot of renderedSlots){const rect=slot.getBoundingClientRect();if(Math.abs(+slot.dataset.page-page)>2&&(rect.bottom<area.top||rect.top>area.bottom)){for(const c of slot.querySelectorAll('canvas')){c.width=0;c.height=0;}for(const img of slot.querySelectorAll('img')){img.src='';}replacePagePixels(slot,el('span','page-placeholder','Page '+slot.dataset.page));slot.dataset.ready='no';renderedSlots.delete(slot);}}}
 /** track Scroll: Keep the visible PDF page and navigation state in sync. */
 let lastCanvasTrim=0;
 function trackScroll(){
  if(pinch||performance.now()<pinchScrollLockUntil||!layoutReady||!documentPDF||$('view-mode').value!=='scroll'||!slots.length)return;
  const area=$('page-area'),target=area.scrollTop+Math.min(area.clientHeight*.35,240);let low=0,high=slots.length-1;
  while(low<high){const mid=Math.ceil((low+high)/2);if(slots[mid].offsetTop<=target)low=mid;else high=mid-1;}
- const n=+slots[low].dataset.page;if(n!==page){page=n;updatePageUI();preloadMagazineNeighbors();}
+ const n=+slots[low].dataset.page;if(n!==page){page=n;updatePageUI();}
  for(let i=Math.max(0,low-2),end=area.scrollTop+area.clientHeight+300;i<slots.length&&slots[i].offsetTop<end;i++)enqueue(slots[i]);if(performance.now()-lastCanvasTrim>250){lastCanvasTrim=performance.now();trimCanvases();}
  clearTimeout(scrollTimer);scrollTimer=setTimeout(remember,750);
 }
@@ -766,7 +679,7 @@ function readerPrefetchMargin(){
  return Math.round(Math.min(memory<=2?240:900,Math.max(240,height*(memory<=2?.35:.8))))+'px';
 }
 /** rebuild: Manage PDF page rendering and canvas lifecycle. */
-async function rebuild(){if(!documentPDF)return;cancelAllSharpImages();$('pages').style.zoom='';$('pages').style.transform='';$('pages').style.transformOrigin='';cssZoomBase=zoom;updateTouchMode();const g=generation,epoch=++layoutEpoch;layoutReady=false;pageObserver?.disconnect();renderQueue=[];clearCurl();
+async function rebuild(){if(!documentPDF)return;$('pages').style.zoom='';$('pages').style.transform='';$('pages').style.transformOrigin='';cssZoomBase=zoom;updateTouchMode();const g=generation,epoch=++layoutEpoch;layoutReady=false;pageObserver?.disconnect();renderQueue=[];clearCurl();
  if(automaticFit){
   const fittedPage=page;
   await primeSpreadDimensions(isBookSpread()?spreadPages(page):[page]);
@@ -1086,14 +999,6 @@ function wireSpeech(kind,controller){
  enableSpeechDrag(kind);
  controller.setVoice(preferredSpeechVoice());
  const panel=$(kind+'-read-panel');
- if(!$(kind+'-reading-text')){
-  const toggle=document.createElement('button');toggle.type='button';toggle.textContent='Hide reading text';toggle.setAttribute('aria-expanded','true');
-  const preview=document.createElement('textarea');preview.id=kind+'-reading-text';preview.readOnly=true;preview.hidden=false;preview.rows=4;
-  preview.setAttribute('aria-label','Exact text sent to Edge TTS');preview.placeholder='Start reading to see the exact text.';
-  preview.style.cssText='width:100%;max-width:320px;box-sizing:border-box;resize:vertical;font:inherit;user-select:text;-webkit-user-select:text';
-  toggle.onclick=()=>{preview.hidden=!preview.hidden;toggle.textContent=preview.hidden?'Show reading text':'Hide reading text';toggle.setAttribute('aria-expanded',String(!preview.hidden));};
-  const wrapper=document.createElement('div');wrapper.style.cssText='display:flex;flex-direction:column;gap:4px;width:100%;min-width:0;';wrapper.append(toggle,preview);$(kind+'-speech-player').append(wrapper);
- }
  $(kind+'-read-toggle').onclick=()=>beginSpeechPick(kind);
  $(kind+'-play-selected').onclick=()=>playNumberedParagraphs(kind);
  const play=()=>{
@@ -1227,7 +1132,7 @@ function clearSpeechHighlight(kind){
  else epubController?.clearReadingHighlight?.();
 }
 function speechState(kind,state){
- if(state.readingText!==undefined){const preview=$(kind+'-reading-text');if(preview)preview.value=state.readingText;return;}
+
  const timer=$(kind+'-remaining');
  if(state.preparing){timer.hidden=false;timer.textContent='Preparing audio…';return;}
  if(state.remaining!==undefined){
@@ -1550,7 +1455,7 @@ async function openMagazine(item,start){
   if(history.state?.pdfId!==item.id)history.pushState({pishelfReader:true,pdfId:item.id},'',location.href);
   readerHistoryActive=true;
  }
- clearMagazinePrefetches();cancelAllSharpImages();current=item;const g=++generation;const reading=saved[item.id]||{};
+ current=item;const g=++generation;const reading=saved[item.id]||{};
  // Open in the PDF's native orientation. Manual rotation lasts for this reading session.
  zoom=1;rotation=0;dimensions.clear();
  $('reader').hidden=false;document.body.classList.add('reader-open');setReaderFocus(true);
@@ -1636,7 +1541,7 @@ async function closeReader({fromHistory=false}={}){
   // Back triggers popstate and returns to the existing library history entry.
   history.back();
  }
- clearMagazinePrefetches();cancelAllSharpImages();resetPinch();clearTimeout(scrollTimer);clearTimeout(immersiveTimer);remember();++generation;++layoutEpoch;layoutReady=false;pageObserver?.disconnect();renderQueue=[];const oldDoc=documentPDF;documentPDF=null;if(oldDoc?.destroy)oldDoc.destroy().catch(()=>{});$('reader').hidden=true;document.body.classList.remove('reader-open');$('library').hidden=false;$('pages').replaceChildren();slots=[];renderedSlots.clear();if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});drawLibrary();refresh(true);}
+ resetPinch();clearTimeout(scrollTimer);clearTimeout(immersiveTimer);remember();++generation;++layoutEpoch;layoutReady=false;pageObserver?.disconnect();renderQueue=[];const oldDoc=documentPDF;documentPDF=null;if(oldDoc?.destroy)oldDoc.destroy().catch(()=>{});$('reader').hidden=true;document.body.classList.remove('reader-open');$('library').hidden=false;$('pages').replaceChildren();slots=[];renderedSlots.clear();if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});drawLibrary();refresh(true);}
 // Thumbnail browser: load only the visible part of a bounded thumbnail list.
 // === Thumbnail navigator ====================================================
 // 60 pages per batch; IntersectionObserver loads only visible thumbnails.
@@ -2060,11 +1965,10 @@ function beginCurl(direction,start){
  const visible=spread?spreadPages(page):[page],incoming=spread?spreadPages(target):[target];
  const edge=pages=>direction>0?pages[pages.length-1]:pages[0];
  const slot=slots.find(item=>Number(item.dataset.page)===edge(visible));
- const front=slot?.querySelector('img,canvas'),preview=imagePrefetches.get(edge(incoming));
+ const front=slot?.querySelector('img,canvas');
  if(!front)return;
  const rect=slot.getBoundingClientRect(),canvas=document.createElement('canvas');
  const opposite=spread&&slots.length===2?slots[direction>0?0:1].getBoundingClientRect():null;
- const reverse=spread?imagePrefetches.get(direction>0?incoming[0]:incoming[incoming.length-1]):null;
  const book=opposite&&incoming.length===2;
  const bounds=book?{left:Math.min(rect.left,opposite.left),top:Math.min(rect.top,opposite.top),
   width:Math.max(rect.right,opposite.right)-Math.min(rect.left,opposite.left),
@@ -2078,7 +1982,7 @@ function beginCurl(direction,start){
  Object.assign(canvas.style,{position:'fixed',pointerEvents:'none',left:bounds.left+'px',top:bounds.top+'px',
   width:bounds.width+'px',height:bounds.height+'px',filter:getComputedStyle(front).filter,zIndex:'1'});
  $('reader').append(canvas);
- curl={canvas,ctx,book,reverse:reverse?.ready?reverse.img:null,opposite,bounds,front,under:preview?.ready?preview.img:null,rect,direction,progress:0,frame:0,
+ curl={canvas,ctx,book,reverse:null,opposite,bounds,front,under:null,rect,direction,progress:0,frame:0,
   tilt:start.y<rect.top+rect.height/2?1:-1,slot,epoch:layoutEpoch,origin:page};
 }
 function drawCurl(progress){
