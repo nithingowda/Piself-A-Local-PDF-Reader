@@ -1018,7 +1018,8 @@ function wireSpeech(kind,controller){
  $(kind+'-read-forward').onclick=()=>controller.seek(10);
  const closePlayer=()=>{controller.stop();speechPlayer(kind,false);};
  $(kind+'-read-close').onclick=closePlayer;
- $(kind+'-read-more').onclick=()=>{panel.hidden=!panel.hidden;};
+ $(kind+'-read-more').setAttribute('aria-expanded',String(!panel.hidden));
+ $(kind+'-read-more').onclick=()=>{panel.hidden=!panel.hidden;$(kind+'-read-more').setAttribute('aria-expanded',String(!panel.hidden));};
  $(kind+'-read-play').onclick=play;
  $(kind+'-read-pause').onclick=()=>controller.paused?play():controller.pause();
  $(kind+'-read-stop').onclick=()=>{
