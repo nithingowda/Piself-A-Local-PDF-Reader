@@ -620,47 +620,6 @@ async function renderPages(){
   if(g!==generation||epoch!==layoutEpoch||!slot.isConnected||!documentPDF)continue;
   const n=+slot.dataset.page;
   try{
-   // Prefer cached magazine images; retain PDF.js rendering as a fallback.
-   if(current?.id&&!rotation){
-    const prefetched=takeDecodedPreview(n);
-    const img=prefetched||document.createElement('img');
-    img.draggable=false;
-    img.alt='Magazine page '+n;
-    img.decoding='async';
-    img.style.cssText='display:block;width:100%;height:100%;object-fit:contain';
-    const width=zoom>1.6?2800:zoom>0.85?1600:960;
-    const url='/api/page-image/'+encodeURIComponent(current.id)+'/'+n+'?width='+width;
-    const previewUrl='/api/page-image/'+encodeURIComponent(current.id)+'/'+n+'?width=960';
-    try{
-     if(!prefetched){
-      await new Promise((resolve,reject)=>{
-       img.onload=resolve;img.onerror=reject;img.src=width>960?previewUrl:url;
-      });
-     }
-     if(g!==generation||epoch!==layoutEpoch||!slot.isConnected)continue;
-     replacePagePixels(slot,img);slot.dataset.ready='yes';void installTextSurface(slot,img,documentPDF);slot.dataset.queued='no';
-     if(width>960){
-      cancelSharpImage(slot);
-      const sharp=new Image();sharp.draggable=false;
-      sharp.decoding='async';sharp.alt=img.alt;sharp.style.cssText=img.style.cssText;
-      pendingSharpImages.set(slot,sharp);
-      sharp.onload=()=>{
-       pendingSharpImages.delete(slot);
-       sharp.onload=null;sharp.onerror=null;
-       if(g===generation&&epoch===layoutEpoch&&slot.isConnected&&slot.firstChild===img&&!pinch){
-        replacePagePixels(slot,sharp);
-       }else{
-        // A stale response must not retain a decoded 2800px image.
-        sharp.src='';
-       }
-      };
-      sharp.onerror=()=>{pendingSharpImages.delete(slot);sharp.onload=null;sharp.onerror=null;};
-      sharp.src=url;
-     }
-     renderedSlots.add(slot);trimCanvases();if(n===page)preloadMagazineNeighbors();$('reader-status').textContent='';
-     continue;
-    }catch(error){img.src='';}
-   }
    const pdfPage=await documentPDF.getPage(n);
    if(g!==generation||epoch!==layoutEpoch||!slot.isConnected)continue;
    const natural=pdfPage.getViewport({scale:1});
@@ -681,7 +640,21 @@ async function renderPages(){
    canvas.style.cssText='display:block;width:100%;height:100%';
    await pdfPage.render({canvasContext:canvas.getContext('2d',{alpha:false}),viewport:view}).promise;
    if(g!==generation||epoch!==layoutEpoch||!slot.isConnected){canvas.width=0;canvas.height=0;continue;}
-   replacePagePixels(slot,canvas);slot.dataset.ready='yes';void installTextSurface(slot,canvas,documentPDF);slot.dataset.queued='no';renderedSlots.add(slot);trimCanvases();$('reader-status').textContent='';
+   let pixels=canvas;
+   try{
+    const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/webp',.92));
+    if(blob?.type==='image/webp'){
+     const url=URL.createObjectURL(blob);
+     try{
+      const img=new Image();img.alt='PDF page '+n;img.draggable=false;img.decoding='async';img.style.cssText='display:block;width:100%;height:100%;object-fit:contain';
+      await new Promise((resolve,reject)=>{img.onload=resolve;img.onerror=reject;img.src=url;});
+      img.onload=img.onerror=null;pixels=img;
+      canvas.width=canvas.height=0;
+     }finally{URL.revokeObjectURL(url);}
+    }
+   }catch{} // Retain the canvas if WebP encoding is unsupported.
+   if(g!==generation||epoch!==layoutEpoch||!slot.isConnected){canvas.width=canvas.height=0;if(pixels!==canvas)pixels.src='';continue;}
+   replacePagePixels(slot,pixels);slot.dataset.ready='yes';void installTextSurface(slot,pixels,documentPDF);slot.dataset.queued='no';renderedSlots.add(slot);trimCanvases();$('reader-status').textContent='';
   }catch(e){slot.dataset.queued='no';if(g===generation&&epoch===layoutEpoch){replacePagePixels(slot,el('p','page-placeholder','Page '+n+' could not render.'));const retry=el('button','','Retry');retry.onclick=()=>enqueue(slot);slot.append(retry);$('reader-status').textContent='PDF rendering failed: '+e.message;}}
  }
  }finally{renderBusy=false;if(renderQueue.length)renderPages();}
@@ -708,7 +681,8 @@ function discardDecodedPreview(n,entry){
  if(!entry.transferred)entry.img.src='';
  entry.finish(false);
 }
-function ensureDecodedPreview(n){
+function ensureDecodedPreview(n){return Promise.resolve(false);}
+function legacyServerDecodedPreview(n){
  if(!documentPDF||!current?.id||n<1||n>documentPDF.numPages)return Promise.resolve(false);
  const existing=imagePrefetches.get(n);
  if(existing?.id===current.id&&!existing.cancelled)return existing.promise;
@@ -2021,11 +1995,7 @@ function finishPinch(cancelled=false){
  }
  // Upgrade the current image when magnified, without changing the page box.
  const image=slot.querySelector('img');
- if(image&&current?.id){
-  const width=zoom>1.6?2800:zoom>0.85?1600:960;
-  const url='/api/page-image/'+encodeURIComponent(current.id)+'/'+state.page+'?width='+width;
-  if(!image.src.endsWith(url))image.src=url;
- }
+ if(image||slot.querySelector('canvas')){slot.dataset.ready='no';enqueue(slot);}
  updatePageUI();remember();
 }
 $('page-area').addEventListener('touchstart',e=>{
