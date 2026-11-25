@@ -57,6 +57,10 @@ def create_user(db, username, password, role):
     salt = secrets.token_bytes(24)
     db.execute("INSERT INTO auth_users(username,salt,password_hash,role) VALUES (?,?,?,?)",
                (username, salt, password_hash(password, salt), role))
+    if role == "admin" and db.execute("SELECT 1 FROM sqlite_master WHERE name='progress'").fetchone():
+        if "user_id" in {row[1] for row in db.execute("PRAGMA table_info(progress)")}:
+            db.execute("UPDATE progress SET user_id=(SELECT id FROM auth_users WHERE username=?) WHERE user_id=0", (username,))
+
 
 
 def authenticate(db, username, password):

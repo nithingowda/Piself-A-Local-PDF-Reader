@@ -413,6 +413,8 @@ class Handler(BaseHTTPRequestHandler):
                         salt=secrets.token_bytes(24)
                         db.execute('UPDATE auth_users SET salt=?,password_hash=? WHERE id=?',(salt,auth.password_hash(data['password'],salt),uid))
                     elif action=='delete':
+                        db.execute('DELETE FROM progress WHERE user_id=?',(uid,))
+                        db.execute('DELETE FROM annotations WHERE user_id=?',(uid,))
                         db.execute('DELETE FROM auth_users WHERE id=?',(uid,))
                     else:
                         db.execute('UPDATE auth_users SET enabled=? WHERE id=?',(1 if action=='enable' else 0,uid))
@@ -590,7 +592,7 @@ class Handler(BaseHTTPRequestHandler):
         if route == '/api/trash/delete':
             token=data.get('token')
             if not isinstance(token,str) or not re.fullmatch('[a-f0-9]{32}',token) or data.get('confirm') is not True: raise ValueError()
-            row=db.execute('SELECT path,source FROM trash WHERE token=?',(token,)).fetchone()
+            row=db.execute('SELECT path,source,archived_state FROM trash WHERE token=?',(token,)).fetchone()
             if not row: raise APIError(404,'Trash item not found.')
             root=self.server.roots.get(row[1])
             if root is None: raise APIError(409,'Library source is not configured.')
@@ -598,6 +600,7 @@ class Handler(BaseHTTPRequestHandler):
             if file.parent.is_symlink() or file.is_symlink() or not file.resolve().is_relative_to(root): raise APIError(403,'Invalid trash path.')
             file.unlink(missing_ok=True)
             db.execute('DELETE FROM trash WHERE token=?',(token,))
+            remove_reading_state(db,token)
             if not checked_path(root,row[0]).exists(): remove_reading_state(db,item_id(row[1],row[0]))
             return {'ok':True}
         if route == '/api/categories':
@@ -663,11 +666,7 @@ class Handler(BaseHTTPRequestHandler):
                 move_exclusive(source,destination)
             try:
                 if new_id != item['id']:
-                    old = db.execute('SELECT value FROM progress WHERE id=?',(item['id'],)).fetchone()
-                    # The destination may retain historical progress from an earlier deleted file.
-                    db.execute('DELETE FROM progress WHERE id=?',(new_id,))
-                    if old: db.execute('INSERT INTO progress VALUES (?,?)',(new_id,old[0]))
-                    db.execute('DELETE FROM progress WHERE id=?',(item['id'],))
+                    move_reader_state(db,item['id'],new_id)
                     db.execute('DELETE FROM metadata WHERE id=?',(item['id'],))
                     db.execute('DELETE FROM collection_items WHERE item_id=?',(new_id,))
                     db.execute('UPDATE collection_items SET item_id=? WHERE item_id=?',(new_id,item['id']))
@@ -680,6 +679,8 @@ class Handler(BaseHTTPRequestHandler):
                 if moved: destination.rename(source)
                 raise
             return {'ok':True,'id':new_id}
+        if route in ('/api/backup/restore','/api/progress/clear','/api/progress'):
+            user_id=self.require_session(mutation=True)['id']
         if route == '/api/backup/restore':
             if data.get('format') != 'pishelf-backup' or type(data.get('version')) is not int or data['version'] != 1:
                 raise APIError(400, 'Unsupported PiShelf backup.')
@@ -712,7 +713,7 @@ class Handler(BaseHTTPRequestHandler):
             if data.get('managedCategories') is True:
                 db.executemany('INSERT OR IGNORE INTO managed_categories VALUES (?,?)',
                                [(c['source'],c['path']) for c in categories if c['path']!='.'])
-            for key,value in progress.items(): db.execute('INSERT OR REPLACE INTO progress VALUES (?,?)',(key,json.dumps(value)))
+            for key,value in progress.items(): db.execute('INSERT OR REPLACE INTO progress VALUES (?,?,?)',(user_id,key,json.dumps(value)))
             for key,value in metadata.items(): db.execute('INSERT OR REPLACE INTO metadata VALUES (?,?)',(key,json.dumps(value)))
             for collection in collections:
                 db.execute('INSERT INTO collections VALUES (?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name',(collection['id'],collection['name']))
@@ -722,11 +723,11 @@ class Handler(BaseHTTPRequestHandler):
         if route == '/api/progress/clear':
             key = data.get('id')
             if key is not None and not re.fullmatch('[a-f0-9]{20}', str(key)): raise ValueError()
-            rows = db.execute('SELECT id,value FROM progress WHERE id=?',(key,)).fetchall() if key else db.execute('SELECT id,value FROM progress').fetchall()
+            rows = db.execute('SELECT id,value FROM progress WHERE user_id=? AND length(id)=20 AND (? IS NULL OR id=?)',(user_id,key,key)).fetchall()
             for id_, raw in rows:
                 value=json.loads(raw)
-                for field in ('page','total','lastRead','completed'): value.pop(field,None)
-                db.execute('UPDATE progress SET value=? WHERE id=?',(json.dumps(value),id_))
+                for field in ('page','total','lastRead','completed','epubCfi'): value.pop(field,None)
+                db.execute('UPDATE progress SET value=? WHERE id=? AND user_id=?',(json.dumps(value),id_,user_id))
             return {'ok':True}
         if route == '/api/annotations':
             user=self.require_session(mutation=True)
@@ -765,11 +766,11 @@ class Handler(BaseHTTPRequestHandler):
                 marks=data['bookmarks']
                 if not isinstance(marks,list) or len(marks)>1000 or any(type(n) is not int or not 1<=n<=100000 for n in marks): raise ValueError()
                 data['bookmarks']=sorted(set(marks))
-            row=db.execute('SELECT value FROM progress WHERE id=?',(key,)).fetchone()
+            row=db.execute('SELECT value FROM progress WHERE id=? AND user_id=?',(key,user_id)).fetchone()
             value=json.loads(row[0]) if row else {}
             value.update(data)
             if 'page' in data or 'epubCfi' in data: value['lastRead']=time.time()
-            db.execute('INSERT OR REPLACE INTO progress VALUES (?,?)',(key,json.dumps(value)))
+            db.execute('INSERT OR REPLACE INTO progress VALUES (?,?,?)',(user_id,key,json.dumps(value)))
             return value
         if route == '/api/trash':
             key=data['id']
@@ -784,8 +785,8 @@ class Handler(BaseHTTPRequestHandler):
             destination=trash/(token+Path(item['path']).suffix.lower())
             source.rename(destination)
             try:
-                db.execute('DELETE FROM annotations WHERE document_id=?',(key,))
-                db.execute('INSERT INTO trash (token,path,title,deleted,source) VALUES (?,?,?,?,?)',(token,item['path'],item['title'],time.time(),item['source']))
+                move_reader_state(db,key,token)
+                db.execute('INSERT INTO trash (token,path,title,deleted,source,archived_state) VALUES (?,?,?,?,?,1)',(token,item['path'],item['title'],time.time(),item['source']))
                 db.commit()
             except Exception:
                 destination.rename(source)
@@ -794,7 +795,7 @@ class Handler(BaseHTTPRequestHandler):
         if route == '/api/trash/restore':
             token=data['token']
             if not isinstance(token,str) or not re.fullmatch('[a-f0-9]{32}',token): raise ValueError()
-            row=db.execute('SELECT path,source FROM trash WHERE token=?',(token,)).fetchone()
+            row=db.execute('SELECT path,source,archived_state FROM trash WHERE token=?',(token,)).fetchone()
             if not row: raise APIError(404,'Trash item not found.')
             root=self.server.roots.get(row[1])
             if root is None: raise APIError(409,'This library source is not configured.')
@@ -817,6 +818,9 @@ class Handler(BaseHTTPRequestHandler):
                             destination.unlink()
                             raise
             try:
+                # Legacy trash entries kept progress under the live path.
+                if row[2]:
+                    move_reader_state(db,token,item_id(row[1],row[0]))
                 db.execute('DELETE FROM trash WHERE token=?',(token,))
                 db.commit()
             except Exception:
@@ -978,7 +982,7 @@ class Handler(BaseHTTPRequestHandler):
                 with sqlite3.connect(self.server.state_db) as db:
                     db.execute('BEGIN')
                     value=dict(format='pishelf-backup',version=1,created=datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                        progress={k:json.loads(v) for k,v in db.execute('SELECT id,value FROM progress')},
+                        progress={k:json.loads(v) for k,v in db.execute('SELECT id,value FROM progress WHERE user_id=? AND length(id)=20',(user['id'],))},
                         metadata={k:json.loads(v) for k,v in db.execute('SELECT id,value FROM metadata')},categories=self.categories(),managedCategories=True,collections=read_collections(db))
                 self.json_response(value,head=head); return
 
@@ -994,7 +998,7 @@ class Handler(BaseHTTPRequestHandler):
             if path in ('/api/progress','/api/trash'):
                 with sqlite3.connect(self.server.state_db) as db:
                     if path.endswith('progress'):
-                        result={key:json.loads(value) for key,value in db.execute('SELECT id,value FROM progress')}
+                        result={key:json.loads(value) for key,value in db.execute('SELECT id,value FROM progress WHERE user_id=? AND length(id)=20',(user['id'],))}
                     else:
                         result=[dict(token=r[0],path=r[1],title=r[2],deleted=r[3],source=r[4]) for r in db.execute('SELECT token,path,title,deleted,source FROM trash ORDER BY deleted DESC')]
                 self.json_response(result,head=head); return
@@ -1230,6 +1234,13 @@ def validate_collections(collections):
 
 
 # remove reading state: handle this step of the server request or library workflow.
+def move_reader_state(db, source, destination):
+    db.execute('DELETE FROM progress WHERE id=?', (destination,))
+    db.execute('UPDATE progress SET id=? WHERE id=?', (destination, source))
+    db.execute('DELETE FROM annotations WHERE document_id=?', (destination,))
+    db.execute('UPDATE annotations SET document_id=? WHERE document_id=?', (destination, source))
+
+
 def remove_reading_state(db,key):
     db.execute('DELETE FROM annotations WHERE document_id=?',(key,))
     db.execute('DELETE FROM progress WHERE id=?',(key,))
@@ -1290,12 +1301,27 @@ def make_server(host,port,library,data,newspapers=None,books=None):
         db.execute('CREATE TABLE IF NOT EXISTS collection_items (collection_id TEXT NOT NULL,item_id TEXT NOT NULL,PRIMARY KEY(collection_id,item_id))')
         db.execute('CREATE INDEX IF NOT EXISTS collection_item_lookup ON collection_items(item_id)')
         db.execute('CREATE TABLE IF NOT EXISTS metadata (id TEXT PRIMARY KEY,value TEXT NOT NULL)')
-        db.execute('CREATE TABLE IF NOT EXISTS progress (id TEXT PRIMARY KEY,value TEXT NOT NULL)')
+        if not db.in_transaction:
+            db.execute('BEGIN IMMEDIATE')
+        columns = {row[1] for row in db.execute('PRAGMA table_info(progress)')}
+        legacy = bool(columns) and 'user_id' not in columns
+        if legacy:
+            db.execute('ALTER TABLE progress RENAME TO legacy_progress')
+        db.execute('CREATE TABLE IF NOT EXISTS progress (user_id INTEGER NOT NULL,id TEXT NOT NULL,value TEXT NOT NULL,PRIMARY KEY(user_id,id))')
+        if legacy:
+            # Older versions recorded a single shared position without an owner.
+            db.execute("""INSERT INTO progress SELECT COALESCE(
+                (SELECT id FROM auth_users WHERE role='admin' ORDER BY enabled DESC,id LIMIT 1),0),
+                id,value FROM legacy_progress""")
+            db.execute('DROP TABLE legacy_progress')
         db.execute('CREATE TABLE IF NOT EXISTS annotations (user_id INTEGER NOT NULL,document_id TEXT NOT NULL,payload BLOB NOT NULL,PRIMARY KEY(user_id,document_id),FOREIGN KEY(user_id) REFERENCES auth_users(id) ON DELETE CASCADE)')
         db.execute('CREATE INDEX IF NOT EXISTS annotations_document_idx ON annotations(document_id)')
         db.execute('CREATE TABLE IF NOT EXISTS trash (token TEXT PRIMARY KEY,path TEXT NOT NULL,title TEXT NOT NULL,deleted REAL NOT NULL)')
     with sqlite3.connect(server.state_db) as db:
-        if 'source' not in {row[1] for row in db.execute('PRAGMA table_info(trash)')}:
+        trash_columns={row[1] for row in db.execute('PRAGMA table_info(trash)')}
+        if 'archived_state' not in trash_columns:
+            db.execute('ALTER TABLE trash ADD COLUMN archived_state INTEGER NOT NULL DEFAULT 0')
+        if 'source' not in trash_columns:
             db.execute("ALTER TABLE trash ADD COLUMN source TEXT NOT NULL DEFAULT 'magazines'")
     return server
 

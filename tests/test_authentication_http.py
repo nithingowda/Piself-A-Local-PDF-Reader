@@ -39,6 +39,48 @@ class AuthHttpTests(unittest.TestCase):
         try: parsed=json.loads(body)
         except (ValueError,UnicodeDecodeError): parsed=None
         return status,parsed,set_cookie
+    def test_reader_state_survives_rename_and_trash(self):
+        password='correct horse battery staple'
+        self.request('POST','/api/auth/setup',{'username':'owner','password':password})
+
+        def sign_in(name):
+            status,_,cookie=self.request('POST','/api/auth/login',{'username':name,'password':password})
+            self.assertEqual(status,200)
+            cookie=cookie.split(';',1)[0]
+            _,me,_=self.request('GET','/api/auth/me',cookie=cookie)
+            def api(path,data=None):
+                status,result,_=self.request('GET' if data is None else 'POST',path,data,cookie,me['csrf'])
+                self.assertEqual(status,200,(path,result))
+                return result
+            return api
+
+        owner=sign_in('owner')
+        owner('/api/admin/users',{'action':'create','username':'reader','role':'reader','password':password})
+        reader=sign_in('reader')
+        library=self.server.library
+        (library/'Original.pdf').write_bytes(b'%PDF-test')
+        original=owner('/api/library?refresh=1')[0]['id']
+        accounts=[(owner,2),(reader,8)]
+        for api,page in accounts:
+            api('/api/progress',{'id':original,'page':page,'total':10,'bookmarks':[page]})
+            api('/api/annotations',{'id':original,'items':[{'type':'note','page':page,'text':str(page)}]})
+        renamed=owner('/api/issue/edit',{'id':original,'filename':'New.pdf'})['id']
+        token=owner('/api/trash',{'id':renamed})['token']
+        (library/'New.pdf').write_bytes(b'%PDF-replacement')
+        owner('/api/library?refresh=1')
+        for api,page in accounts:
+            self.assertEqual(api('/api/progress'),{})
+            self.assertEqual(api('/api/annotations?id='+renamed),[])
+        replacement=owner('/api/trash',{'id':renamed})['token']
+        owner('/api/trash/restore',{'token':token})
+        owner('/api/trash/delete',{'token':replacement,'confirm':True})
+        for api,page in accounts:
+            progress=api('/api/progress')
+            self.assertEqual(set(progress),{renamed})
+            self.assertEqual(progress[renamed]['page'],page)
+            self.assertEqual(progress[renamed]['bookmarks'],[page])
+            self.assertEqual(api('/api/annotations?id='+renamed),[{'type':'note','page':page,'text':str(page)}])
+
     def test_browser_first_admin_and_permissions(self):
         status,result,_=self.request('GET','/api/auth/setup-status')
         self.assertEqual((status,result['setup_required']),(200,True))
