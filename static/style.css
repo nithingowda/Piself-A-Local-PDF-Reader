@@ -437,12 +437,12 @@ body.epub-open{overflow:hidden}
 @media(max-width:650px){.newsstand-publications{grid-template-columns:repeat(2,minmax(0,1fr))}.publication-tile{padding:12px}.newsstand-nav button{font-size:12px}}
 
 /* Floating frosted glass reader chrome. No layout changes to the PDF viewport. */
-#reader{--glass-bg:rgba(28,32,39,.64);--glass-ink:#fff;--glass-edge:rgba(255,255,255,.23);--glass-control:rgba(255,255,255,.10)}
-#reader[data-page-theme=light],#reader[data-page-theme=sepia]{--glass-bg:rgba(250,250,252,.72);--glass-ink:#17191e;--glass-edge:rgba(255,255,255,.85);--glass-control:rgba(0,0,0,.06)}
+#reader{--glass-bg:rgba(28,32,39,.28);--glass-ink:#fff;--glass-edge:rgba(255,255,255,.23);--glass-control:rgba(255,255,255,.10)}
+#reader[data-page-theme=light],#reader[data-page-theme=sepia]{--glass-bg:rgba(250,250,252,.32);--glass-ink:#17191e;--glass-edge:rgba(255,255,255,.85);--glass-control:rgba(0,0,0,.06)}
 #reader > .reader-bar,#reader > .controls{
  box-sizing:border-box;background:var(--glass-bg);color:var(--glass-ink);
  border:1px solid var(--glass-edge);border-radius:24px;
- -webkit-backdrop-filter:blur(22px) saturate(165%);backdrop-filter:blur(22px) saturate(165%);
+ -webkit-backdrop-filter:blur(9px) saturate(150%);backdrop-filter:blur(9px) saturate(150%);
  box-shadow:0 8px 28px #0003,inset 0 1px 0 #ffffff30;
  padding:8px 12px;gap:7px;
 }
@@ -462,3 +462,9 @@ body.epub-open{overflow:hidden}
  #reader > .controls{max-width:calc(100% - 12px);bottom:max(6px,env(safe-area-inset-bottom))}
  #reader > :is(.reader-bar,.controls) :is(button,select,input:not([type=range])){border-radius:11px}
 }
+
+/* Clearer glass, with contrast retained on individual controls. */
+#reader > :is(.reader-bar,.controls){text-shadow:0 1px 3px #0008}
+#reader[data-page-theme=light] > :is(.reader-bar,.controls),#reader[data-page-theme=sepia] > :is(.reader-bar,.controls){text-shadow:0 1px 3px #fff9}
+#reader > :is(.reader-bar,.controls) :is(button,select,input:not([type=range])){background:rgba(20,24,30,.42)}
+#reader:is([data-page-theme=light],[data-page-theme=sepia]) > :is(.reader-bar,.controls) :is(button,select,input:not([type=range])){background:rgba(255,255,255,.48)}
