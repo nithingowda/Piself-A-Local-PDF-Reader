@@ -56,8 +56,8 @@ export function splitSpeechChunks(text){
  for(const paragraph of normalizeSpeechText(text).split(/\n+/)){
   if(!paragraph)continue;
   let remaining=paragraph;
-  while(remaining.length>MAX_CHUNK_LENGTH){
-   const at=speechBreakAt(remaining,MAX_CHUNK_LENGTH);
+  while(remaining.length>(chunks.length?MAX_CHUNK_LENGTH:150)){
+   const at=speechBreakAt(remaining,chunks.length?MAX_CHUNK_LENGTH:150);
    chunks.push(remaining.slice(0,at).trimEnd());
    remaining=remaining.slice(at).trimStart();
   }
@@ -274,7 +274,7 @@ export function createReadAloud({getText,next,peekNextText=()=>null,onState,getC
    for(const passage of passages){
     let phrase='';
     for(const chunk of splitSpeechChunks(passage)){
-     if(phrase&&phrase.length+1+chunk.length>MAX_CHUNK_LENGTH){
+     if(phrase&&phrase.length+1+chunk.length>(jobs.length?MAX_CHUNK_LENGTH:150)){
       jobs.push(phrase);phrase='';
      }
      phrase=phrase?phrase+'\n'+chunk:chunk;
