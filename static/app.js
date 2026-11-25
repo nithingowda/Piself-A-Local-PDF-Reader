@@ -17,7 +17,7 @@ import {selectionsOverlap,selectedPassage} from './pdf-text-selection.js';
  * - A missing optional control must not prevent refresh() from starting.
  */
 const $=id=>document.getElementById(id);
-const defaults={sort:'issue',siteTheme:'light',theme:'dark',mode:'scroll',quality:'1.5',density:'compact',gestures:true,readerBrightness:75,comfort:'custom',epubTheme:'light',epubFontSize:100};
+const defaults={sort:'issue',siteTheme:'light',theme:'dark',mode:'scroll',quality:'1.5',density:'compact',gestures:true,readerBrightness:75,comfort:'custom',epubTheme:'light',epubFontSize:100,wakeScreen:true};
 let prefs={...defaults};try{const stored=JSON.parse(localStorage.getItem('pishelf-settings')||'{}');for(const k in defaults)if(k in stored)prefs[k]=stored[k];}catch{}
 let collections=[],collectionFilter='',collectionSets=new Map();
 let categories=[],sourceFilter='',seriesFilter='',tagFilter='',visibleLimit=60;
@@ -111,7 +111,7 @@ function updateFilterOptions(){
 const coverObserver=new IntersectionObserver(entries=>{for(const e of entries)if(e.isIntersecting){coverObserver.unobserve(e.target);coverQueue.push({item:e.target.item,button:e.target});covers();}},{rootMargin:'100px'});
 /** card For: Support the PiShelf reader or library interface. */
 function cardFor(item,target){
- const s=saved[item.id]||{},card=el('article','card'),cover=el('button','cover');cover.setAttribute('aria-label','Read '+item.title);cover.append(el('span','placeholder',item.title));cover.onclick=()=>openDocument(item);cover.item=item;if(isEpub(item))cover.classList.add('epub-cover');
+ const s=saved[item.id]||{},card=el('article','card'),cover=el('button','cover');cover.setAttribute('aria-label','Read '+item.title);cover.append(el('span','placeholder',item.title));cover.onclick=()=>item.source==='books'?showIssue(item):openDocument(item);cover.item=item;if(isEpub(item))cover.classList.add('epub-cover');
  const heading=el('div','card-head');heading.append(el('h2','',item.source==='books'?item.title:dateLabel(item)||item.title));const star=el('button','favorite',s.favorite?'★':'☆');star.setAttribute('aria-label','Favourite '+item.title);star.setAttribute('aria-pressed',!!s.favorite);star.onclick=()=>{persist(item.id,{favorite:!saved[item.id]?.favorite});drawLibrary();};heading.append(star);
  const more=el('button','more','•••');more.setAttribute('aria-label','Options for '+item.title);more.onclick=()=>showIssue(item);heading.append(more);
  const seriesButton=el('button','series-link',item.series||item.title);seriesButton.onclick=()=>selectSeries(item.series||item.title);card.append(cover,seriesButton,heading);const chips=el('div','tag-chips');for(const tag of item.tags||[]){const b=el('button','tag-chip',tag);b.onclick=()=>selectTag(tag);chips.append(b);}card.append(chips);
@@ -263,7 +263,7 @@ function drawLibrary(){
 // The explicit refresh=1 query requests a filesystem rescan on page reload.
 // Keep this independent of optional Settings controls (see PR #24).
 async function refresh(quiet=false){
- if(syncing||!$('reader').hidden||!$('epub-reader').hidden)return;syncing=true;if(!quiet)$('status').textContent='Scanning your library folders…';
+ if((quiet&&document.hidden)||syncing||!$('reader').hidden||!$('epub-reader').hidden)return;syncing=true;if(!quiet)$('status').textContent='Scanning your library folders…';
  try{await saveChain;if(pendingSaves.size){for(const [id,patch] of [...pendingSaves])await persist(id,patch);if(pendingSaves.size)throw Error('Reading progress is waiting to sync.');}
  const [next,state,cats,shelves]=await Promise.all([api('/api/library?refresh=1'),api('/api/progress'),api('/api/categories'),api('/api/collections')]);const collectionsChanged=JSON.stringify(shelves)!==JSON.stringify(collections)||JSON.stringify(cats)!==JSON.stringify(categories);categories=cats;collections=shelves;collectionSets=new Map(collections.map(c=>[c.id,new Set(c.items)]));if(collectionFilter&&!collectionSets.has(collectionFilter))collectionFilter='';const changed=collectionsChanged||JSON.stringify(next)!==JSON.stringify(library)||JSON.stringify(state)!==JSON.stringify(saved);library=next;saved=state;
  if(changed||!quiet){if(category&&!categories.some(c=>c.path===category&&(!sourceFilter||c.source===sourceFilter)))category='';updateFilterOptions();drawLibrary();}$('status').textContent='';
@@ -273,6 +273,12 @@ async function refresh(quiet=false){
 async function clearProgress(id){await saveChain;if(!await confirmAction(id?'Clear reading progress?':'Clear all reading progress?',id?'This issue will return to Unread. Its bookmarks and favourite status stay.':'This resets reading positions for the entire shared library. PDFs, bookmarks and favourites stay.','Clear progress'))return;try{await api('/api/progress/clear',id?{id}:{});if(id)pendingSaves.delete(id);else pendingSaves.clear();await refresh();toast('Reading progress cleared.');}catch(e){toast(e.message);}}
 /** show Issue: Support the PiShelf reader or library interface. */
 function showIssue(item){issueItem=item;$('issue-title').textContent=item.title;$('issue-info').textContent=item.path+' · '+fileSize(item.size);const box=$('issue-actions');box.replaceChildren();
+ if(item.source==='books'){
+  const details=el('div','book-details'),cover=el('img','book-detail-cover');cover.src=coverURL(item);cover.alt=item.title;cover.style.cssText='width:110px;max-width:35%;height:auto;object-fit:contain';cover.onerror=()=>cover.remove();
+  const info=el('div','book-detail-info'),state=saved[item.id]||{};
+  for(const value of [item.author,item.description,item.language,item.format.toUpperCase(),finished(item)?'Finished':state.total&&state.page?Math.min(100,Math.round(state.page/state.total*100))+'% read':started(item)?'Reading':'Not started'])if(value)info.append(el('p','',String(value)));
+  details.style.cssText='display:flex;gap:16px;align-items:flex-start';details.append(cover,info);box.append(details);
+ }
  function action(label,fn,cls=''){const b=el('button',cls,label);b.onclick=async()=>{try{await fn();}catch(e){toast(e.message);}};box.append(b);}
  action(started(item)?'Continue reading':'Read '+itemKind(item).toLowerCase(),()=>{$('issue-dialog').close();openDocument(item);});
  action('Read from the beginning',()=>{$('issue-dialog').close();openDocument(item,1);});
@@ -289,6 +295,7 @@ async function loadTrash(){try{const items=await api('/api/trash');$('trash-list
 /** apply Prefs: Support the PiShelf reader or library interface. */
 function applyPrefs(){const sortOptions=[...$('sort').options].map(o=>o.value);if(!sortOptions.includes(prefs.sort))prefs.sort=defaults.sort;$('sort').value=prefs.sort;document.body.dataset.theme=prefs.siteTheme==='system'?(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'):prefs.siteTheme;$('reader').dataset.pageTheme=prefs.theme;document.body.dataset.density=prefs.density;const brightness=Math.max(35,Math.min(100,Number(prefs.readerBrightness)||75));$('reader').style.setProperty('--reader-brightness',String(brightness/100));$('reader-night-toggle').setAttribute('aria-pressed',String(prefs.theme==='night'||prefs.theme==='amoled'));$('reader-night-toggle').textContent=prefs.theme==='night'||prefs.theme==='amoled'?'☀ Day':'☾ Night';}
 /** store Prefs: Support the PiShelf reader or library interface. */
+$('pref-wakeScreen').onchange=e=>{prefs.wakeScreen=e.target.checked;storePrefs();void syncReadingWakeLock();};
 function storePrefs(){try{localStorage.setItem('pishelf-settings',JSON.stringify(prefs));}catch{toast('Browser settings storage is unavailable.');}applyPrefs();}
 /** open Settings: Support the PiShelf reader or library interface. */
 function drawPublicationSettings(){
@@ -302,7 +309,7 @@ function drawPublicationSettings(){
   catch(e){toast(e.message);}finally{button.disabled=false;}
  };
 }
-function openSettings(){drawPublicationSettings();editShelves();$('pdf-navigation-settings').hidden=$('reader').hidden;$('pref-comfort').value=prefs.comfort||'custom';$('pref-readerBrightness').value=prefs.readerBrightness;$('reader-brightness-value').textContent=prefs.readerBrightness+'%';for(const k of ['siteTheme','theme','mode','quality','density'])$('pref-'+k).value=prefs[k];$('pref-gestures').checked=prefs.gestures;if(!uploading)populateUploadSources();drawCollectionManager();drawCategoryManager();activateSettingsTab('upload');prepareFolderPathSettings();$('settings').showModal();loadTrash();loadWebPCacheStats();}
+function openSettings(){$('pref-wakeScreen').checked=prefs.wakeScreen;drawPublicationSettings();editShelves();$('pdf-navigation-settings').hidden=$('reader').hidden;$('pref-comfort').value=prefs.comfort||'custom';$('pref-readerBrightness').value=prefs.readerBrightness;$('reader-brightness-value').textContent=prefs.readerBrightness+'%';for(const k of ['siteTheme','theme','mode','quality','density'])$('pref-'+k).value=prefs[k];$('pref-gestures').checked=prefs.gestures;if(!uploading)populateUploadSources();drawCollectionManager();drawCategoryManager();activateSettingsTab('upload');prepareFolderPathSettings();$('settings').showModal();loadTrash();loadWebPCacheStats();}
 // Reading comfort presets are display-only and never alter PDF bytes.
 const comfortPresets={daylight:{theme:'light',readerBrightness:100},bedtime:{theme:'night',readerBrightness:55},amoled:{theme:'amoled',readerBrightness:80}};
 $('pref-comfort').onchange=e=>{
@@ -812,6 +819,17 @@ async function pdfEngine(){
 /* EPUB and PDF have separate rendering engines, so PDF pinch zoom and
  * WebP page caching never interact with an EPUB's reflowable iframe. */
 let epubController=null,epubGeneration=0,epubHistoryActive=false;
+let readingWakeLock=null,wakePending=false;
+async function syncReadingWakeLock(){
+ const wanted=()=>prefs.wakeScreen&&document.visibilityState==='visible'&&(!$('reader').hidden||!$('epub-reader').hidden);
+ if(!wanted()){const lock=readingWakeLock;readingWakeLock=null;if(lock)await lock.release().catch(()=>{});return;}
+ if(!navigator.wakeLock||readingWakeLock||wakePending)return;
+ wakePending=true;
+ try{const lock=await navigator.wakeLock.request('screen');if(!wanted()){await lock.release();return;}readingWakeLock=lock;lock.addEventListener('release',()=>{if(readingWakeLock===lock)readingWakeLock=null;});}catch{}finally{wakePending=false;}
+}
+document.addEventListener('visibilitychange',syncReadingWakeLock);
+const wakeObserver=new MutationObserver(syncReadingWakeLock);
+for(const id of ['reader','epub-reader'])wakeObserver.observe($(id),{attributes:true,attributeFilter:['hidden']});
 function openDocument(item,start){return isEpub(item)?openEpubBook(item,start):openMagazine(item,start);}
 
 /* Read aloud: text-based PDFs and reflowable EPUBs use the device's voices. */
