@@ -59,7 +59,8 @@ const finished=i=>!!saved[i.id]?.completed||(!!saved[i.id]?.total&&saved[i.id]?.
 const itemKind=i=>i.source==='books'?'Book':i.source==='newspapers'?'Newspaper':i.source?.startsWith('menu-')?sourceLabel(i.source):'Magazine';
 const fileSize=n=>n<1048576?Math.max(1,Math.round(n/1024))+' KB':(n/1048576).toFixed(1)+' MB';
 const thumbs=new Map();let coverQueue=[],coverBusy=false;
-const coverURL=item=>'/api/covers/'+item.coverKey;
+const catalogCover=id=>'https://books.google.com/books/content?id='+encodeURIComponent(id)+'&printsec=frontcover&img=1&zoom=1&source=gbs_api';
+const coverURL=item=>item.volumeId?catalogCover(item.volumeId):'/api/covers/'+item.coverKey;
 /** cache Thumb: Support the PiShelf reader or library interface. */
 function cacheThumb(key,data){if(thumbs.size>=120){const oldest=thumbs.keys().next().value;const url=thumbs.get(oldest);if(url?.startsWith('blob:'))URL.revokeObjectURL(url);thumbs.delete(oldest);}thumbs.set(key,data);}
 /** covers: Support the PiShelf reader or library interface. */
@@ -70,6 +71,11 @@ async function covers(){
   const {item,button}=coverQueue.shift();if(!button.isConnected)continue;
    // EPUB falls back to its title placeholder when no cover is embedded.
   try{
+   if(item.volumeId){
+    const image=el('img');image.alt='';image.decoding='async';
+    image.onerror=()=>{coverQueue.push({item:{...item,volumeId:''},button});void covers();};
+    image.src=catalogCover(item.volumeId);button.replaceChildren(image);continue;
+   }
    const key=item.coverKey;let data=thumbs.get(key);
    if(!data){
     let response=await fetch(coverURL(item));
@@ -277,17 +283,77 @@ async function refresh(quiet=false){
 /** clear Progress: Support the PiShelf reader or library interface. */
 async function clearProgress(id){await saveChain;if(!await confirmAction(id?'Clear reading progress?':'Clear all reading progress?',id?'This issue will return to Unread. Its bookmarks and favourite status stay.':'This resets reading positions for your account. PDFs, bookmarks and favourites stay.','Clear progress'))return;try{await api('/api/progress/clear',id?{id}:{});if(id)pendingSaves.delete(id);else pendingSaves.clear();await refresh();toast('Reading progress cleared.');}catch(e){toast(e.message);}}
 /** show Issue: Support the PiShelf reader or library interface. */
+let catalogBook=null,catalogRequest=0;
+const catalogPending=new Map();
+let catalogQueue=Promise.resolve();
+async function applyBookMatch(id,match,tags){
+ const {subjects,exact,...fields}=match;
+ await api('/api/books/apply',{id,fields:{...fields,tags}});
+ catalogPending.delete(id);
+}
+function renderBookMatches(id,matches){
+ const results=$('catalog-results');
+ results.replaceChildren();
+ $('catalog-status').textContent=matches.length?'Select an edition and any subjects to add as tags.':'No matches. Try another title or ISBN.';
+ for(const match of matches){
+  const row=el('section'),cover=el('img'),tags=el('div');
+  cover.src=catalogCover(match.volumeId);cover.width=56;cover.alt='';cover.onerror=()=>cover.remove();
+  row.append(cover,el('h3','',match.catalogTitle),el('p','',[match.author,match.publisher,match.language,match.publishedDate].filter(Boolean).join(' · ')));
+  for(const subject of match.subjects){
+   const label=el('label'),check=el('input');check.type='checkbox';check.value=subject;
+   label.append(check,document.createTextNode(subject));tags.append(label);
+  }
+  const use=el('button','','Use this edition');use.type='button';
+  use.onclick=async()=>{
+   use.disabled=true;
+   try{
+    await applyBookMatch(id,match,[...tags.querySelectorAll(':checked')].map(input=>input.value));
+    $('catalog-dialog').close();await refresh();toast('Book details saved.');
+   }catch(error){$('catalog-status').textContent=error.message;}
+   finally{use.disabled=false;}
+  };
+  row.append(tags,use);results.append(row);
+ }
+}
+async function searchBook(query){
+ const request=++catalogRequest,id=catalogBook.id;
+ $('catalog-status').textContent='Searching Google Books…';$('catalog-results').replaceChildren();
+ try{
+  const matches=await api('/api/books/search',{id,query});
+  if(request===catalogRequest)renderBookMatches(id,matches);
+ }catch(error){if(request===catalogRequest)$('catalog-status').textContent=error.message;}
+}
+function openBookLookup(item){
+ catalogBook=item;$('catalog-query').value=item.title;$('catalog-dialog').showModal();
+ if(catalogPending.has(item.id))renderBookMatches(item.id,catalogPending.get(item.id));
+ else void searchBook('');
+}
+$('catalog-form').onsubmit=e=>{e.preventDefault();void searchBook($('catalog-query').value.trim());};
+$('catalog-close').onclick=()=>$('catalog-dialog').close();
+$('catalog-dialog').onclose=()=>{catalogRequest++;};
+function queueBookLookup(id,filename){
+ catalogQueue=catalogQueue.then(async()=>{
+  const matches=await api('/api/books/search',{id});
+  const exact=matches.filter(match=>match.exact);
+  if(exact.length===1){
+   await applyBookMatch(id,exact[0],[]);await refresh();toast('Book details saved for '+filename);
+  }else if(matches.length){
+   catalogPending.set(id,matches);toast('Editions found for '+filename+'. Open the book to review.');
+  }else toast('No catalog match for '+filename);
+ }).catch(error=>toast(filename+': '+error.message));
+}
 function showIssue(item){issueItem=item;$('issue-title').textContent=item.title;$('issue-info').textContent=item.path+' · '+fileSize(item.size);const box=$('issue-actions');box.replaceChildren();
  if(item.source==='books'){
   const details=el('div','book-details'),cover=el('img','book-detail-cover');cover.src=coverURL(item);cover.alt=item.title;cover.style.cssText='width:110px;max-width:35%;height:auto;object-fit:contain';cover.onerror=()=>cover.remove();
   const info=el('div','book-detail-info'),state=saved[item.id]||{};
-  for(const value of [item.author,item.description,item.language,item.format.toUpperCase(),finished(item)?'Finished':state.total&&state.page?Math.min(100,Math.round(state.page/state.total*100))+'% read':started(item)?'Reading':'Not started'])if(value)info.append(el('p','',String(value)));
+  for(const value of [item.author,item.description,item.publisher,item.publishedDate,item.language,item.format.toUpperCase(),finished(item)?'Finished':state.total&&state.page?Math.min(100,Math.round(state.page/state.total*100))+'% read':started(item)?'Reading':'Not started'])if(value)info.append(el('p','',String(value)));
   details.style.cssText='display:flex;gap:16px;align-items:flex-start';details.append(cover,info);box.append(details);
  }
  function action(label,fn,cls=''){const b=el('button',cls,label);b.onclick=async()=>{try{await fn();}catch(e){toast(e.message);}};box.append(b);}
  action(started(item)?'Continue reading':'Read '+itemKind(item).toLowerCase(),()=>{$('issue-dialog').close();openDocument(item);});
  action('Read from the beginning',()=>{$('issue-dialog').close();openDocument(item,1);});
  const download=el('a','action-link','Download '+item.format.toUpperCase());download.href=pdfURL(item)+'?download=1';download.download=item.title+'.'+item.format;box.append(download);
+ if(item.source==='books'&&signedInUser?.role==='admin')action(catalogPending.has(item.id)?'Review matching editions':'Find book details',()=>{$('issue-dialog').close();openBookLookup(item);});
  action('Edit filename, category & tags',()=>{$('issue-dialog').close();openEdit(item);});
  action('Mark as finished',async()=>{await persist(item.id,{completed:true});$('issue-dialog').close();drawLibrary();});
  action('Clear reading progress',async()=>{$('issue-dialog').close();await clearProgress(item.id);});
@@ -1890,7 +1956,7 @@ function uploadFile(file,source,category,tags,author){return new Promise((resolv
 // XMLHttpRequest to show progress; they must not bypass server security.
 xhr.setRequestHeader('X-PiShelf-CSRF',signedInUser?.csrf||'');xhr.upload.onprogress=e=>{if(e.lengthComputable)$('upload-progress').value=Math.round(e.loaded/e.total*100);};xhr.onload=()=>{if(xhr.status===401){location.replace('/login.html');reject(Error('Session expired. Sign in again.'));return;}let result;try{result=JSON.parse(xhr.responseText);}catch{}if(xhr.status>=200&&xhr.status<300)resolve(result);else reject(Error(result?.error||'Upload failed. Check the server or proxy upload limit.'));};xhr.onerror=()=>reject(Error('Upload connection failed.'));xhr.onabort=()=>reject(Error('Upload cancelled.'));xhr.send(file);});}
 $('upload-cancel').onclick=()=>{uploadCancelled=true;uploadXHR?.abort();};
-$('upload-start').onclick=async()=>{if(uploading)return;if(documentPDF||!$('epub-reader').hidden){toast('Return to the library before uploading.');return;}const files=[...$('upload-files').files];if(!files.length){toast('Choose PDF files or EPUB books first.');return;}if(files.some(f=>{const ext=f.name.toLowerCase().split('.').pop();return (ext!=='pdf'&&!(ext==='epub'&&$('upload-source').value==='books'))||f.size===0||f.size>(ext==='epub'?100:512)*1024*1024;})){toast('Choose PDFs (max 512 MiB) or EPUB books (max 100 MiB, Books only).');return;}const selectedCategory=$('upload-category').value;const targetCategory=selectedCategory==='/'?$('upload-new-category').value.trim():selectedCategory;if(!targetCategory){$('upload-new-category').focus();return;}uploading=true;uploadCancelled=false;$('upload-start').disabled=true;$('upload-files').disabled=true;$('upload-source').disabled=true;$('upload-category').disabled=true;$('upload-publication').disabled=true;$('upload-cancel').hidden=false;$('upload-progress').hidden=false;const source=$('upload-source').value,category=targetCategory;const tags=$('upload-tags').value,author=$('upload-author').value.trim();let completed=0;try{for(const file of files){if(uploadCancelled)break;$('upload-status').textContent=`Uploading ${completed+1}/${files.length}: ${file.name}`;$('upload-progress').value=0;await uploadFile(file,source,category,tags,author);completed++;}$('upload-status').textContent=`${completed} file${completed===1?'':'s'} uploaded.`;}catch(error){$('upload-status').textContent=`${completed} uploaded. ${error.message}`;}finally{uploading=false;uploadXHR=null;$('upload-start').disabled=false;$('upload-files').disabled=false;$('upload-source').disabled=false;$('upload-category').disabled=false;$('upload-publication').disabled=false;$('upload-cancel').hidden=true;$('upload-progress').hidden=true;if(completed===files.length){$('upload-files').value='';$('upload-tags').value='';$('upload-author').value='';}await refresh();}};
+$('upload-start').onclick=async()=>{if(uploading)return;if(documentPDF||!$('epub-reader').hidden){toast('Return to the library before uploading.');return;}const files=[...$('upload-files').files];if(!files.length){toast('Choose PDF files or EPUB books first.');return;}if(files.some(f=>{const ext=f.name.toLowerCase().split('.').pop();return (ext!=='pdf'&&!(ext==='epub'&&$('upload-source').value==='books'))||f.size===0||f.size>(ext==='epub'?100:512)*1024*1024;})){toast('Choose PDFs (max 512 MiB) or EPUB books (max 100 MiB, Books only).');return;}const selectedCategory=$('upload-category').value;const targetCategory=selectedCategory==='/'?$('upload-new-category').value.trim():selectedCategory;if(!targetCategory){$('upload-new-category').focus();return;}uploading=true;uploadCancelled=false;$('upload-start').disabled=true;$('upload-files').disabled=true;$('upload-source').disabled=true;$('upload-category').disabled=true;$('upload-publication').disabled=true;$('upload-cancel').hidden=false;$('upload-progress').hidden=false;const source=$('upload-source').value,category=targetCategory;const tags=$('upload-tags').value,author=$('upload-author').value.trim();let completed=0;try{for(const file of files){if(uploadCancelled)break;$('upload-status').textContent=`Uploading ${completed+1}/${files.length}: ${file.name}`;$('upload-progress').value=0;const uploaded=await uploadFile(file,source,category,tags,author);completed++;if(source==='books')queueBookLookup(uploaded.id,file.name);}$('upload-status').textContent=`${completed} file${completed===1?'':'s'} uploaded.`;}catch(error){$('upload-status').textContent=`${completed} uploaded. ${error.message}`;}finally{uploading=false;uploadXHR=null;$('upload-start').disabled=false;$('upload-files').disabled=false;$('upload-source').disabled=false;$('upload-category').disabled=false;$('upload-publication').disabled=false;$('upload-cancel').hidden=true;$('upload-progress').hidden=true;if(completed===files.length){$('upload-files').value='';$('upload-tags').value='';$('upload-author').value='';}await refresh();}};
 $('collection-create').onclick=()=>{$('collection-name').value='';$('collection-error').textContent='';$('collection-dialog').showModal();};
 $('collection-close').onclick=()=>$('collection-dialog').close();
 $('collection-form').onsubmit=async e=>{e.preventDefault();e.submitter.disabled=true;try{await api('/api/collections',{name:$('collection-name').value});$('collection-dialog').close();await refresh();toast('Collection created. Add issues through their Edit options.');}catch(error){$('collection-error').textContent=error.message;}finally{e.submitter.disabled=false;}};

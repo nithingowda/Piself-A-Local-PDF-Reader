@@ -115,7 +115,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('X-Frame-Options','DENY')
         self.send_header('Referrer-Policy','no-referrer')
         self.send_header('X-Content-Type-Options','nosniff')
-        self.send_header('Content-Security-Policy',"default-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data: blob:; connect-src 'self' https://cdn.jsdelivr.net; worker-src 'self' blob: https://cdn.jsdelivr.net; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; style-src 'self' 'unsafe-inline'")
+        self.send_header('Content-Security-Policy',"default-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data: blob: https://books.google.com; connect-src 'self' https://cdn.jsdelivr.net; worker-src 'self' blob: https://cdn.jsdelivr.net; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; style-src 'self' 'unsafe-inline'")
 
     # library items: handle this step of the server request or library workflow.
     def library_items(self):
@@ -146,7 +146,7 @@ class Handler(BaseHTTPRequestHandler):
                         inferred = infer_issue(path.stem)
                         inferred.update({k:v for k,v in metadata.get(key, {}).items() if k != 'series' or v})
                         cover_key = hashlib.sha256(f'{key}:{info.st_mtime_ns}:{info.st_size}'.encode()).hexdigest()
-                        items.append(dict(id=key, path=relative, title=path.stem.replace('_',' '), source=source,
+                        items.append(dict(id=key, path=relative, title=inferred.get('catalogTitle') or path.stem.replace('_',' '), source=source,
                             category=path.parent.relative_to(root).as_posix(), size=info.st_size,
                             modified=info.st_mtime, coverKey=cover_key, format=fmt, **inferred))
             # Before the first scan, file timestamps are the only available history.
@@ -536,6 +536,13 @@ class Handler(BaseHTTPRequestHandler):
                 raise APIError(400, 'Expected a small JSON request.')
             data = json.loads(self.rfile.read(length))
             if not isinstance(data, dict): raise APIError(400, 'Invalid request.')
+            if route=='/api/books/search':
+                item=next((i for i in self.library_items() if i['id']==data.get('id') and i['source']=='books'),None)
+                if not item: raise APIError(404,'Book no longer available.')
+                query=data.get('query','')
+                if not isinstance(query,str) or len(query)>300: raise ValueError()
+                self.json_response(book_search(item,checked_path(self.server.roots['books'],item['path']),query.strip()))
+                return
             with self.server.mutation_lock:
                 with sqlite3.connect(self.server.state_db) as db:
                     result = self.mutate(data, db)
@@ -653,10 +660,21 @@ class Handler(BaseHTTPRequestHandler):
             db.execute('INSERT OR IGNORE INTO managed_categories VALUES (?,?)',(source,path))
             self.server.scan_time=float('-inf')
             return {'ok': True}
+        if route == '/api/books/apply':
+            item=next((i for i in self.library_items() if i['id']==data.get('id') and i['source']=='books'),None)
+            if not item: raise APIError(404,'Book no longer available.')
+            row=db.execute('SELECT value FROM metadata WHERE id=?',(item['id'],)).fetchone()
+            current=json.loads(row[0]) if row else {}
+            fields=validate_metadata(data['fields'])
+            for key in (*CATALOG_LIMITS,'author'):
+                if fields.get(key) and not current.get(key): current[key]=fields[key]
+            current['tags']=list(dict.fromkeys(current.get('tags',[])+fields['tags']))[:30]
+            db.execute('INSERT OR REPLACE INTO metadata VALUES (?,?)',(item['id'],json.dumps(current)))
+            return {'ok':True}
         if route == '/api/issue/edit':
             item = next((i for i in self.library_items() if i['id']==data.get('id')), None)
             if not item: raise APIError(404, 'Issue not found. Refresh your library.')
-            metadata = validate_metadata({**{k:item[k] for k in ('series','issueDate','tags','author')}, **{k:data[k] for k in ('series','issueDate','tags','author') if k in data}})
+            metadata = validate_metadata({**{k:item[k] for k in CATALOG_LIMITS if k in item}, **{k:item[k] for k in ('series','issueDate','tags','author')}, **{k:data[k] for k in ('series','issueDate','tags','author') if k in data}})
             collection_ids=data.get('collectionIds')
             if collection_ids is not None:
                 if not isinstance(collection_ids,list) or len(collection_ids)>200 or any(not isinstance(k,str) or not re.fullmatch('[a-f0-9]{32}',k) for k in collection_ids): raise ValueError()
@@ -1201,8 +1219,62 @@ def infer_issue(stem):
 
 
 # validate metadata: handle this step of the server request or library workflow.
+CATALOG_LIMITS = {'catalogTitle':300,'description':2400,'publisher':200,'publishedDate':40,'language':40,'volumeId':80}
+
+def book_search(item, path, query):
+    from urllib.request import urlopen, Request
+    from urllib.parse import urlencode
+    from urllib.error import URLError
+    title, author = item['title'], item.get('author','')
+    identifiers = [query] if query else [path.stem]
+    if not query:
+        try:
+            if path.suffix.lower()=='.epub':
+                from epub_covers import _xml, _read_member, MAX_XML_BYTES
+                with zipfile.ZipFile(path) as archive:
+                    container=_xml(_read_member(archive,'META-INF/container.xml',MAX_XML_BYTES))
+                    package=container.find('.//{*}rootfile').get('full-path')
+                    metadata=_xml(_read_member(archive,package,MAX_XML_BYTES)).find('{*}metadata')
+                    identifiers.extend(node.text or '' for node in metadata.findall('{*}identifier'))
+                    title=metadata.findtext('{*}title') or title
+                    author=author or metadata.findtext('{*}creator') or ''
+            else:
+                import fitz
+                with fitz.open(path) as document:
+                    title=document.metadata.get('title') or title
+                    author=author or document.metadata.get('author') or ''
+                    if len(document):
+                        identifiers.append(document[0].get_text()[:5000])
+        except Exception:
+            pass  # Filename lookup also works for scans or missing embedded metadata.
+    isbn=''
+    for value in identifiers:
+        for match in re.finditer(r'(?<![0-9])(?:97[89][ -]?)?(?:[0-9][ -]?){9}[0-9Xx](?![0-9])',value):
+            number=re.sub('[ -]','',match.group()).upper()
+            digits=[10 if c=='X' else int(c) for c in number]
+            if len(number)==13 and 'X' not in number and sum(n*(1 if i%2==0 else 3) for i,n in enumerate(digits))%10==0 or len(number)==10 and sum(n*(10-i) for i,n in enumerate(digits))%11==0:
+                isbn=number
+                break
+        if isbn: break
+    terms='isbn:'+isbn if isbn else query or ('intitle:'+title[:200]+(' inauthor:'+author[:160] if author else ''))
+    params={'q':terms,'maxResults':5,'printType':'books','fields':'items(id,volumeInfo(title,authors,description,publisher,publishedDate,language,categories,industryIdentifiers,imageLinks))'}
+    if os.environ.get('GOOGLE_BOOKS_API_KEY'): params['key']=os.environ['GOOGLE_BOOKS_API_KEY']
+    try:
+        with urlopen(Request('https://www.googleapis.com/books/v1/volumes?'+urlencode(params)),timeout=8) as response:
+            payload=json.loads(response.read(512*1024))
+    except (URLError,TimeoutError,ValueError,OSError):
+        raise APIError(503,'Book lookup is unavailable. Try Find book details again later.')
+    matches=[]
+    for record in payload.get('items',[]):
+        info=record.get('volumeInfo',{})
+        volume=record.get('id','')
+        if not re.fullmatch(r'[\w-]{1,80}',volume) or not info.get('title'): continue
+        fields={'volumeId':volume,'catalogTitle':info['title'],'description':info.get('description',''),'publisher':info.get('publisher',''),'publishedDate':info.get('publishedDate',''),'language':info.get('language','')}
+        matches.append({**{k:v[:CATALOG_LIMITS[k]] for k,v in fields.items()},'author':', '.join(info.get('authors',[]))[:160],'subjects':[s[:40] for s in info.get('categories',[])[:30]],'exact':bool(isbn and any(i.get('identifier')==isbn for i in info.get('industryIdentifiers',[])))})
+    return matches
+
 def validate_metadata(value):
-    if not isinstance(value,dict) or set(value)-{'series','issueDate','tags','author'}: raise ValueError()
+    if not isinstance(value,dict) or set(value)-{'series','issueDate','tags','author'}-CATALOG_LIMITS.keys(): raise ValueError()
     for field in ('series','issueDate','author'):
         if field in value and (not isinstance(value[field],str) or len(value[field])>160): raise ValueError()
     date=value.get('issueDate','')
@@ -1211,7 +1283,10 @@ def validate_metadata(value):
         datetime.date.fromisoformat(date if len(date)==10 else date+'-01')
     tags=value.get('tags',[])
     if not isinstance(tags,list) or len(tags)>30 or any(not isinstance(t,str) or not t.strip() or len(t)>40 for t in tags): raise ValueError()
-    return dict(series=value.get('series','').strip(),issueDate=date,author=value.get('author','').strip(),tags=list(dict.fromkeys(t.strip() for t in tags)))
+    extra={k:value[k] for k in CATALOG_LIMITS if k in value}
+    if any(not isinstance(v,str) or len(v)>CATALOG_LIMITS[k] for k,v in extra.items()): raise ValueError()
+    if extra.get('volumeId') and not re.fullmatch(r'[\w-]+',extra['volumeId']): raise ValueError()
+    return dict(**extra,series=value.get('series','').strip(),issueDate=date,author=value.get('author','').strip(),tags=list(dict.fromkeys(t.strip() for t in tags)))
 
 
 # validate reader options: handle this step of the server request or library workflow.

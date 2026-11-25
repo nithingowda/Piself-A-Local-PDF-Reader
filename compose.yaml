@@ -8,6 +8,7 @@ services:
     init: true
     user: "0:0"
     environment:
+      GOOGLE_BOOKS_API_KEY: "${GOOGLE_BOOKS_API_KEY:-}"
       PISHELF_UID: "${PISHELF_UID:-1000}"
       PISHELF_GID: "${PISHELF_GID:-1000}"
       PISHELF_COOKIE_SECURE: "${PISHELF_COOKIE_SECURE:-0}"

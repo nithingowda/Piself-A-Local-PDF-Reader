@@ -46,3 +46,7 @@ You need a server with Git, Docker Engine and the Compose plugin, plus three fol
 PiShelf keeps its database and generated covers in the Docker volume `piself`. Back up that volume and your publication folders. The browser loads reader libraries from a CDN, and online read-aloud requires internet access.
 
 [Reader guide](USER_MANUAL.md) · [Docker and storage](DOCKER.md) · [Accounts](AUTHENTICATION.md) · [Security](SECURITY.md)
+
+## Book details lookup
+
+After a Books upload, keep PiShelf open while it checks Google Books for matching editions. An exact ISBN match fills missing details automatically. For other matches, open the book and choose **Review matching editions**. Administrators can use **Find book details** to search existing books by title, author or ISBN and select subjects to add as tags. The search sends identifiers or search terms. Book files stay on the server. If Google Books requires a key or rejects anonymous requests, set `GOOGLE_BOOKS_API_KEY` in `.env` and recreate the container with `docker compose up -d`.
