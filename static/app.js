@@ -1052,13 +1052,12 @@ async function pickNumberedPdfParagraph(event,slot){
  const {numberedPdfParagraphs,paragraphAtPoint}=await import('./paragraph-queue.js');
  let layout=paragraphLayouts.get(slot);
  if(layout?.page!==pdfPage||layout.rotation!==viewport.rotation){
-  const paragraphs=pdfPage.getTextContent().then(({items})=>
-   numberedPdfParagraphs(orderPdfSpeechItems(items,viewport),viewport));
+  const paragraphs=pdfReadAloudItems(pdfPage,viewport).then(items=>numberedPdfParagraphs(items,viewport));
   layout={page:pdfPage,rotation:viewport.rotation,paragraphs};
   paragraphLayouts.set(slot,layout);
   paragraphs.catch(()=>{if(paragraphLayouts.get(slot)===layout)paragraphLayouts.delete(slot);});
  }
- const candidate=paragraphAtPoint(await layout.paragraphs,x,y,viewport,touched?.dataset.item);
+ const candidate=paragraphAtPoint(await layout.paragraphs,x,y,viewport);
  if(!numberedPickMode.pdf||!candidate||!slot.isConnected)return;
  addNumberedParagraph('pdf',{...candidate,page:pageNumber,key:pageNumber+':'+candidate.id,ticket});
 }
@@ -1141,6 +1140,26 @@ function wireSpeech(kind,controller){
  $(kind+'-read-voice').onchange=e=>{const selected=e.target.value;try{localStorage.setItem(VOICE_STORAGE_KEY,selected);}catch{}controller.setVoice(selected);speechVoices(kind==='pdf'?'epub':'pdf');};
  speechVoices(kind);
 }
+const speechPageCache=new WeakMap();
+async function pdfReadAloudItems(pdfPage,viewport){
+ const {orderPdfSpeechItems}=await import('./pdf-reading-order.js');
+ const id=current?.id;
+ let cached=speechPageCache.get(pdfPage);
+ if(!cached&&id){
+  cached=fetch('/api/page-text/'+encodeURIComponent(id)+'/'+pdfPage.pageNumber)
+   .then(r=>{if(!r.ok)throw Error('Page text unavailable');return r.json();})
+   .then(data=>{if(!data.lines?.length||data.lines.some(l=>l.str.includes('\uFFFD')))throw Error('Incomplete text');return data;})
+   .catch(()=>null);
+  speechPageCache.set(pdfPage,cached);
+ }
+ const data=await cached;
+ if(data){
+  const [left,bottom,right,top]=pdfPage.view;
+  const items=data.lines.map(line=>({str:line.str,transform:[1,0,0,1,left+line.origin[0],top-line.origin[1]],width:line.bbox[2]-line.bbox[0],height:line.bbox[3]-line.bbox[1],hasEOL:true}));
+  return orderPdfSpeechItems(items,viewport);
+ }
+ return orderPdfSpeechItems((await pdfPage.getTextContent()).items,viewport);
+}
 let readingMark=null,readingMarkText='',readingMarkPage=0,readingMarkIndex=-1;
 function clearReadingMark(){
  if(readingMark){readingMark.remove();readingMark=null;}
@@ -1162,7 +1181,7 @@ async function markPdfReading(text,offset=0,length=0){
   const pdfPage=await documentPDF.getPage(currentPage);
   if(pdfSpeechItemsPage!==currentPage||!pdfSpeechItems){
    const {orderPdfSpeechItems}=await import('./pdf-reading-order.js');
-   pdfSpeechItems=orderPdfSpeechItems((await pdfPage.getTextContent()).items,pdfPage.getViewport({scale:1,rotation:(pdfPage.rotate+rotation)%360}));
+   pdfSpeechItems=await pdfReadAloudItems(pdfPage,pdfPage.getViewport({scale:1,rotation:(pdfPage.rotate+rotation)%360}));
    pdfSpeechItemsPage=currentPage;
   }
   if(readingMarkText!==key||pdfSpeechCurrentPage()!==currentPage)return;
@@ -1327,8 +1346,7 @@ async function readPdfFromTap(event){
  const pdfPage=await documentPDF.getPage(targetPage);
  const viewport=pdfPage.getViewport({scale:1,rotation:(pdfPage.rotate+rotation)%360});
  const {orderPdfSpeechItems}=await import('./pdf-reading-order.js');
- const rawItems=(await pdfPage.getTextContent()).items;
- const items=orderPdfSpeechItems(rawItems,viewport);
+ const items=await pdfReadAloudItems(pdfPage,viewport);
  if(!items.length){toast('This page has no selectable text for Read Aloud.');return;}
  // Choose the nearest text line by vertical distance, then horizontal position.
  const x=(event.clientX-rect.left)/rect.width*viewport.width;
@@ -1371,10 +1389,9 @@ async function startPdfSpeech(){
    if(!documentPDF)return '';
    const speechPage=pdfSpeechCurrentPage();
    const pdfPage=await documentPDF.getPage(speechPage);
-   const content=await pdfPage.getTextContent();
    // Read from the tapped page, not the first page of a book spread.
    const {orderPdfSpeechItems,pdfSpeechText}=await import('./pdf-reading-order.js');
-   const ordered=orderPdfSpeechItems(content.items,pdfPage.getViewport({scale:1,rotation:(pdfPage.rotate+rotation)%360}));
+   const ordered=await pdfReadAloudItems(pdfPage,pdfPage.getViewport({scale:1,rotation:(pdfPage.rotate+rotation)%360}));
    const start=pdfSpeechStart?.page===speechPage
     ?Math.max(0,ordered.findIndex(item=>item.sourceIndex===pdfSpeechStart.index)):0;
    pdfSpeechStart=null;
@@ -1387,9 +1404,8 @@ async function startPdfSpeech(){
    const upcoming=pdfSpeechCurrentPage()+1;
    if(!documentPDF||upcoming>documentPDF.numPages)return null;
    const pdfPage=await documentPDF.getPage(upcoming);
-   const content=await pdfPage.getTextContent();
-   const {orderPdfSpeechItems,pdfSpeechText}=await import('./pdf-reading-order.js');
-   return pdfSpeechText(orderPdfSpeechItems(content.items,pdfPage.getViewport({scale:1,rotation:(pdfPage.rotate+rotation)%360})));
+   const {pdfSpeechText}=await import('./pdf-reading-order.js');
+   return pdfSpeechText(await pdfReadAloudItems(pdfPage,pdfPage.getViewport({scale:1,rotation:(pdfPage.rotate+rotation)%360})));
   },
   async next(){
    if(numberedPlayback.pdf){
