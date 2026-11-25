@@ -1228,6 +1228,10 @@ async function beginSpeechPick(kind){
   speechPlayer(kind,true);
   refreshNumberedSelection(kind);
   toast('Tap Play to read from here, or select passages in reading order.');
+  if(kind==='pdf'&&documentPDF){
+   const doc=documentPDF,n=page;
+   void doc.getPage(n).then(p=>{if(documentPDF===doc&&current?.id===documentId)return pdfReadAloudItems(p,p.getViewport({scale:1,rotation:(p.rotate+rotation)%360}));}).catch(()=>{});
+  }
  }catch(error){toast('Read aloud: '+error.message);}
 }
 async function readPdfFromTap(event){
