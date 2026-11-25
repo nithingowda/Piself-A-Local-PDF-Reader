@@ -222,6 +222,7 @@ export function createReadAloud({getText,next,peekNextText=()=>null,onState,getC
     const player=audio;
     const sentences=speechSentenceRanges(chunk,ready.sentences);
     player.src=url;audioUrl=url;player.playbackRate=rate;
+    onState?.({readingText:chunk});
     let shown=-1;
     function updateSentence(){
      if(!valid(session))return;
@@ -334,6 +335,7 @@ export function createReadAloud({getText,next,peekNextText=()=>null,onState,getC
     };
     audio.onerror=()=>fail(Error('Could not play the selected audio.'));
     audio.src=url;audio.playbackRate=rate;
+    onState?.({readingText:jobs[first]});
     update();
     clockTimer=setInterval(()=>{if(!paused)update();},1000);
     if(!paused)await audio.play();
