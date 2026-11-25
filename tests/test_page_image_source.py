@@ -13,7 +13,7 @@ class WebPMagazineTests(unittest.TestCase):
         self.assertIn("path.startswith('/api/page-image/')",SERVER)
         self.assertIn("self.library_items()",SERVER)
         self.assertIn("checked_path(source,item['path'])",SERVER)
-        self.assertIn("width not in (960,1600,2800)",SERVER)
+        self.assertIn("width not in (320,400,960,1600,2800)",SERVER)
 
     def test_cache_key_tracks_source_changes(self):
         self.assertIn("stat.st_mtime_ns",SERVER)
@@ -26,7 +26,7 @@ class WebPMagazineTests(unittest.TestCase):
         self.assertIn("img.onerror=reject",APP)
 
     def test_image_dependencies(self):
-        self.assertIn("PyMuPDF",REQUIREMENTS)
+        self.assertIn("pypdfium2",REQUIREMENTS)
         self.assertIn("Pillow",REQUIREMENTS)
 
 

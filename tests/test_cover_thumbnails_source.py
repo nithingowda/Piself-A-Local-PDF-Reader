@@ -12,7 +12,7 @@ class CoverSourceTests(unittest.TestCase):
     def test_no_broken_render_page_fallback(self):
         self.assertNotIn("'/api/render-page?",CLIENT)
         self.assertIn("'/api/page-image/'+encodeURIComponent(item.id)+'/1?width=400'",CLIENT)
-        self.assertIn("width not in (400,960,1600,2800)",SERVER)
+        self.assertIn("width not in (320,400,960,1600,2800)",SERVER)
 
     def test_embedded_epub_cover_path(self):
         self.assertNotIn("if(isEpub(item))continue;",CLIENT)

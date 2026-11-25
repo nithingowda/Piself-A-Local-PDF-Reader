@@ -10,7 +10,6 @@ import zipfile
 from pathlib import Path
 
 import auth
-import fitz
 from PIL import Image
 from epub_covers import embedded_cover_jpeg
 from server import make_server
@@ -38,12 +37,10 @@ def epub_bytes(with_cover=True, epub2=False, unsafe=False):
 
 
 def pdf_bytes():
-    doc=fitz.open()
-    page=doc.new_page(width=612,height=792)
-    page.insert_text((72,72),'PI SHELF FRONT PAGE')
-    result=doc.tobytes()
-    doc.close()
-    return result
+    output=io.BytesIO()
+    with Image.new('RGB',(612,792),'red') as image:
+        image.save(output,format='PDF',resolution=72)
+    return output.getvalue()
 
 
 class LibraryCoverTests(unittest.TestCase):
@@ -93,7 +90,9 @@ class LibraryCoverTests(unittest.TestCase):
             self.assertEqual(headers['Content-Type'],'image/webp')
             with Image.open(io.BytesIO(body)) as decoded:
                 self.assertEqual(decoded.format,'WEBP')
-                self.assertEqual(decoded.width,400)
+                self.assertEqual(decoded.size,(400,518))
+                red,green,blue=decoded.convert("RGB").getpixel((200,250))
+                self.assertGreater(red,max(green,blue)+150)
             # Cover endpoint is used for manual cached JPEGs; WebP is the fallback.
             status,_,_=self.get('/api/covers/'+item['coverKey'])
             self.assertEqual(status,404)

@@ -6,7 +6,7 @@ SERVER=(Path(__file__).resolve().parents[1]/'server.py').read_text()
 
 class SecurityHardeningTests(unittest.TestCase):
     def test_conversion_limits(self):
-        for text in ('MAX_RENDER_PIXELS','MAX_PDF_PAGE_DIMENSION','MAX_WEBP_SOURCE_BYTES','width*target_height > MAX_RENDER_PIXELS','pix.width*pix.height > MAX_RENDER_PIXELS'):
+        for text in ('MAX_RENDER_PIXELS','MAX_PDF_PAGE_DIMENSION','MAX_WEBP_SOURCE_BYTES','pixels > MAX_RENDER_PIXELS','bitmap.width*bitmap.height > MAX_RENDER_PIXELS'):
             self.assertIn(text,SERVER)
     def test_browser_headers(self):
         for header in ('Content-Security-Policy','X-Frame-Options','Referrer-Policy','frame-ancestors', 'worker-src'):

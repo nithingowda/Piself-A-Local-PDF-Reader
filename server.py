@@ -5,6 +5,9 @@
 """PiShelf: a local PDF library with durable reading state and recoverable trash."""
 import argparse
 import hashlib
+import io
+import math
+from contextlib import closing
 import json
 import mimetypes
 import logging
@@ -895,41 +898,37 @@ class Handler(BaseHTTPRequestHandler):
                 if item['format']!='pdf': raise APIError(415,'Only PDF pages can be rendered as WebP.')
                 n=int(parts[4]);params=parse_qs(urlsplit(self.path).query)
                 width=int(params.get('width',['1600'])[0])
-                if not 1<=n<=5000 or width not in (400,960,1600,2800):
+                if not 1<=n<=5000 or width not in (320,400,960,1600,2800):
                     raise APIError(400,'Invalid page or image width.')
                 source=self.server.roots[item['source']]
                 pdf=checked_path(source,item['path'])
                 stat=pdf.stat()
                 if stat.st_size > MAX_WEBP_SOURCE_BYTES: raise APIError(413,'PDF exceeds conversion size limit.')
-                key=hashlib.sha256(f"{item['id']}:{stat.st_size}:{stat.st_mtime_ns}:{n}:{width}".encode()).hexdigest()
+                key=hashlib.sha256(f"pdfium-v1:{item['id']}:{stat.st_size}:{stat.st_mtime_ns}:{n}:{width}".encode()).hexdigest()
                 cache=self.server.state_db.parent/'page-images'
                 cache.mkdir(parents=True,exist_ok=True)
                 target=cache/(key+'.webp')
                 with WEBP_CACHE_LOCK:
                     if not target.is_file():
                         try:
-                            import fitz
-                            with fitz.open(pdf) as document:
+                            import pypdfium2 as pdfium
+                            with pdfium.PdfDocument(pdf) as document:
                                 if n>len(document): raise APIError(404,'Page not found.')
-                                p=document[n-1]
-                                rect=p.rect
-                                if not all(0 < v <= MAX_PDF_PAGE_DIMENSION for v in (rect.width,rect.height)):
-                                    raise APIError(413,'PDF page dimensions exceed conversion limits.')
-                                scale=width/rect.width
-                                # The requested width is bounded, but extremely tall pages
-                                # can still allocate gigabytes unless pixels are capped.
-                                target_height=rect.height*scale
-                                if width*target_height > MAX_RENDER_PIXELS:
-                                    raise APIError(413,'PDF page exceeds the image memory limit.')
-                                pix=p.get_pixmap(matrix=fitz.Matrix(scale,scale),alpha=False)
-                                if pix.width*pix.height > MAX_RENDER_PIXELS:
-                                    raise APIError(413,'Rendered page exceeds the image memory limit.')
-                                # Pillow writes WebP, with a predictable file size and quality.
-                                from PIL import Image
-                                import io
-                                image=Image.frombytes('RGB',(pix.width,pix.height),pix.samples)
-                                output=io.BytesIO()
-                                image.save(output,format='WEBP',quality=85,method=4)
+                                document.init_forms()
+                                with closing(document[n-1]) as page:
+                                    page_width,page_height=page.get_size()
+                                    if not all(0 < v <= MAX_PDF_PAGE_DIMENSION for v in (page_width,page_height)):
+                                        raise APIError(413,'PDF page dimensions exceed conversion limits.')
+                                    scale=width/page_width
+                                    pixels=math.ceil(page_width*scale)*math.ceil(page_height*scale)
+                                    if pixels > MAX_RENDER_PIXELS:
+                                        raise APIError(413,'PDF page exceeds the image memory limit.')
+                                    with closing(page.render(scale=scale,draw_annots=True,rev_byteorder=True)) as bitmap:
+                                        if bitmap.width*bitmap.height > MAX_RENDER_PIXELS:
+                                            raise APIError(413,'Rendered page exceeds the image memory limit.')
+                                        with bitmap.to_pil() as image:
+                                            output=io.BytesIO()
+                                            image.save(output,format='WEBP',quality=85,method=4)
                             temporary=cache/(uuid.uuid4().hex+'.tmp')
                             try:
                                 temporary.write_bytes(output.getvalue())
