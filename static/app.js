@@ -314,7 +314,21 @@ function drawPublicationSettings(){
   catch(e){toast(e.message);}finally{button.disabled=false;}
  };
 }
-function openSettings(){$('pref-wakeScreen').checked=prefs.wakeScreen;drawPublicationSettings();editShelves();$('pdf-navigation-settings').hidden=$('reader').hidden;$('pref-comfort').value=prefs.comfort||'custom';$('pref-readerBrightness').value=prefs.readerBrightness;$('reader-brightness-value').textContent=prefs.readerBrightness+'%';for(const k of ['siteTheme','theme','mode','quality','density'])$('pref-'+k).value=prefs[k];$('pref-gestures').checked=prefs.gestures;if(!uploading)populateUploadSources();drawCollectionManager();drawCategoryManager();activateSettingsTab('upload');prepareFolderPathSettings();$('settings').showModal();loadTrash();loadWebPCacheStats();}
+async function loadActiveSessions(){
+ const box=$('active-sessions');box.textContent='Loading sessions…';
+ try{const sessions=await api('/api/auth/sessions');box.replaceChildren();
+ for(const session of sessions){
+  const row=el('div','collection-row'),info=el('div');
+  info.append(el('strong','',session.current?'Current device':'Other device'),el('p','hint',session.device),el('p','hint','Login: '+(session.created?new Date(session.created*1000).toLocaleString():'Unknown')+' · Expires: '+new Date(session.expires*1000).toLocaleString()));
+  info.style.cssText='min-width:0;overflow-wrap:anywhere;flex:1';row.append(info);
+  if(!session.current){const b=el('button','','Sign out');b.onclick=async()=>{try{await api('/api/auth/sessions',{action:'revoke',id:session.id});await loadActiveSessions();}catch(e){toast(e.message);}};row.append(b);}
+  box.append(row);
+ }
+ $('revoke-other-sessions').disabled=!sessions.some(s=>!s.current);
+ }catch(e){box.textContent=e.message;}
+}
+$('revoke-other-sessions').onclick=async()=>{if(!await confirmAction('Sign out other devices?','Your current login will remain active.','Sign out'))return;try{await api('/api/auth/sessions',{action:'revoke-others'});await loadActiveSessions();}catch(e){toast(e.message);}};
+function openSettings(){void loadActiveSessions();$('pref-wakeScreen').checked=prefs.wakeScreen;drawPublicationSettings();editShelves();$('pdf-navigation-settings').hidden=$('reader').hidden;$('pref-comfort').value=prefs.comfort||'custom';$('pref-readerBrightness').value=prefs.readerBrightness;$('reader-brightness-value').textContent=prefs.readerBrightness+'%';for(const k of ['siteTheme','theme','mode','quality','density'])$('pref-'+k).value=prefs[k];$('pref-gestures').checked=prefs.gestures;if(!uploading)populateUploadSources();drawCollectionManager();drawCategoryManager();activateSettingsTab('upload');prepareFolderPathSettings();$('settings').showModal();loadTrash();loadWebPCacheStats();}
 // Reading comfort presets are display-only and never alter PDF bytes.
 const comfortPresets={daylight:{theme:'light',readerBrightness:100},bedtime:{theme:'night',readerBrightness:55},amoled:{theme:'amoled',readerBrightness:80}};
 $('pref-comfort').onchange=e=>{
