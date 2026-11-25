@@ -234,23 +234,6 @@ function drawNewsstand(items,overview){
    const b=el('button','',sourceLabel(source)+' · '+count);b.onclick=()=>browseSource(source);nav.append(b);
   }
   section.append(el('h2','','Explore your library'),nav);
-  const groups=new Map();
-  for(const item of items){
-   if(!['magazines','newspapers'].includes(item.source)||!item.series)continue;
-   const key=JSON.stringify([item.source,item.series]);
-   if(!groups.has(key))groups.set(key,[]);
-   groups.get(key).push(item);
-  }
-  if(groups.size){
-   section.append(el('h2','','Publications'));
-   const list=el('div','newsstand-publications');
-   for(const issues of [...groups.values()].sort((a,b)=>a[0].series.localeCompare(b[0].series))){
-    const item=issues[0],b=el('button','publication-tile');
-    b.append(el('strong','',item.series),el('span','',sourceLabel(item.source)+' · '+issues.length+' issues'));
-    b.onclick=()=>browseSource(item.source,item.series);list.append(b);
-   }
-   section.append(list);
-  }
  }else if(seriesFilter||sourceFilter){
   section.append(el('h2','',seriesFilter||sourceLabel(sourceFilter)));
   section.append(el('p','hint',items.length+' items in this archive'));
@@ -314,7 +297,24 @@ function applyPrefs(){const sortOptions=[...$('sort').options].map(o=>o.value);i
 /** store Prefs: Support the PiShelf reader or library interface. */
 function storePrefs(){try{localStorage.setItem('pishelf-settings',JSON.stringify(prefs));}catch{toast('Browser settings storage is unavailable.');}applyPrefs();}
 /** open Settings: Support the PiShelf reader or library interface. */
-function openSettings(){editShelves();$('pdf-navigation-settings').hidden=$('reader').hidden;$('pref-comfort').value=prefs.comfort||'custom';$('pref-readerBrightness').value=prefs.readerBrightness;$('reader-brightness-value').textContent=prefs.readerBrightness+'%';for(const k of ['siteTheme','theme','mode','quality','density'])$('pref-'+k).value=prefs[k];$('pref-gestures').checked=prefs.gestures;if(!uploading)populateUploadSources();drawCollectionManager();drawCategoryManager();activateSettingsTab('upload');prepareFolderPathSettings();$('settings').showModal();loadTrash();loadWebPCacheStats();}
+function drawPublicationSettings(){
+ const panel=$('publication-settings');if(!panel)return;
+ panel.hidden=signedInUser?.role!=='admin';if(panel.hidden)return;
+ const list=$('publication-settings-list');list.replaceChildren();
+ for(const source of ['magazines','newspapers']){
+  const names=new Set([...categories.filter(c=>c.source===source&&c.path!=='.').map(c=>c.path),...library.filter(i=>i.source===source&&i.series).map(i=>i.series)]);
+  for(const name of [...names].sort((a,b)=>a.localeCompare(b)))list.append(el('p','hint',sourceLabel(source)+' · '+name));
+ }
+ if(!list.children.length)list.append(el('p','hint','No publications yet.'));
+ $('publication-create').onclick=async()=>{
+  const source=$('publication-source').value,name=$('publication-name').value.trim();
+  if(!name||name==='.'||name==='..'||/[\\/]/.test(name))return toast('Enter a single publication name.');
+  const button=$('publication-create');button.disabled=true;
+  try{await api('/api/categories',{source,path:name});$('publication-name').value='';await refresh();populateUploadSources();drawCategoryManager();drawPublicationSettings();toast('Publication folder created. Select it when uploading issues.');}
+  catch(e){toast(e.message);}finally{button.disabled=false;}
+ };
+}
+function openSettings(){drawPublicationSettings();editShelves();$('pdf-navigation-settings').hidden=$('reader').hidden;$('pref-comfort').value=prefs.comfort||'custom';$('pref-readerBrightness').value=prefs.readerBrightness;$('reader-brightness-value').textContent=prefs.readerBrightness+'%';for(const k of ['siteTheme','theme','mode','quality','density'])$('pref-'+k).value=prefs[k];$('pref-gestures').checked=prefs.gestures;if(!uploading)populateUploadSources();drawCollectionManager();drawCategoryManager();activateSettingsTab('upload');prepareFolderPathSettings();$('settings').showModal();loadTrash();loadWebPCacheStats();}
 // Reading comfort presets are display-only and never alter PDF bytes.
 const comfortPresets={daylight:{theme:'light',readerBrightness:100},bedtime:{theme:'night',readerBrightness:55},amoled:{theme:'amoled',readerBrightness:80}};
 $('pref-comfort').onchange=e=>{
