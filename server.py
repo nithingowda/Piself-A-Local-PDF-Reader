@@ -824,6 +824,8 @@ class Handler(BaseHTTPRequestHandler):
     # do GET: handle this step of the server request or library workflow.
     def do_GET(self, head=False):
         path=unquote(urlsplit(self.path).path)
+        if path in ('/magazines','/newspapers','/books'):
+            path='/index.html'
         try:
             if path == '/api/health': self.json_response({'status':'ok'},head=head); return
             if path == '/api/auth/setup-status':
