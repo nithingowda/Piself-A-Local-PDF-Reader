@@ -422,3 +422,14 @@ body.epub-open{overflow:hidden}
 
 .shelf-track.expanded .source-covers { grid-auto-flow: row; grid-template-columns: repeat(auto-fill,minmax(min(145px,100%),1fr)); }
 .shelf-track.expanded .shelf-edge { display: none; }
+
+/* Digital newsstand: library-only styles, preserving reader geometry. */
+#grid .newsstand-section{grid-column:1/-1;min-width:0;margin:0 0 12px;padding:18px 0;border-bottom:1px solid var(--line)}
+.newsstand-section h2{font-size:clamp(19px,2.5vw,28px);letter-spacing:-.035em;margin:0 0 14px}
+.newsstand-nav{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 20px}
+.newsstand-nav button{border-radius:999px;padding:9px 15px;font-weight:600}
+.newsstand-publications{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px}
+.publication-tile{display:flex;flex-direction:column;align-items:flex-start;text-align:left;gap:8px;min-height:84px;padding:16px;border-radius:12px;overflow-wrap:anywhere;min-width:0}
+.publication-tile strong{font-size:15px}.publication-tile span{font-size:12px;color:var(--muted)}
+#library .source-shelf .section-title h2{font-size:20px;letter-spacing:-.025em}
+@media(max-width:650px){.newsstand-publications{grid-template-columns:repeat(2,minmax(0,1fr))}.publication-tile{padding:12px}.newsstand-nav button{font-size:12px}}
