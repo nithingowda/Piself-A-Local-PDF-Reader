@@ -314,12 +314,20 @@ function drawPublicationSettings(){
   catch(e){toast(e.message);}finally{button.disabled=false;}
  };
 }
+function sessionDeviceName(agent){
+ const ua=String(agent||'');
+ const os=/iPad/i.test(ua)?'iPad':/iPhone/i.test(ua)?'iPhone':/Android/i.test(ua)?(/Mobile/i.test(ua)?'Android phone':'Android tablet'):/Windows/i.test(ua)?'Windows PC':/Macintosh|Mac OS X/i.test(ua)?'Mac':/Linux/i.test(ua)?'Linux computer':'Unknown device';
+ const browser=/Edg(?:A|iOS)?\//i.test(ua)?'Edge':/OPR\//i.test(ua)?'Opera':/Firefox|FxiOS/i.test(ua)?'Firefox':/Chrome|CriOS/i.test(ua)?'Chrome':/Safari/i.test(ua)?'Safari':'';
+ return browser?os+' · '+browser:os;
+}
 async function loadActiveSessions(){
  const box=$('active-sessions');box.textContent='Loading sessions…';
- try{const sessions=await api('/api/auth/sessions');box.replaceChildren();
+ try{const sessions=await api('/api/auth/sessions');box.replaceChildren();box.append(el('p','hint',sessions.length+' of 5 active sessions'));
  for(const session of sessions){
   const row=el('div','collection-row'),info=el('div');
-  info.append(el('strong','',session.current?'Current device':'Other device'),el('p','hint',session.device),el('p','hint','Login: '+(session.created?new Date(session.created*1000).toLocaleString():'Unknown')+' · Expires: '+new Date(session.expires*1000).toLocaleString()));
+  info.append(el('strong','',sessionDeviceName(session.device)));
+  if(session.current)info.append(el('p','hint','Current device'));
+  if(session.created)info.append(el('p','hint','Login: '+new Date(session.created*1000).toLocaleString()));
   info.style.cssText='min-width:0;overflow-wrap:anywhere;flex:1';row.append(info);
   if(!session.current){const b=el('button','','Sign out');b.onclick=async()=>{try{await api('/api/auth/sessions',{action:'revoke',id:session.id});await loadActiveSessions();}catch(e){toast(e.message);}};row.append(b);}
   box.append(row);
