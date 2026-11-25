@@ -227,14 +227,8 @@ function browseSource(source,series=''){
 }
 function drawNewsstand(items,overview){
  const grid=$('grid'),section=el('section','newsstand-section');
- if(overview){
-  const nav=el('nav','newsstand-nav');nav.setAttribute('aria-label','Browse library');
-  for(const source of configuredSources){
-   const count=items.filter(i=>i.source===source).length;
-   const b=el('button','',sourceLabel(source)+' · '+count);b.onclick=()=>browseSource(source);nav.append(b);
-  }
-  section.append(el('h2','','Explore your library'),nav);
- }else if(seriesFilter||sourceFilter){
+ if(overview)return;
+ if(seriesFilter||sourceFilter){
   section.append(el('h2','',seriesFilter||sourceLabel(sourceFilter)));
   section.append(el('p','hint',items.length+' items in this archive'));
   if(seriesFilter){
