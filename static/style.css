@@ -435,3 +435,30 @@ body.epub-open{overflow:hidden}
 .publication-tile strong{font-size:15px}.publication-tile span{font-size:12px;color:var(--muted)}
 #library .source-shelf .section-title h2{font-size:20px;letter-spacing:-.025em}
 @media(max-width:650px){.newsstand-publications{grid-template-columns:repeat(2,minmax(0,1fr))}.publication-tile{padding:12px}.newsstand-nav button{font-size:12px}}
+
+/* Floating frosted glass reader chrome. No layout changes to the PDF viewport. */
+#reader{--glass-bg:rgba(28,32,39,.64);--glass-ink:#fff;--glass-edge:rgba(255,255,255,.23);--glass-control:rgba(255,255,255,.10)}
+#reader[data-page-theme=light],#reader[data-page-theme=sepia]{--glass-bg:rgba(250,250,252,.72);--glass-ink:#17191e;--glass-edge:rgba(255,255,255,.85);--glass-control:rgba(0,0,0,.06)}
+#reader > .reader-bar,#reader > .controls{
+ box-sizing:border-box;background:var(--glass-bg);color:var(--glass-ink);
+ border:1px solid var(--glass-edge);border-radius:24px;
+ -webkit-backdrop-filter:blur(22px) saturate(165%);backdrop-filter:blur(22px) saturate(165%);
+ box-shadow:0 8px 28px #0003,inset 0 1px 0 #ffffff30;
+ padding:8px 12px;gap:7px;
+}
+#reader > .reader-bar{inset:max(10px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) auto max(12px,env(safe-area-inset-left))}
+#reader > .controls{inset:auto 0 max(12px,env(safe-area-inset-bottom)) 0;width:max-content;max-width:calc(100% - 24px);margin-inline:auto}
+#reader > :is(.reader-bar,.controls) :is(button,select,input:not([type=range])){background:var(--glass-control);color:var(--glass-ink);border:1px solid var(--glass-edge);border-radius:14px;box-shadow:none}
+#reader > :is(.reader-bar,.controls) button:hover{background:var(--glass-edge)}
+#reader > :is(.reader-bar,.controls) :is(button,select,input):focus-visible{outline:2px solid #64aaff;outline-offset:2px}
+#reader > :is(.reader-bar,.controls) select option{background:var(--card);color:var(--text)}
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+ #reader{--glass-bg:rgba(28,32,39,.94)}
+ #reader[data-page-theme=light],#reader[data-page-theme=sepia]{--glass-bg:rgba(250,250,252,.96)}
+}
+@media(max-width:650px){
+ #reader > .reader-bar,#reader > .controls{border-radius:18px;padding:6px;gap:4px}
+ #reader > .reader-bar{inset:max(6px,env(safe-area-inset-top)) 6px auto}
+ #reader > .controls{max-width:calc(100% - 12px);bottom:max(6px,env(safe-area-inset-bottom))}
+ #reader > :is(.reader-bar,.controls) :is(button,select,input:not([type=range])){border-radius:11px}
+}
