@@ -17,7 +17,7 @@ import {selectionsOverlap,selectedPassage} from './pdf-text-selection.js';
  * - A missing optional control must not prevent refresh() from starting.
  */
 const $=id=>document.getElementById(id);
-const defaults={sort:'issue',siteTheme:'light',theme:'dark',mode:'scroll',quality:'1.5',density:'compact',gestures:true,readerBrightness:75,comfort:'custom',epubTheme:'light',epubFontSize:100,wakeScreen:true};
+const defaults={sort:'issue',siteTheme:'light',theme:'dark',mode:'scroll',quality:'1.5',pdfRenderer:'pdfjs',density:'compact',gestures:true,readerBrightness:75,comfort:'custom',epubTheme:'light',epubFontSize:100,wakeScreen:true};
 let prefs={...defaults};try{const stored=JSON.parse(localStorage.getItem('pishelf-settings')||'{}');for(const k in defaults)if(k in stored)prefs[k]=stored[k];}catch{}
 let collections=[],collectionFilter='',collectionSets=new Map();
 let categories=[],sourceFilter='',seriesFilter='',tagFilter='',visibleLimit=60;
@@ -336,7 +336,7 @@ async function loadActiveSessions(){
  }catch(e){box.textContent=e.message;}
 }
 $('revoke-other-sessions').onclick=async()=>{if(!await confirmAction('Sign out other devices?','Your current login will remain active.','Sign out'))return;try{await api('/api/auth/sessions',{action:'revoke-others'});await loadActiveSessions();}catch(e){toast(e.message);}};
-function openSettings(){void loadActiveSessions();$('pref-wakeScreen').checked=prefs.wakeScreen;drawPublicationSettings();editShelves();$('pdf-navigation-settings').hidden=$('reader').hidden;$('pref-comfort').value=prefs.comfort||'custom';$('pref-readerBrightness').value=prefs.readerBrightness;$('reader-brightness-value').textContent=prefs.readerBrightness+'%';for(const k of ['siteTheme','theme','mode','quality','density'])$('pref-'+k).value=prefs[k];$('pref-gestures').checked=prefs.gestures;if(!uploading)populateUploadSources();drawCollectionManager();drawCategoryManager();activateSettingsTab('upload');prepareFolderPathSettings();$('settings').showModal();loadTrash();loadWebPCacheStats();}
+function openSettings(){$('pref-pdfRenderer').value=prefs.pdfRenderer;void loadActiveSessions();$('pref-wakeScreen').checked=prefs.wakeScreen;drawPublicationSettings();editShelves();$('pdf-navigation-settings').hidden=$('reader').hidden;$('pref-comfort').value=prefs.comfort||'custom';$('pref-readerBrightness').value=prefs.readerBrightness;$('reader-brightness-value').textContent=prefs.readerBrightness+'%';for(const k of ['siteTheme','theme','mode','quality','density'])$('pref-'+k).value=prefs[k];$('pref-gestures').checked=prefs.gestures;if(!uploading)populateUploadSources();drawCollectionManager();drawCategoryManager();activateSettingsTab('upload');prepareFolderPathSettings();$('settings').showModal();loadTrash();loadWebPCacheStats();}
 // Reading comfort presets are display-only and never alter PDF bytes.
 const comfortPresets={daylight:{theme:'light',readerBrightness:100},bedtime:{theme:'night',readerBrightness:55},amoled:{theme:'amoled',readerBrightness:80}};
 $('pref-comfort').onchange=e=>{
@@ -365,6 +365,15 @@ $('pref-readerBrightness').oninput=e=>{
 $('pref-readerBrightness').onchange=()=>storePrefs();
 $('settings-open').onclick=openSettings;$('reader-settings').onclick=openSettings;$('settings-close').onclick=()=>{folderAccessPin='';$('settings').close();};
 for(const k of ['siteTheme','theme','mode','quality','density'])$('pref-'+k).onchange=e=>{prefs[k]=e.target.value;if(k==='theme'){prefs.comfort='custom';$('pref-comfort').value='custom';}if(k==='theme'&&['light','sepia','dark'].includes(prefs.theme))lastDayTheme=prefs.theme;storePrefs();if(documentPDF&&(k==='mode'||k==='quality')){$('view-mode').value=prefs.mode;rebuild();}};
+function usesWebpRenderer(){return signedInUser?.role==='admin'&&prefs.pdfRenderer==='webp';}
+$('pref-pdfRenderer').onchange=e=>{
+ if(signedInUser?.role!=='admin')return;
+ prefs.pdfRenderer=e.target.value;
+ clearMagazinePrefetches();
+ cancelAllSharpImages();
+ storePrefs();
+ if(documentPDF)void rebuild();
+};
 $('pref-gestures').onchange=e=>{prefs.gestures=e.target.checked;storePrefs();updateTouchMode();};
 $('clear-all').onclick=()=>{if(documentPDF){toast('Return to the library before clearing all progress.');return;}clearProgress();};$('rescan').onclick=()=>{if(documentPDF){toast('Return to the library to rescan.');return;}refresh();toast('Library scan requested.');};
 
@@ -621,7 +630,7 @@ async function renderPages(){
   const n=+slot.dataset.page;
   try{
    // Prefer cached magazine images; retain PDF.js rendering as a fallback.
-   if(current?.id&&!rotation){
+   if(usesWebpRenderer()&&current?.id&&!rotation){
     const prefetched=takeDecodedPreview(n);
     const img=prefetched||document.createElement('img');
     img.draggable=false;
@@ -779,7 +788,7 @@ function trackScroll(){
  if(pinch||performance.now()<pinchScrollLockUntil||!layoutReady||!documentPDF||$('view-mode').value!=='scroll'||!slots.length)return;
  const area=$('page-area'),target=area.scrollTop+Math.min(area.clientHeight*.35,240);let low=0,high=slots.length-1;
  while(low<high){const mid=Math.ceil((low+high)/2);if(slots[mid].offsetTop<=target)low=mid;else high=mid-1;}
- const n=+slots[low].dataset.page;if(n!==page){page=n;updatePageUI();preloadMagazineNeighbors();}
+ const n=+slots[low].dataset.page;if(n!==page){page=n;updatePageUI();if(usesWebpRenderer())preloadMagazineNeighbors();}
  for(let i=Math.max(0,low-2),end=area.scrollTop+area.clientHeight+300;i<slots.length&&slots[i].offsetTop<end;i++)enqueue(slots[i]);if(performance.now()-lastCanvasTrim>250){lastCanvasTrim=performance.now();trimCanvases();}
  clearTimeout(scrollTimer);scrollTimer=setTimeout(remember,750);
 }
@@ -2236,6 +2245,7 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{if(pre
   // floating overlay that obscures the PDF reader on small screens.
   $('account-identity').textContent='Signed in as '+signedInUser.username;
   $('account-role').textContent=signedInUser.role==='admin'?'Administrator':'Reader';
+  $('pdf-renderer-setting').hidden=signedInUser.role!=='admin';
   $('account-manage-users').hidden=signedInUser.role!=='admin';
   $('account-logout').onclick=async()=>{
    try{await api('/api/auth/logout',{});}finally{location.replace('/login.html');}
