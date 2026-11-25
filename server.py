@@ -3,6 +3,7 @@
 
 #!/usr/bin/env python3
 """PiShelf: a local PDF library with durable reading state and recoverable trash."""
+from html import escape
 import argparse
 import hashlib
 import json
@@ -550,6 +551,29 @@ class Handler(BaseHTTPRequestHandler):
     # mutate: handle this step of the server request or library workflow.
     def mutate(self, data, db):
         route = urlsplit(self.path).path
+        if route == '/api/catalog/editor':
+            item=next((i for i in self.library_items() if i['id']==data.get('id') and i['source']=='books'),None)
+            if not item: raise APIError(404,'Book unavailable.')
+            row=db.execute('SELECT public_id,draft,live FROM catalog_entries WHERE item=?',(item['id'],)).fetchone()
+            mode=data.get('mode','load')
+            if mode=='load':
+                draft=json.loads(row[1]) if row else dict(title=item['title'],author=item.get('author',''),bio='',description=item.get('description',''),category='',tags=', '.join(item.get('tags',[])),language=item.get('language',''))
+                return dict(draft=draft,published=bool(row and row[2]),url='/catalog/books/'+row[0] if row and row[2] else '')
+            if mode=='withdraw':
+                db.execute('UPDATE catalog_entries SET live=NULL WHERE item=?',(item['id'],))
+                return {'ok':True}
+            if mode not in ('draft','publish'): raise ValueError()
+            draft=data.get('draft')
+            limits=dict(title=300,author=160,bio=1200,description=2400,category=100,tags=600,language=80)
+            if not isinstance(draft,dict) or set(draft)!=set(limits): raise ValueError()
+            if any(not isinstance(v,str) or len(v)>limits[k] for k,v in draft.items()): raise ValueError()
+            draft={k:v.strip() for k,v in draft.items()}
+            if not draft['title']: raise APIError(400,'Enter a public title.')
+            public_id=row[0] if row else uuid.uuid4().hex
+            raw=json.dumps(draft)
+            live=raw if mode=='publish' else row[2] if row else None
+            db.execute('INSERT OR REPLACE INTO catalog_entries VALUES (?,?,?,?)',(item['id'],public_id,raw,live))
+            return dict(ok=True,url='/catalog/books/'+public_id)
         if route == '/api/home-shelves':
             shelves = data.get('shelves')
             if not isinstance(shelves, list) or len(shelves) > 32:
@@ -680,6 +704,7 @@ class Handler(BaseHTTPRequestHandler):
                 move_exclusive(source,destination)
             try:
                 if new_id != item['id']:
+                    db.execute('UPDATE catalog_entries SET item=? WHERE item=?',(new_id,item['id']))
                     move_reader_state(db,item['id'],new_id)
                     db.execute('DELETE FROM metadata WHERE id=?',(item['id'],))
                     db.execute('DELETE FROM collection_items WHERE item_id=?',(new_id,))
@@ -799,6 +824,7 @@ class Handler(BaseHTTPRequestHandler):
             destination=trash/(token+Path(item['path']).suffix.lower())
             source.rename(destination)
             try:
+                db.execute('DELETE FROM catalog_entries WHERE item=?',(key,))
                 move_reader_state(db,key,token)
                 db.execute('INSERT INTO trash (token,path,title,deleted,source,archived_state) VALUES (?,?,?,?,?,1)',(token,item['path'],item['title'],time.time(),item['source']))
                 db.commit()
@@ -845,6 +871,61 @@ class Handler(BaseHTTPRequestHandler):
         raise APIError(404,'Unknown action.')
 
     # do HEAD: handle this step of the server request or library workflow.
+    def public_catalog(self,path,head):
+        from urllib.parse import quote
+        with sqlite3.connect(self.server.state_db) as db:
+            entries=[(key,json.loads(raw)) for key,raw in db.execute('SELECT public_id,live FROM catalog_entries WHERE live IS NOT NULL ORDER BY rowid DESC')]
+        def group_url(kind,name):
+            return '/catalog/'+kind+'/'+quote(name.strip().casefold(),safe='')
+        def link(url,name):
+            return '<a href="'+escape(url)+'">'+escape(name)+'</a>'
+        def book_list(rows):
+            return '<ul>'+''.join('<li>'+link('/catalog/books/'+key,b['title'])+(' · '+escape(b['author']) if b['author'] else '')+'</li>' for key,b in rows)+'</ul>'
+        title='Book catalog'
+        description='Browse published books and their authors on PiShelf.'
+        if path.rstrip('/')=='/catalog':
+            body=book_list(entries) if entries else '<p>No published books yet.</p>'
+        elif path.startswith('/catalog/books/'):
+            book=next((b for key,b in entries if '/catalog/books/'+key==path),None)
+            if not book: raise APIError(404,'Page unavailable.')
+            title=book['title']
+            description=book['description'] or title
+            body=''
+            if book['author']: body+='<p>By '+link(group_url('authors',book['author']),book['author'])+'</p>'
+            if book['description']: body+='<p>'+escape(book['description'])+'</p>'
+            if book['language']: body+='<p>Language · '+escape(book['language'])+'</p>'
+            if book['category']: body+='<p>Category · '+link(group_url('categories',book['category']),book['category'])+'</p>'
+            tags=[t.strip() for t in book['tags'].split(',') if t.strip()]
+            if tags: body+='<p>Tags · '+', '.join(link(group_url('tags',t),t) for t in tags)+'</p>'
+        else:
+            parts=path.split('/',3)
+            if len(parts)!=4 or parts[2] not in ('authors','categories','tags') or not parts[3]: raise APIError(404,'Page unavailable.')
+            kind,name=parts[2:]
+            rows=[]
+            bio=''
+            for key,b in entries:
+                values=b['tags'].split(',') if kind=='tags' else [b['author' if kind=='authors' else 'category']]
+                for value in values:
+                    if value.strip().casefold()==name:
+                        title=value.strip()
+                        rows.append((key,b))
+                        if kind=='authors' and not bio: bio=b['bio']
+                        break
+            if not rows: raise APIError(404,'Page unavailable.')
+            description=bio or ('Browse books for '+title+'.')
+            body=('<p>'+escape(bio)+'</p>' if bio else '')+book_list(rows)
+        html=('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+              '<title>'+escape(title)+' · PiShelf</title><meta name="description" content="'+escape(description[:200])+'">'
+              '<style>body{font:1.1rem/1.65 system-ui;margin:auto;max-width:48rem;padding:2rem 1rem;color:#24221f;background:#faf8f4}a{color:#754416}li{padding:.5rem 0}h1{line-height:1.2}p{white-space:pre-line;overflow-wrap:anywhere}</style>'
+              '<nav>'+link('/catalog','PiShelf catalog')+' · '+link('/login.html','Sign in')+'</nav><main><h1>'+escape(title)+'</h1>'+body+'</main></html>').encode()
+        self.send_response(200)
+        self.send_header('Content-Type','text/html; charset=utf-8')
+        self.send_header('Content-Length',str(len(html)))
+        self.send_header('Cache-Control','no-store')
+        self.security_headers()
+        self.end_headers()
+        if not head: self.wfile.write(html)
+
     def do_HEAD(self): self.do_GET(head=True)
 
     # do GET: handle this step of the server request or library workflow.
@@ -853,6 +934,8 @@ class Handler(BaseHTTPRequestHandler):
         if path in ('/magazines','/newspapers','/books'):
             path='/index.html'
         try:
+            if path=='/catalog' or path.startswith('/catalog/'):
+                self.public_catalog(path,head);return
             if path == '/api/health': self.json_response({'status':'ok'},head=head); return
             if path == '/api/auth/setup-status':
                 with sqlite3.connect(self.server.state_db) as db:
@@ -1258,6 +1341,7 @@ def move_reader_state(db, source, destination):
 def remove_reading_state(db,key):
     db.execute('DELETE FROM annotations WHERE document_id=?',(key,))
     db.execute('DELETE FROM progress WHERE id=?',(key,))
+    db.execute('DELETE FROM catalog_entries WHERE item=?',(key,))
     db.execute('DELETE FROM metadata WHERE id=?',(key,))
     db.execute('DELETE FROM collection_items WHERE item_id=?',(key,))
 
@@ -1314,6 +1398,7 @@ def make_server(host,port,library,data,newspapers=None,books=None):
         db.execute('CREATE TABLE IF NOT EXISTS collections (id TEXT PRIMARY KEY,name TEXT NOT NULL COLLATE NOCASE UNIQUE)')
         db.execute('CREATE TABLE IF NOT EXISTS collection_items (collection_id TEXT NOT NULL,item_id TEXT NOT NULL,PRIMARY KEY(collection_id,item_id))')
         db.execute('CREATE INDEX IF NOT EXISTS collection_item_lookup ON collection_items(item_id)')
+        db.execute('CREATE TABLE IF NOT EXISTS catalog_entries (item TEXT PRIMARY KEY, public_id TEXT UNIQUE NOT NULL, draft TEXT NOT NULL, live TEXT)')
         db.execute('CREATE TABLE IF NOT EXISTS metadata (id TEXT PRIMARY KEY,value TEXT NOT NULL)')
         if not db.in_transaction:
             db.execute('BEGIN IMMEDIATE')
