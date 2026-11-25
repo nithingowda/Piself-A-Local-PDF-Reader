@@ -1,6 +1,11 @@
 """Source-level regression checks for PiShelf authentication boundaries."""
 from pathlib import Path
 import unittest
+import sqlite3
+import hashlib
+import sys
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+import auth
 
 ROOT=Path(__file__).resolve().parents[1]
 SERVER=(ROOT/'server.py').read_text()
@@ -20,9 +25,27 @@ class AuthenticationSourceTests(unittest.TestCase):
     def test_passwords_hashed_and_sessions_expire(self):
         self.assertIn('hashlib.pbkdf2_hmac',AUTH)
         self.assertIn('ITERATIONS = 600_000',AUTH)
-        self.assertIn('SESSION_SECONDS = 12 * 3600',AUTH)
+        self.assertEqual(auth.SESSION_SECONDS,30 * 24 * 3600)
         self.assertIn('secrets.token_urlsafe(48)',AUTH)
         self.assertIn('hmac.compare_digest',AUTH)
+    def test_session_limit_and_expiration(self):
+        with sqlite3.connect(':memory:') as db:
+            auth.initialize(db)
+            auth.create_user(db,'reader1','test-password-123','reader')
+            auth.create_user(db,'reader2','test-password-456','reader')
+            first,_=auth.new_session(db,1,'Test browser')
+            other,_=auth.new_session(db,2,'Other browser')
+            for _ in range(5):
+                latest,_=auth.new_session(db,1,'Test browser')
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM auth_sessions WHERE user_id=1').fetchone()[0],5)
+            self.assertIsNone(auth.session(db,{'Cookie':'pishelf_session='+first}))
+            self.assertIsNotNone(auth.session(db,{'Cookie':'pishelf_session='+other}))
+            self.assertIsNotNone(auth.session(db,{'Cookie':'pishelf_session='+latest}))
+            digest=hashlib.sha256(latest.encode()).hexdigest()
+            created,expires=db.execute('SELECT created,expires FROM auth_sessions WHERE token_hash=?',(digest,)).fetchone()
+            self.assertAlmostEqual(expires-created,30*24*3600,delta=1)
+            db.execute('UPDATE auth_sessions SET expires=0 WHERE token_hash=?',(digest,))
+            self.assertIsNone(auth.session(db,{'Cookie':'pishelf_session='+latest}))
     def test_csrf_and_cookie_protections(self):
         self.assertIn('X-PiShelf-CSRF',SERVER)
         self.assertIn('SameSite=Strict',SERVER)

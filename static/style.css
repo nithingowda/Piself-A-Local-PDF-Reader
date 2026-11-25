@@ -385,8 +385,10 @@ body.epub-open{overflow:hidden}
 #reader:fullscreen #fullscreen-exit:is(:hover,:focus-visible){opacity:1;background:#0003}
 
 /* Let the PDF viewport use the space between visible toolbars. */
-#reader:not(.focused):not(.speech-immersive) > .reader-bar,
-#reader:not(.focused):not(.speech-immersive) > .controls{position:relative;inset:auto;flex:none}
+/* Overlay reader controls so toggling them never changes the page viewport. */
+#reader > .reader-bar{position:absolute;inset:0 0 auto}
+#reader > .controls{position:absolute;inset:auto 0 0}
+#page-area:focus,#page-area:focus-visible{outline:none}
 #reader > #page-area{min-height:0}
 
 @media(max-width:650px){
@@ -422,3 +424,47 @@ body.epub-open{overflow:hidden}
 
 .shelf-track.expanded .source-covers { grid-auto-flow: row; grid-template-columns: repeat(auto-fill,minmax(min(145px,100%),1fr)); }
 .shelf-track.expanded .shelf-edge { display: none; }
+
+/* Digital newsstand: library-only styles, preserving reader geometry. */
+#grid .newsstand-section{grid-column:1/-1;min-width:0;margin:0 0 12px;padding:18px 0;border-bottom:1px solid var(--line)}
+.newsstand-section h2{font-size:clamp(19px,2.5vw,28px);letter-spacing:-.035em;margin:0 0 14px}
+.newsstand-nav{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 20px}
+.newsstand-nav button{border-radius:999px;padding:9px 15px;font-weight:600}
+.newsstand-publications{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px}
+.publication-tile{display:flex;flex-direction:column;align-items:flex-start;text-align:left;gap:8px;min-height:84px;padding:16px;border-radius:12px;overflow-wrap:anywhere;min-width:0}
+.publication-tile strong{font-size:15px}.publication-tile span{font-size:12px;color:var(--muted)}
+#library .source-shelf .section-title h2{font-size:20px;letter-spacing:-.025em}
+@media(max-width:650px){.newsstand-publications{grid-template-columns:repeat(2,minmax(0,1fr))}.publication-tile{padding:12px}.newsstand-nav button{font-size:12px}}
+
+/* Floating frosted glass reader chrome. No layout changes to the PDF viewport. */
+#reader{--glass-bg:rgba(28,32,39,.28);--glass-ink:#fff;--glass-edge:rgba(255,255,255,.23);--glass-control:rgba(255,255,255,.10)}
+#reader[data-page-theme=light],#reader[data-page-theme=sepia]{--glass-bg:rgba(250,250,252,.32);--glass-ink:#17191e;--glass-edge:rgba(255,255,255,.85);--glass-control:rgba(0,0,0,.06)}
+#reader > .reader-bar,#reader > .controls{
+ box-sizing:border-box;background:var(--glass-bg);color:var(--glass-ink);
+ border:1px solid var(--glass-edge);border-radius:24px;
+ -webkit-backdrop-filter:blur(9px) saturate(150%);backdrop-filter:blur(9px) saturate(150%);
+ box-shadow:0 8px 28px #0003,inset 0 1px 0 #ffffff30;
+ padding:8px 12px;gap:7px;
+}
+#reader > .reader-bar{inset:max(10px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) auto max(12px,env(safe-area-inset-left))}
+#reader > .controls{inset:auto 0 max(12px,env(safe-area-inset-bottom)) 0;width:max-content;max-width:calc(100% - 24px);margin-inline:auto}
+#reader > :is(.reader-bar,.controls) :is(button,select,input:not([type=range])){background:var(--glass-control);color:var(--glass-ink);border:1px solid var(--glass-edge);border-radius:14px;box-shadow:none}
+#reader > :is(.reader-bar,.controls) button:hover{background:var(--glass-edge)}
+#reader > :is(.reader-bar,.controls) :is(button,select,input):focus-visible{outline:2px solid #64aaff;outline-offset:2px}
+#reader > :is(.reader-bar,.controls) select option{background:var(--card);color:var(--text)}
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+ #reader{--glass-bg:rgba(28,32,39,.94)}
+ #reader[data-page-theme=light],#reader[data-page-theme=sepia]{--glass-bg:rgba(250,250,252,.96)}
+}
+@media(max-width:650px){
+ #reader > .reader-bar,#reader > .controls{border-radius:18px;padding:6px;gap:4px}
+ #reader > .reader-bar{inset:max(6px,env(safe-area-inset-top)) 6px auto}
+ #reader > .controls{max-width:calc(100% - 12px);bottom:max(6px,env(safe-area-inset-bottom))}
+ #reader > :is(.reader-bar,.controls) :is(button,select,input:not([type=range])){border-radius:11px}
+}
+
+/* Clearer glass, with contrast retained on individual controls. */
+#reader > :is(.reader-bar,.controls){text-shadow:0 1px 3px #0008}
+#reader[data-page-theme=light] > :is(.reader-bar,.controls),#reader[data-page-theme=sepia] > :is(.reader-bar,.controls){text-shadow:0 1px 3px #fff9}
+#reader > :is(.reader-bar,.controls) :is(button,select,input:not([type=range])){background:rgba(20,24,30,.42)}
+#reader:is([data-page-theme=light],[data-page-theme=sepia]) > :is(.reader-bar,.controls) :is(button,select,input:not([type=range])){background:rgba(255,255,255,.48)}

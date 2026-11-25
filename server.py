@@ -316,7 +316,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not user:
                     with self.server.auth_lock: self.server.auth_attempts[ip].append(time.time())
                     raise APIError(401,'Invalid username or password.')
-                token,csrf=auth.new_session(db,user['id'])
+                token,csrf=auth.new_session(db,user['id'],self.headers.get('User-Agent',''))
             self.send_response(200)
             self.send_header('Content-Type','application/json')
             self.send_header('Cache-Control','no-store')
@@ -376,6 +376,14 @@ class Handler(BaseHTTPRequestHandler):
                 auth.revoke_user(db,user['id'])
             self.json_response({'ok':True,'login_required':True})
             return
+        if route=='/api/auth/sessions':
+            with sqlite3.connect(self.server.state_db) as db:
+                if data.get('action')=='revoke-others':
+                    db.execute('DELETE FROM auth_sessions WHERE user_id=? AND token_hash<>?',(user['id'],user['token_hash']))
+                elif data.get('action')=='revoke' and isinstance(data.get('id'),str):
+                    db.execute('DELETE FROM auth_sessions WHERE user_id=? AND session_id=? AND token_hash<>?',(user['id'],data['id'],user['token_hash']))
+                else: raise APIError(400,'Invalid session action.')
+            self.json_response({'ok':True});return
         if route=='/api/auth/logout':
             with sqlite3.connect(self.server.state_db) as db:
                 db.execute('DELETE FROM auth_sessions WHERE token_hash=?',(user['token_hash'],))
@@ -824,6 +832,8 @@ class Handler(BaseHTTPRequestHandler):
     # do GET: handle this step of the server request or library workflow.
     def do_GET(self, head=False):
         path=unquote(urlsplit(self.path).path)
+        if path in ('/magazines','/newspapers','/books'):
+            path='/index.html'
         try:
             if path == '/api/health': self.json_response({'status':'ok'},head=head); return
             if path == '/api/auth/setup-status':
@@ -843,6 +853,10 @@ class Handler(BaseHTTPRequestHandler):
                         self.end_headers()
                         return
                     raise
+                if path == '/api/auth/sessions':
+                    with sqlite3.connect(self.server.state_db) as db:
+                        rows=db.execute('SELECT session_id,created,expires,user_agent,token_hash FROM auth_sessions WHERE user_id=? AND expires>? ORDER BY expires DESC',(user['id'],time.time())).fetchall()
+                    self.json_response([dict(id=r[0],created=r[1],expires=r[2],device=r[3] or 'Unknown device',current=r[4]==user['token_hash']) for r in rows],head=head);return
                 if path == '/api/auth/me':
                     self.json_response({'username':user['username'],'role':user['role'],'csrf':user['csrf']},head=head);return
                 if path == '/api/admin/paths/pin':

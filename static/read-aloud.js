@@ -6,9 +6,10 @@ const DEFAULT_VOICE='en-IN-NeerjaNeural';
 // sentence endings, quotations and questions without inserting timed delays.
 export function normalizeSpeechText(text){
  return String(text||'').normalize('NFC')
-  .replace(/[\u00ad\u200b\u2060]/g,'') // PDF discretionary hyphens / invisible joins
+  .replace(/[\uFB00-\uFB06]/g,c=>({'ﬀ':'ff','ﬁ':'fi','ﬂ':'fl','ﬃ':'ffi','ﬄ':'ffl','ﬅ':'st','ﬆ':'st'}[c]))
+  .replace(/[\u00ad\u200b\u2060\ufeff]/g,'') // PDF discretionary hyphens / invisible joins
   .replace(/\r\n?/g,'\n')
-  .replace(/\u00a0/g,' ')
+  .replace(/[\u00a0\u202f\u2007]/g,' ')
   .replace(/[ \t\f\v]+/g,' ')
   .replace(/ *\n */g,'\n')
   .replace(/ +([,;:.!?…%°)\]}”’])/g,'$1')
