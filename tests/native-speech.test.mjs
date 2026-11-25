@@ -1,0 +1,22 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+const source=await readFile(new URL('../static/read-aloud.js',import.meta.url),'utf8');
+const {createReadAloud}=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
+test('native voices read selected passages in order without Edge requests',async()=>{
+ const spoken=[],states=[];
+ const voice={voiceURI:'test',lang:'en-IN'};
+ globalThis.SpeechSynthesisUtterance=class{constructor(text){this.text=text;}};
+ globalThis.speechSynthesis={getVoices:()=>[voice],speak(u){spoken.push(u);queueMicrotask(()=>u.onend());},cancel(){},pause(){},resume(){}};
+ const controller=createReadAloud({getText:()=>{throw Error('Unexpected page read');},next:()=>false,onState:s=>states.push(s)});
+ controller.setVoice('native:test');
+ controller.setRate(1.2);
+ await controller.playSelection(['First effort.','Second effort.']);
+ await new Promise(resolve=>setTimeout(resolve,20));
+ assert.deepEqual(spoken.map(u=>u.text),['First effort.','Second effort.']);
+ assert.ok(spoken.every(u=>u.voice===voice&&u.rate===1.2));
+ assert.equal(controller.active,false);
+ assert.ok(states.some(s=>s.passage===1));
+ delete globalThis.speechSynthesis;
+ delete globalThis.SpeechSynthesisUtterance;
+});
