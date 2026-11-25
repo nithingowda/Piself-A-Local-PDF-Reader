@@ -1113,6 +1113,14 @@ function wireSpeech(kind,controller){
  enableSpeechDrag(kind);
  controller.setVoice(preferredSpeechVoice());
  const panel=$(kind+'-read-panel');
+ if(!$(kind+'-reading-text')){
+  const toggle=document.createElement('button');toggle.type='button';toggle.textContent='Show reading text';toggle.setAttribute('aria-expanded','false');
+  const preview=document.createElement('textarea');preview.id=kind+'-reading-text';preview.readOnly=true;preview.hidden=true;preview.rows=6;
+  preview.setAttribute('aria-label','Exact text sent to Edge TTS');preview.placeholder='Start reading to see the exact text.';
+  preview.style.cssText='width:100%;max-width:320px;box-sizing:border-box;resize:vertical;font:inherit;user-select:text;-webkit-user-select:text';
+  toggle.onclick=()=>{preview.hidden=!preview.hidden;toggle.textContent=preview.hidden?'Show reading text':'Hide reading text';toggle.setAttribute('aria-expanded',String(!preview.hidden));};
+  panel.append(toggle,preview);
+ }
  $(kind+'-read-toggle').onclick=()=>beginSpeechPick(kind);
  $(kind+'-play-selected').onclick=()=>playNumberedParagraphs(kind);
  const play=()=>{
@@ -1226,6 +1234,7 @@ function clearSpeechHighlight(kind){
  else epubController?.clearReadingHighlight?.();
 }
 function speechState(kind,state){
+ if(state.readingText!==undefined){const preview=$(kind+'-reading-text');if(preview)preview.value=state.readingText;return;}
  const timer=$(kind+'-remaining');
  if(state.preparing){timer.hidden=false;timer.textContent='Preparing audio…';return;}
  if(state.remaining!==undefined){
