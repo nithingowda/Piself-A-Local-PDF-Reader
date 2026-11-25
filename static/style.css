@@ -468,3 +468,30 @@ body.epub-open{overflow:hidden}
 #reader[data-page-theme=light] > :is(.reader-bar,.controls),#reader[data-page-theme=sepia] > :is(.reader-bar,.controls){text-shadow:0 1px 3px #fff9}
 #reader > :is(.reader-bar,.controls) :is(button,select,input:not([type=range])){background:rgba(20,24,30,.42)}
 #reader:is([data-page-theme=light],[data-page-theme=sepia]) > :is(.reader-bar,.controls) :is(button,select,input:not([type=range])){background:rgba(255,255,255,.48)}
+
+
+/* Compact accessible glass audio transport. */
+#reader .speech-floating-player:not([hidden]),#epub-reader .speech-floating-player:not([hidden]){
+ width:min(340px,calc(100vw - 24px));box-sizing:border-box;padding:8px 12px 12px;gap:8px;
+ background:linear-gradient(145deg,rgba(35,43,56,.58),rgba(20,25,35,.38))!important;
+ backdrop-filter:blur(16px) saturate(1.45)!important;-webkit-backdrop-filter:blur(16px) saturate(1.45)!important;
+ border-radius:30px!important;border:1px solid rgba(255,255,255,.42)!important;
+ box-shadow:inset 0 1px 1px #ffffff55,0 8px 28px #0003!important;
+}
+.speech-floating-player .speech-drag-handle{font-size:0;padding:5px 0;line-height:0}
+.speech-drag-handle::after{content:"";display:block;width:34px;height:4px;margin:auto;border-radius:4px;background:#ffffff99}
+.speech-floating-player .speech-player-main{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;width:100%;justify-items:center}
+.speech-floating-player .speech-player-main button{min-width:44px;min-height:44px;padding:6px;border-radius:50%;background:rgba(255,255,255,.10)!important;border:1px solid #ffffff24!important;font-size:16px}
+.speech-floating-player .speech-player-main [id$="-read-main"]{grid-column:3;grid-row:1;width:58px;height:58px;background:#f5f7fa!important;color:#18202c!important;text-shadow:none;font-size:23px;box-shadow:0 3px 12px #0002}
+.speech-player-main [id$="-read-back"]{grid-column:2;grid-row:1}
+.speech-player-main [id$="-read-forward"]{grid-column:4;grid-row:1}
+.speech-player-main [id$="-read-more"]{grid-column:1;grid-row:1}
+.speech-player-main [id$="-read-close"]{grid-column:5;grid-row:1}
+.speech-floating-player .speech-player-main [id$="-read-stop"]{grid-column:1/3;grid-row:2;width:100%;border-radius:16px;min-height:44px;font-size:13px}
+.speech-floating-player [role=timer]{grid-column:3/6;grid-row:2;align-self:center;justify-self:end;background:transparent;font-size:13px;padding:4px}
+.speech-floating-player .speech-player-main [id$="-play-selected"]{grid-column:1/-1;width:100%;border-radius:16px;font-size:14px;background:#ffffff26!important}
+.speech-floating-player .read-aloud-panel:not([hidden]){display:grid;grid-template-columns:1fr 1fr;width:100%;box-sizing:border-box;background:#10182755;gap:8px;padding:10px;border:1px solid #ffffff22;border-radius:18px}
+.speech-floating-player .read-aloud-panel select{max-width:100%;min-height:44px;color:inherit;background:#202b3ddd;border:1px solid #ffffff44;border-radius:10px}
+.speech-floating-player .read-aloud-panel [id$="-read-voice"]{grid-column:1/-1;width:100%}
+.speech-floating-player button:active{opacity:.78}
+@media(prefers-reduced-transparency:reduce){#reader .speech-floating-player:not([hidden]),#epub-reader .speech-floating-player:not([hidden]){background:#252e3b!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}}
