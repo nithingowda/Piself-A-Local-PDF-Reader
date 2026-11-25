@@ -241,7 +241,12 @@ function drawNewsstand(items,overview){
  }else return;
  grid.append(section);
 }
+const libraryRoutes=new Set(['magazines','newspapers','books']);
+function routeSource(){const source=location.pathname.slice(1);return libraryRoutes.has(source)?source:'';}
+function syncLibraryRoute(){if(!$('reader').hidden||!$('epub-reader').hidden)return;const path=libraryRoutes.has(sourceFilter)?'/'+sourceFilter:'/';if(location.pathname!==path)history.pushState({},'',path);}
+window.addEventListener('popstate',()=>{const source=routeSource();if(source!==sourceFilter)browseSource(source);});
 function drawLibrary(){
+ syncLibraryRoute();
  shelfResizeObserver.disconnect();
  coverObserver.disconnect();coverQueue=[];$('grid').replaceChildren();$('resume-grid').replaceChildren();$('count').textContent=library.length;
  $('shelf-label').textContent=collections.find(c=>c.id===collectionFilter)?.name||category||({all:'Categories',reading:'Continue reading',favorites:'Favourites',unread:'Unread',completed:'Finished'}[filter]);
@@ -2252,7 +2257,7 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{if(pre
    }
   }catch(e){toast(e.message);}
   try{homeShelves=await api('/api/home-shelves')||[];}catch(e){toast(e.message);}
-  applyPrefs();await refresh();
+  sourceFilter=routeSource();$('source-filter').value=sourceFilter;applyPrefs();await refresh();
   const resume=history.state?.pishelfReader&&library.find(item=>item.id===history.state.pdfId);
   if(resume)await openMagazine(resume);
  }catch(e){console.error('PiShelf startup:',e);}
