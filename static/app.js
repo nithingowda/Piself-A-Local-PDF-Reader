@@ -516,7 +516,8 @@ $('page-area').addEventListener('pointerup',annotationFinish,true);
 $('page-area').addEventListener('pointercancel',event=>{if(annotationStroke?.id===event.pointerId){annotationStroke=null;annotationDrawAll();}},true);
 
 // Continuous reader: lightweight page placeholders, serialized rendering, bounded canvas memory.
-let slots=[],renderQueue=[],renderBusy=false,pageObserver=null;
+let slots=[],renderQueue=[],renderBusy=false,pageObserver=null,activeRenderTask=null;
+function cancelActiveRender(){activeRenderTask?.cancel();}
 const dimensions=new Map(),renderedSlots=new Set();
 /** update Page UI: Keep the visible PDF page and navigation state in sync. */
 function updatePageUI(){if(!documentPDF)return;const percent=Math.round(page/documentPDF.numPages*100);$('reader-progress-fill').style.width=percent+'%';document.querySelector('.reader-progress').setAttribute('aria-valuenow',String(percent));document.querySelector('.reader-progress').setAttribute('aria-valuetext',page+' of '+documentPDF.numPages+' pages · '+percent+'%');$('reader-page-slider').max=documentPDF.numPages;$('reader-page-slider').value=page;$('reader-page-slider-label').textContent=page+' / '+documentPDF.numPages+' · '+percent+'%';$('book-turn-prev').disabled=page<=1;$('book-turn-next').disabled=isBookSpread()?spreadPages(page).at(-1)>=documentPDF.numPages:page>=documentPDF.numPages;const marks=saved[current.id]?.bookmarks||[];$('bookmark').textContent=marks.includes(page)?'Remove bookmark':'Bookmark this page';$('bookmark').setAttribute('aria-pressed',marks.includes(page));}
@@ -630,17 +631,20 @@ async function renderPages(){
    const cssWidth=parseFloat(slot.style.width);
    const viewport=pdfPage.getViewport({scale:1,rotation:(pdfPage.rotate+rotation)%360});
    // Limit memory on phones while preserving extra detail for tablet screens.
-   const maxPixels=matchMedia('(max-width: 700px)').matches?4500000:7000000;
+   const lowMemory=(navigator.deviceMemory||8)<=4;
+   const maxPixels=lowMemory?2500000:matchMedia('(max-width: 700px)').matches?3500000:6000000;
    const scale=Math.min(cssWidth*Math.min(devicePixelRatio||1,2)/viewport.width,Math.sqrt(maxPixels/(viewport.width*viewport.height)));
    const view=pdfPage.getViewport({scale,rotation:(pdfPage.rotate+rotation)%360});
    const canvas=document.createElement('canvas');
    canvas.width=Math.max(1,Math.ceil(view.width));canvas.height=Math.max(1,Math.ceil(view.height));
    canvas.style.cssText='display:block;width:100%;height:100%';
-   await pdfPage.render({canvasContext:canvas.getContext('2d',{alpha:false}),viewport:view}).promise;
+   const task=pdfPage.render({canvasContext:canvas.getContext('2d',{alpha:false}),viewport:view});
+   activeRenderTask=task;
+   try{await task.promise;}catch(error){canvas.width=canvas.height=0;throw error;}finally{if(activeRenderTask===task)activeRenderTask=null;}
    if(g!==generation||epoch!==layoutEpoch||!slot.isConnected){canvas.width=0;canvas.height=0;continue;}
    let pixels=canvas;
    try{
-    const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/webp',.92));
+    const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/webp',zoom>1.6?.94:.88));
     if(blob?.type==='image/webp'){
      const url=URL.createObjectURL(blob);
      try{
@@ -679,7 +683,7 @@ function readerPrefetchMargin(){
  return Math.round(Math.min(memory<=2?240:900,Math.max(240,height*(memory<=2?.35:.8))))+'px';
 }
 /** rebuild: Manage PDF page rendering and canvas lifecycle. */
-async function rebuild(){if(!documentPDF)return;$('pages').style.zoom='';$('pages').style.transform='';$('pages').style.transformOrigin='';cssZoomBase=zoom;updateTouchMode();const g=generation,epoch=++layoutEpoch;layoutReady=false;pageObserver?.disconnect();renderQueue=[];clearCurl();
+async function rebuild(){if(!documentPDF)return;cancelActiveRender();$('pages').style.zoom='';$('pages').style.transform='';$('pages').style.transformOrigin='';cssZoomBase=zoom;updateTouchMode();const g=generation,epoch=++layoutEpoch;layoutReady=false;pageObserver?.disconnect();renderQueue=[];clearCurl();
  if(automaticFit){
   const fittedPage=page;
   await primeSpreadDimensions(isBookSpread()?spreadPages(page):[page]);
@@ -1038,6 +1042,7 @@ async function pdfReadAloudItems(pdfPage,viewport){
    .then(data=>{if(!data.lines?.length||data.lines.some(l=>l.str.includes('\uFFFD')))throw Error('Incomplete text');return data;})
    .catch(()=>null);
   speechPageCache.set(pdfPage,cached);
+  void cached.then(data=>{if(!data&&speechPageCache.get(pdfPage)===cached)speechPageCache.delete(pdfPage);});
  }
  const data=await cached;
  if(data){
@@ -1541,7 +1546,7 @@ async function closeReader({fromHistory=false}={}){
   // Back triggers popstate and returns to the existing library history entry.
   history.back();
  }
- resetPinch();clearTimeout(scrollTimer);clearTimeout(immersiveTimer);remember();++generation;++layoutEpoch;layoutReady=false;pageObserver?.disconnect();renderQueue=[];const oldDoc=documentPDF;documentPDF=null;if(oldDoc?.destroy)oldDoc.destroy().catch(()=>{});$('reader').hidden=true;document.body.classList.remove('reader-open');$('library').hidden=false;$('pages').replaceChildren();slots=[];renderedSlots.clear();if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});drawLibrary();refresh(true);}
+ resetPinch();clearTimeout(scrollTimer);clearTimeout(immersiveTimer);remember();++generation;++layoutEpoch;cancelActiveRender();layoutReady=false;pageObserver?.disconnect();renderQueue=[];const oldDoc=documentPDF;documentPDF=null;if(oldDoc?.destroy)oldDoc.destroy().catch(()=>{});$('reader').hidden=true;document.body.classList.remove('reader-open');$('library').hidden=false;$('pages').replaceChildren();slots=[];renderedSlots.clear();if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});drawLibrary();refresh(true);}
 // Thumbnail browser: load only the visible part of a bounded thumbnail list.
 // === Thumbnail navigator ====================================================
 // 60 pages per batch; IntersectionObserver loads only visible thumbnails.
