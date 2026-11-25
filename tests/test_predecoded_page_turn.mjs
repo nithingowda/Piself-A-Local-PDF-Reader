@@ -26,13 +26,20 @@ class FakeImage{
 function makeCache({book=false,page=2,count=8}={}){
  FakeImage.created=[];
  const ctx={
-  documentPDF:{numPages:count},current:{id:'the-book'},page,slots:[],Image:FakeImage,encodeURIComponent,
+  prefs:{pdfRenderer:'webp'},documentPDF:{numPages:count},current:{id:'the-book'},page,slots:[],Image:FakeImage,encodeURIComponent,
   isBookSpread:()=>book,
   spreadStart:n=>n<=1?1:2+2*Math.floor((n-2)/2),
   spreadPages:n=>n===1?[1]:[n,n+1].filter(x=>x<=count)
  };
  return {...productionCache(ctx),ctx};
 }
+
+test('Full PDF view skips WebP neighbor requests',()=>{
+ const cache=makeCache();
+ cache.ctx.prefs.pdfRenderer='pdfjs';
+ cache.preloadMagazineNeighbors();
+ assert.equal(FakeImage.created.length,0);
+});
 
 test('WebP preview is available only after image load AND decode and transferred without reloading',async()=>{
  const c=makeCache();

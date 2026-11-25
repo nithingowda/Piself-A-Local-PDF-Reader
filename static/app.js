@@ -17,7 +17,7 @@ import {selectionsOverlap,selectedPassage} from './pdf-text-selection.js';
  * - A missing optional control must not prevent refresh() from starting.
  */
 const $=id=>document.getElementById(id);
-const defaults={sort:'issue',siteTheme:'light',theme:'dark',mode:'scroll',quality:'1.5',density:'compact',gestures:true,readerBrightness:75,comfort:'custom',epubTheme:'light',epubFontSize:100,wakeScreen:true};
+const defaults={sort:'issue',siteTheme:'light',theme:'dark',mode:'scroll',pdfRenderer:'pdfjs',quality:'1.5',density:'compact',gestures:true,readerBrightness:75,comfort:'custom',epubTheme:'light',epubFontSize:100,wakeScreen:true};
 let prefs={...defaults};try{const stored=JSON.parse(localStorage.getItem('pishelf-settings')||'{}');for(const k in defaults)if(k in stored)prefs[k]=stored[k];}catch{}
 let collections=[],collectionFilter='',collectionSets=new Map();
 let categories=[],sourceFilter='',seriesFilter='',tagFilter='',visibleLimit=60;
@@ -336,7 +336,7 @@ async function loadActiveSessions(){
  }catch(e){box.textContent=e.message;}
 }
 $('revoke-other-sessions').onclick=async()=>{if(!await confirmAction('Sign out other devices?','Your current login will remain active.','Sign out'))return;try{await api('/api/auth/sessions',{action:'revoke-others'});await loadActiveSessions();}catch(e){toast(e.message);}};
-function openSettings(){void loadActiveSessions();$('pref-wakeScreen').checked=prefs.wakeScreen;drawPublicationSettings();editShelves();$('pdf-navigation-settings').hidden=$('reader').hidden;$('pref-comfort').value=prefs.comfort||'custom';$('pref-readerBrightness').value=prefs.readerBrightness;$('reader-brightness-value').textContent=prefs.readerBrightness+'%';for(const k of ['siteTheme','theme','mode','quality','density'])$('pref-'+k).value=prefs[k];$('pref-gestures').checked=prefs.gestures;if(!uploading)populateUploadSources();drawCollectionManager();drawCategoryManager();activateSettingsTab('upload');prepareFolderPathSettings();$('settings').showModal();loadTrash();loadWebPCacheStats();}
+function openSettings(){void loadActiveSessions();$('pref-wakeScreen').checked=prefs.wakeScreen;drawPublicationSettings();editShelves();$('pdf-navigation-settings').hidden=$('reader').hidden;$('pref-comfort').value=prefs.comfort||'custom';$('pref-readerBrightness').value=prefs.readerBrightness;$('reader-brightness-value').textContent=prefs.readerBrightness+'%';for(const k of ['siteTheme','theme','mode','pdfRenderer','quality','density'])$('pref-'+k).value=prefs[k];$('pref-gestures').checked=prefs.gestures;if(!uploading)populateUploadSources();drawCollectionManager();drawCategoryManager();activateSettingsTab('upload');prepareFolderPathSettings();$('settings').showModal();loadTrash();loadWebPCacheStats();}
 // Reading comfort presets are display-only and never alter PDF bytes.
 const comfortPresets={daylight:{theme:'light',readerBrightness:100},bedtime:{theme:'night',readerBrightness:55},amoled:{theme:'amoled',readerBrightness:80}};
 $('pref-comfort').onchange=e=>{
@@ -364,7 +364,7 @@ $('pref-readerBrightness').oninput=e=>{
 };
 $('pref-readerBrightness').onchange=()=>storePrefs();
 $('settings-open').onclick=openSettings;$('reader-settings').onclick=openSettings;$('settings-close').onclick=()=>{folderAccessPin='';$('settings').close();};
-for(const k of ['siteTheme','theme','mode','quality','density'])$('pref-'+k).onchange=e=>{prefs[k]=e.target.value;if(k==='theme'){prefs.comfort='custom';$('pref-comfort').value='custom';}if(k==='theme'&&['light','sepia','dark'].includes(prefs.theme))lastDayTheme=prefs.theme;storePrefs();if(documentPDF&&(k==='mode'||k==='quality')){$('view-mode').value=prefs.mode;rebuild();}};
+for(const k of ['siteTheme','theme','mode','pdfRenderer','quality','density'])$('pref-'+k).onchange=e=>{prefs[k]=e.target.value;if(k==='theme'){prefs.comfort='custom';$('pref-comfort').value='custom';}if(k==='theme'&&['light','sepia','dark'].includes(prefs.theme))lastDayTheme=prefs.theme;storePrefs();if(k==='pdfRenderer'){clearMagazinePrefetches();if(documentPDF)rebuild();}if(documentPDF&&(k==='mode'||k==='quality')){$('view-mode').value=prefs.mode;rebuild();}};
 $('pref-gestures').onchange=e=>{prefs.gestures=e.target.checked;storePrefs();updateTouchMode();};
 $('clear-all').onclick=()=>{if(documentPDF){toast('Return to the library before clearing all progress.');return;}clearProgress();};$('rescan').onclick=()=>{if(documentPDF){toast('Return to the library to rescan.');return;}refresh();toast('Library scan requested.');};
 
@@ -610,7 +610,7 @@ function enqueue(slot){
  renderPages();
 }
 /** render Pages: Manage PDF page rendering and canvas lifecycle. */
-// === WebP-first reader ======================================================
+// === PDF page rendering ======================================================
 // Render queue is serialized to bound concurrent decoding. A 960px preview
 // appears first, then a sharper WebP may replace it if the slot is still valid.
 async function renderPages(){
@@ -620,8 +620,8 @@ async function renderPages(){
   if(g!==generation||epoch!==layoutEpoch||!slot.isConnected||!documentPDF)continue;
   const n=+slot.dataset.page;
   try{
-   // Prefer cached magazine images; retain PDF.js rendering as a fallback.
-   if(current?.id&&!rotation){
+   // Cached image mode can fall back to the PDF.js canvas below.
+   if(prefs.pdfRenderer==='webp'&&current?.id&&!rotation){
     const prefetched=takeDecodedPreview(n);
     const img=prefetched||document.createElement('img');
     img.draggable=false;
@@ -756,7 +756,7 @@ function neighborPreviewPages(){
  return [page-2,page-1,page+1,page+2].filter(n=>n>=1&&n<=count);
 }
 function preloadMagazineNeighbors(){
- if(!documentPDF||!current?.id)return;
+ if(prefs.pdfRenderer!=='webp'||!documentPDF||!current?.id)return;
  const wanted=new Set(neighborPreviewPages());
  // When the first page of a new book spread is installed, its companion
  // might still be queued. Never evict that ALREADY decoded image before the
@@ -1996,7 +1996,7 @@ function finishPinch(cancelled=false){
  }
  // Upgrade the current image when magnified, without changing the page box.
  const image=slot.querySelector('img');
- if(image&&current?.id){
+ if(prefs.pdfRenderer==='webp'&&image&&current?.id){
   const width=zoom>1.6?2800:zoom>0.85?1600:960;
   const url='/api/page-image/'+encodeURIComponent(current.id)+'/'+state.page+'?width='+width;
   if(!image.src.endsWith(url))image.src=url;
