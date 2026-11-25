@@ -144,11 +144,18 @@ export function pdfSpeechLayout(items){
    const paragraphBreak=changedRegion||
     (changedColumn?completedSentence:lineGap>height*2.4||item.y<previous.y-height*.8);
    const hyphenated=/[A-Za-z]-$/.test(previous.str||'');
+   // PDF.js may split one word into multiple font runs (including ligatures).
+   // Only join adjacent runs when their geometry and whitespace agree.
+   const gap=item.x-(previous.x+previous.boxWidth);
+   const sameWord=!changedRegion&&!changedColumn&&lineGap<=height*.25&&
+    Number.isFinite(gap)&&previous.boxWidth>0&&gap>=-height*.2&&gap<=height*.08&&
+    !previous.hasEOL&&!/\s$/u.test(previous.str||'')&&!/^\s/u.test(item.str||'')&&
+    /[\p{L}\p{M}]$/u.test(previous.str||'')&&/^[\p{L}\p{M}]/u.test(fragment);
    if(paragraphBreak)text+='\n';
    else if(hyphenated&&lineGap>height*.5){
     text=text.slice(0,-1);
     if(spans.length)spans[spans.length-1].end--;
-   }else if(!(lineGap<=height*.5&&(hyphenated||fragment.startsWith('-'))))text+=' ';
+   }else if(!sameWord&&!(lineGap<=height*.5&&(hyphenated||fragment.startsWith('-'))))text+=' ';
   }
   const start=text.length;
   text+=fragment;
