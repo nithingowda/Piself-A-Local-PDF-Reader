@@ -12,11 +12,13 @@ test('annotations are account scoped and stored compressed',()=>{
 test('annotations require authenticated reads and CSRF-protected writes',()=>{
  assert.match(server,/if path == '\/api\/annotations':\s*user=self\.require_session\(\)/);
  assert.match(server,/if route == '\/api\/annotations':\s*user=self\.require_session\(mutation=True\)/);
- assert.match(server,/len\(raw\)>262144/);\n assert.match(server,/mark\['type'\]=='note'/);\n assert.match(server,/len\(mark\['text'\]\.strip\(\)\)<=4000/);
+ assert.match(server,/len\(raw\)>262144/);
+ assert.match(server,/mark\['type'\]=='note'/);
+ assert.match(server,/len\(mark\['text'\]\.strip\(\)\)<=4000/);
 });
 test('permanent deletion and trash cleanup remove annotations',()=>{
  assert.match(server,/def remove_reading_state\(db,key\):\s*db\.execute\('DELETE FROM annotations WHERE document_id=\?'/);
- assert.match(server,/source\.rename\(destination\)\s*try:\s*db\.execute\('DELETE FROM annotations WHERE document_id=\?'/);
+ assert.match(server,/move_reader_state\(db,key,token\)/);
 });
 test('browser loads and saves via account API with legacy migration',()=>{
  assert.match(client,/api\('\/api\/annotations\?id='/);
