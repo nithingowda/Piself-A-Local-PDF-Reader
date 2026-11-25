@@ -882,6 +882,36 @@ class Handler(BaseHTTPRequestHandler):
                     files=list(cache.glob('*.webp')) if cache.is_dir() else []
                     self.json_response({'files':len(files),'bytes':sum(p.stat().st_size for p in files),'limit':WEBP_CACHE_LIMIT},head=head)
                 return
+            if path.startswith('/api/page-text/'):
+                parts=path.split('/')
+                if len(parts)!=5 or not re.fullmatch('[a-f0-9]{20}',parts[3]) or not parts[4].isdigit():
+                    raise APIError(404,'Page not found.')
+                item=next((i for i in self.library_items() if i['id']==parts[3]),None)
+                if not item or item['format']!='pdf': raise APIError(404,'PDF not found.')
+                n=int(parts[4])
+                if not 1<=n<=5000: raise APIError(400,'Invalid page.')
+                pdf=checked_path(self.server.roots[item['source']],item['path'])
+                if pdf.stat().st_size>MAX_WEBP_SOURCE_BYTES: raise APIError(413,'PDF exceeds size limit.')
+                import fitz
+                with fitz.open(pdf) as document:
+                    if n>len(document): raise APIError(404,'Page not found.')
+                    page=document[n-1]
+                    if not all(0<v<=MAX_PDF_PAGE_DIMENSION for v in (page.rect.width,page.rect.height)):
+                        raise APIError(413,'PDF page exceeds dimension limit.')
+                    flags=fitz.TEXTFLAGS_DICT & ~fitz.TEXT_PRESERVE_IMAGES & ~fitz.TEXT_PRESERVE_LIGATURES
+                    data=page.get_text('dict',flags=flags)
+                    lines=[]
+                    for block in data['blocks']:
+                        for line in block.get('lines',[]):
+                            spans=line.get('spans',[])
+                            if not spans: continue
+                            text=''.join(span['text'] for span in spans)
+                            if text.strip():
+                                lines.append({'str':text,'bbox':line['bbox'],'origin':spans[0]['origin']})
+                    if len(lines)>10000 or sum(len(line['str']) for line in lines)>200000:
+                        raise APIError(413,'Page text exceeds limit.')
+                    self.json_response({'lines':lines,'width':page.cropbox.width,'height':page.cropbox.height},head=head)
+                return
             if path.startswith('/api/page-image/'):
                 parts=path.split('/')
                 if len(parts)!=5 or not re.fullmatch('[a-f0-9]{20}',parts[3]) or not parts[4].isdigit():
