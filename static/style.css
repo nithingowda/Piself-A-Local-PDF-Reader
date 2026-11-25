@@ -507,3 +507,22 @@ body.epub-open{overflow:hidden}
 .speech-floating-player .speech-player-main [id$="-read-stop"]{display:none!important}
 .speech-floating-player [role=timer]{grid-column:1/-1;grid-row:2;justify-self:center;font-size:11px;padding:0}
 .speech-floating-player .speech-player-main [id$="-play-selected"]{min-height:36px}
+
+/* Clear glass: keep the printed page readable through the transport. */
+#reader .speech-floating-player:not([hidden]),#epub-reader .speech-floating-player:not([hidden]){
+ background:rgba(235,242,250,.12)!important;
+ backdrop-filter:blur(.5px) saturate(1.08)!important;
+ -webkit-backdrop-filter:blur(.5px) saturate(1.08)!important;
+ border:1px solid rgba(145,155,170,.55)!important;
+ box-shadow:inset 0 1px 0 #ffffff88,0 4px 16px #0002!important;
+}
+.speech-floating-player .speech-player-main button:not([id$="-read-main"]){
+ background:rgba(25,33,45,.72)!important;
+}
+.speech-floating-player [role=timer]{background:rgba(25,33,45,.72);padding:2px 8px;border-radius:10px}
+.speech-drag-handle::after{background:#687586bb}
+@media(prefers-reduced-transparency:reduce){
+ #reader .speech-floating-player:not([hidden]),#epub-reader .speech-floating-player:not([hidden]){
+ background:#252e3b!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;
+ }
+}
