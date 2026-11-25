@@ -113,6 +113,35 @@ export function speechSentenceRanges(chunk,marks=[]){
 export function createReadAloud({getText,next,peekNextText=()=>null,onState,getCsrfToken=()=>''}){
  let active=false,paused=false,token=0,voice=DEFAULT_VOICE,rate=1,audio=null,audioUrl=null;
  let combined=false,clockTimer=null;
+ let nativeUtterance=null;
+ const isNative=()=>voice.startsWith('native:');
+ async function nativeRead(session,passages=null){
+  try{
+   const synth=globalThis.speechSynthesis;
+   if(!synth||!globalThis.SpeechSynthesisUtterance)throw Error('Native voices are unavailable in this browser.');
+   let index=0;
+   do{
+    const text=passages?passages[index]:await getText();
+    if(!valid(session))return;
+    for(const chunk of splitSpeechChunks(text)){
+     if(!valid(session))return;
+     if(passages)onState?.({passage:index,remaining:Math.ceil(passages.slice(index).join(' ').split(/\s+/).length/2.5/rate),estimated:true});
+     await new Promise((resolve,reject)=>{
+      const u=new SpeechSynthesisUtterance(chunk);nativeUtterance=u;
+      const selected=synth.getVoices().find(v=>'native:'+v.voiceURI===voice);
+      if(selected){u.voice=selected;u.lang=selected.lang;}else u.lang='en-IN';
+      u.rate=rate;u.onend=resolve;u.onerror=e=>reject(Error(e.error||'Native speech failed.'));
+      synth.speak(u);if(paused)synth.pause();
+     });
+    }
+    if(!valid(session))return;
+    if(passages){if(++index>=passages.length)break;}else if(!await next())break;
+   }while(valid(session));
+   if(valid(session))stop();
+  }catch(error){if(valid(session)){stop();onState?.({error:error.message});}}
+ }
+ function startNative(passages=null){active=true;paused=false;notify();void nativeRead(++token,passages);}
+
  const requests=new Set(),prepared=new Set();
  const notify=()=>onState?.({active,paused,rate,voice});
  const valid=session=>active&&session===token;
@@ -122,6 +151,7 @@ export function createReadAloud({getText,next,peekNextText=()=>null,onState,getC
   if(combined){try{globalThis.navigator?.mediaSession?.setPositionState?.();}catch{}}
   clearInterval(clockTimer);clockTimer=null;
   token++;active=false;paused=false;combined=false;
+  if(nativeUtterance){nativeUtterance=null;globalThis.speechSynthesis?.cancel();}
   for(const request of requests)request.abort();
   requests.clear();
   if(audio){
@@ -264,6 +294,7 @@ export function createReadAloud({getText,next,peekNextText=()=>null,onState,getC
 
  async function playSelection(passages){
   if(active||!passages.length)return;
+  if(isNative()){startNative(passages);return;}
   if(!audio){audio=new Audio();audio.preload='auto';}
   const session=++token,selectedVoice=voice;
   active=true;combined=true;paused=false;notify();
@@ -359,14 +390,16 @@ export function createReadAloud({getText,next,peekNextText=()=>null,onState,getC
   }catch(error){if(valid(session)){stop();onState?.({error:error.message});}}
  }
  function play(){
+  if(isNative()){if(active&&paused){paused=false;globalThis.speechSynthesis?.resume();notify();}else if(!active)startNative();return;}
   if(active&&paused){if(audioUrl)void audio.play().catch(error=>onState?.({error:error.message}));paused=false;notify();return;}
   if(active)return;
   if(!audio){audio=new Audio();audio.preload='auto';}
   active=true;paused=false;notify();void speakNext(++token);
  }
- function pause(){if(!active||paused)return;audio?.pause();paused=true;notify();}
+ function pause(){if(!active||paused)return;if(isNative())globalThis.speechSynthesis?.pause();else audio?.pause();paused=true;notify();}
  function seek(seconds){
   if(!active)return;
+  if(isNative()){onState?.({notice:'Native voices do not support time-based seeking.'});return;}
   if(audio&&Number.isFinite(audio.duration)){
    audio.currentTime=Math.max(0,Math.min(audio.duration-.05,audio.currentTime+seconds));
    return;
@@ -375,10 +408,12 @@ export function createReadAloud({getText,next,peekNextText=()=>null,onState,getC
  }
  function setRate(value){
   rate=Math.max(.5,Math.min(2,Number(value)||1));
+  if(isNative()){notify();return;}
   if(combined){audio.playbackRate=rate;audio.ontimeupdate?.();}
   else if(active){stop();play();}else notify();
  }
  function setVoice(value){
+  if(value!==voice&&active&&(isNative()||value.startsWith('native:')))stop();
   voice=value;
   if(combined)return;
   if(active){stop();play();}else notify();
