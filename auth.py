@@ -16,6 +16,7 @@ from http.cookies import SimpleCookie
 
 ITERATIONS = 600_000
 SESSION_SECONDS = 30 * 24 * 3600
+MAX_SESSIONS = 5
 USERNAME = re.compile(r"^[a-zA-Z0-9_.-]{3,40}$")
 
 
@@ -75,7 +76,12 @@ def authenticate(db, username, password):
 def new_session(db, user_id, user_agent=''):
     token = secrets.token_urlsafe(48)
     csrf = secrets.token_urlsafe(32)
+    db.execute("BEGIN IMMEDIATE") if not db.in_transaction else None
     db.execute("DELETE FROM auth_sessions WHERE expires<?", (time.time(),))
+    db.execute("""DELETE FROM auth_sessions WHERE user_id=? AND token_hash IN (
+        SELECT token_hash FROM auth_sessions WHERE user_id=?
+        ORDER BY COALESCE(created,expires-43200) DESC, expires DESC, token_hash
+        LIMIT -1 OFFSET ?)""",(user_id,user_id,MAX_SESSIONS-1))
     db.execute("INSERT INTO auth_sessions(token_hash,user_id,csrf,expires,created,user_agent,session_id) VALUES (?,?,?,?,?,?,?)",
                (hashlib.sha256(token.encode()).hexdigest(), user_id, csrf, time.time()+SESSION_SECONDS,time.time(),user_agent[:512],secrets.token_urlsafe(18)))
     return token, csrf
