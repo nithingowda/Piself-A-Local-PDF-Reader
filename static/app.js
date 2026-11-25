@@ -219,6 +219,51 @@ function drawSourceShelves(items){
   shelfResizeObserver.observe(cards);
  }
 }
+function browseSource(source,series=''){
+ sourceFilter=source;seriesFilter=series;category=tagFilter=collectionFilter='';filter='all';visibleLimit=60;
+ $('search').value='';$('source-filter').value=source;
+ document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.filter==='all'));
+ updateFilterOptions();drawLibrary();
+}
+function drawNewsstand(items,overview){
+ const grid=$('grid'),section=el('section','newsstand-section');
+ if(overview){
+  const nav=el('nav','newsstand-nav');nav.setAttribute('aria-label','Browse library');
+  for(const source of configuredSources){
+   const count=items.filter(i=>i.source===source).length;
+   const b=el('button','',sourceLabel(source)+' · '+count);b.onclick=()=>browseSource(source);nav.append(b);
+  }
+  section.append(el('h2','','Explore your library'),nav);
+  const groups=new Map();
+  for(const item of items){
+   if(!['magazines','newspapers'].includes(item.source)||!item.series)continue;
+   const key=JSON.stringify([item.source,item.series]);
+   if(!groups.has(key))groups.set(key,[]);
+   groups.get(key).push(item);
+  }
+  if(groups.size){
+   section.append(el('h2','','Publications'));
+   const list=el('div','newsstand-publications');
+   for(const issues of [...groups.values()].sort((a,b)=>a[0].series.localeCompare(b[0].series))){
+    const item=issues[0],b=el('button','publication-tile');
+    b.append(el('strong','',item.series),el('span','',sourceLabel(item.source)+' · '+issues.length+' issues'));
+    b.onclick=()=>browseSource(item.source,item.series);list.append(b);
+   }
+   section.append(list);
+  }
+ }else if(seriesFilter||sourceFilter){
+  section.append(el('h2','',seriesFilter||sourceLabel(sourceFilter)));
+  section.append(el('p','hint',items.length+' items in this archive'));
+  if(seriesFilter){
+   const back=el('button','','Back to '+(sourceFilter?sourceLabel(sourceFilter):'library'));back.onclick=()=>browseSource(sourceFilter);section.append(back);
+  }
+  if(sourceFilter==='newspapers'||seriesFilter){
+   const years=[...new Set(items.map(i=>i.issueDate?.slice(0,4)).filter(y=>/^\\d{4}$/.test(y||'')))].sort().reverse();
+   if(years.length){const nav=el('div','newsstand-nav');for(const year of years){const b=el('button','',year);b.onclick=()=>{$('search').value=year;visibleLimit=60;drawLibrary();};nav.append(b);}section.append(nav);}
+  }
+ }else return;
+ grid.append(section);
+}
 function drawLibrary(){
  shelfResizeObserver.disconnect();
  coverObserver.disconnect();coverQueue=[];$('grid').replaceChildren();$('resume-grid').replaceChildren();$('count').textContent=library.length;
@@ -228,6 +273,7 @@ function drawLibrary(){
  const overview=filter==='all'&&!q&&!sourceFilter&&!seriesFilter&&!tagFilter&&!category&&!collectionFilter;
  $('library').classList.toggle('home-overview',overview);
  $('grid').classList.toggle('source-overview',overview);
+ drawNewsstand(items,overview);
  if(overview)drawSourceShelves(items);
  else items.slice(0,visibleLimit).forEach(i=>cardFor(i,$('grid')));
  $('load-more').hidden=overview||items.length<=visibleLimit;$('active-filters').textContent=[collections.find(c=>c.id===collectionFilter)?.name,sourceFilter,seriesFilter,tagFilter&&'#'+tagFilter,category,`${items.length} items`].filter(Boolean).join(' · ');
