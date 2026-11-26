@@ -114,7 +114,7 @@ function cardFor(item,target){
  const s=saved[item.id]||{},card=el('article','card'),cover=el('button','cover');cover.setAttribute('aria-label','Read '+item.title);cover.append(el('span','placeholder',item.title));cover.onclick=()=>item.source==='books'?showIssue(item):openDocument(item);cover.item=item;if(isEpub(item))cover.classList.add('epub-cover');
  const heading=el('div','card-head');heading.append(el('h2','',item.source==='books'?item.title:dateLabel(item)||item.title));const star=el('button','favorite',s.favorite?'★':'☆');star.setAttribute('aria-label','Favourite '+item.title);star.setAttribute('aria-pressed',!!s.favorite);star.onclick=()=>{persist(item.id,{favorite:!saved[item.id]?.favorite});drawLibrary();};heading.append(star);
  const more=el('button','more','•••');more.setAttribute('aria-label','Options for '+item.title);more.onclick=()=>showIssue(item);heading.append(more);
- const seriesButton=el('button','series-link',item.series||item.title);seriesButton.onclick=()=>selectSeries(item.series||item.title);card.append(cover,seriesButton,heading);if(item.author)card.append(el('p','meta','By '+item.author));const chips=el('div','tag-chips');for(const tag of item.tags||[]){const b=el('button','tag-chip',tag);b.onclick=()=>selectTag(tag);chips.append(b);}card.append(chips);
+ card.append(cover);if(item.series){const seriesButton=el('button','series-link',item.series);seriesButton.onclick=()=>selectSeries(item.series);card.append(seriesButton);}card.append(heading);if(item.author)card.append(el('p','meta','By '+item.author));const chips=el('div','tag-chips');for(const tag of item.tags||[]){const b=el('button','tag-chip',tag);b.onclick=()=>selectTag(tag);chips.append(b);}card.append(chips);
  card.append(el('div','meta',finished(item)?'Finished':s.epubCfi&&isEpub(item)?`EPUB · ${s.page&&s.total?Math.round(s.page/s.total*100)+'%':'Reading'}`:s.page?`Page ${s.page} of ${s.total}`:`${item.category==='.'?itemKind(item):item.category} · ${item.format.toUpperCase()} · ${fileSize(item.size)}`));
  if(s.page||s.epubCfi||s.completed){const bar=el('div','progress'),fill=el('span');fill.style.width=(finished(item)?100:Math.min(100,(s.page||0)/(s.total||1)*100))+'%';bar.append(fill);card.append(bar);}target.append(card);coverObserver.observe(cover);
 }
@@ -1895,8 +1895,14 @@ function populateUploadCategories(){const source=$('upload-source').value;
  const folders=categories.filter(c=>c.source===source&&c.path!=='.');
  $('upload-publication-label').hidden=!['magazines','newspapers'].includes(source);
  $('upload-publication').value='';
- const names=new Set(library.filter(item=>item.source===source).map(item=>item.series).filter(Boolean));
- $('upload-publications').replaceChildren(...[...names].sort().map(name=>new Option(name,name)));
+ const suggestions=$('upload-publications'),input=$('upload-publication');
+ suggestions.replaceChildren();
+ const names=[...new Set(library.filter(item=>item.source===source).map(item=>item.series).filter(Boolean))].sort();
+ input.oninput=()=>{
+  const prefix=input.value.trim().toLowerCase();
+  const matches=prefix?names.filter(name=>name.toLowerCase().startsWith(prefix)).slice(0,6):[];
+  suggestions.replaceChildren(...matches.map(name=>new Option(name,name)));
+ };
  $('upload-category').replaceChildren(new Option('Source folder','.'),...folders.map(c=>new Option(c.path,c.path)),new Option('Create a category…','/'));
  $('upload-new-category-label').hidden=true;
 }
