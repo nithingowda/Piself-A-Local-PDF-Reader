@@ -46,3 +46,9 @@ You need a server with Git, Docker Engine and the Compose plugin, plus three fol
 PiShelf keeps its database and generated covers in the Docker volume `piself`. Back up that volume and your publication folders. The browser loads reader libraries from a CDN, and online read-aloud requires internet access.
 
 [Reader guide](USER_MANUAL.md) · [Docker and storage](DOCKER.md) · [Accounts](AUTHENTICATION.md) · [Security](SECURITY.md)
+
+### Searchable PDF uploads
+
+Upload a scanned PDF from Settings. One background worker recognizes English and Kannada, skipping pages with existing text. Reopen the document in **Full PDF view** after the library card shows **Selectable text**. Recognition quality depends on the scan. EPUBs use their existing text.
+
+Rebuild the Docker image to install OCRmyPDF and both Tesseract languages. For a Debian or Raspberry Pi OS installation outside Docker, run `sudo apt install ocrmypdf tesseract-ocr-eng tesseract-ocr-kan` and install the project's Python requirements. Pending uploads resume when the server restarts. If recognition fails, PiShelf keeps the uploaded PDF.
