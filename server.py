@@ -49,6 +49,25 @@ class APIError(Exception):
     def __init__(self, status, message):
         self.status, self.message = status, message
 
+def embedded_upload_fields(path, fmt):
+    try:
+        if fmt == '.epub':
+            from epub_covers import embedded_metadata
+            author, tags = embedded_metadata(path)
+        else:
+            import fitz
+            with fitz.open(path) as document:
+                fields = document.metadata or {}
+            author = fields.get('author') or ''
+            tags = re.split('[,;]', fields.get('keywords') or '')
+        return author.strip()[:160], list(dict.fromkeys(
+            tag.strip()[:40] for tag in tags if tag.strip()
+        ))[:30]
+    except Exception:
+        # Metadata is optional, including when a PDF is encrypted.
+        return '', []
+
+
 def save_library_paths(db, values, defaults, data_dir):
     if not isinstance(values, dict) or set(values)-{'magazines','newspapers','books','menus'}:
         raise APIError(400,'Invalid library paths.')
@@ -181,6 +200,8 @@ class Handler(BaseHTTPRequestHandler):
         category=params.get('category',['.'])[0]
         filename=params.get('filename',[''])[0]
         author=params.get('author',[''])[0].strip()
+        series=params.get('series',[''])[0].strip()
+        if len(series)>160: raise APIError(400,'Publication must be 160 characters or fewer.')
         if len(author)>160: raise APIError(400,'Author name must be 160 characters or fewer.')
         try:
             tags=validate_metadata({'tags':[tag.strip() for tag in params.get('tags',[''])[0].split(',') if tag.strip()]})['tags']
@@ -217,6 +238,10 @@ class Handler(BaseHTTPRequestHandler):
                         first=False
                         output.write(chunk);remaining-=len(chunk)
                 if fmt=='.epub': validate_epub(temporary)
+                if not author or not tags:
+                    embedded_author, embedded_tags = embedded_upload_fields(temporary, fmt)
+                    author = author or embedded_author
+                    tags = tags or embedded_tags
                 with self.server.mutation_lock:
                     # A session can expire or lose admin access during a long transfer.
                     self.require_session(admin=True,mutation=True)
@@ -224,14 +249,18 @@ class Handler(BaseHTTPRequestHandler):
                     # Exclusive move refuses to replace a file created during the upload.
                     try: move_exclusive(temporary,destination)
                     except FileExistsError: raise APIError(409,'A PDF with this filename already exists.')
-                    if tags or author:
-                        key=item_id(source,destination.relative_to(root).as_posix())
-                        try:
-                            with sqlite3.connect(self.server.state_db) as db:
-                                db.execute('INSERT OR REPLACE INTO metadata VALUES (?,?)',(key,json.dumps({'tags':tags,'author':author})))
-                        except sqlite3.Error:
-                            destination.unlink()
-                            raise
+                    key=item_id(source,destination.relative_to(root).as_posix())
+                    try:
+                        with sqlite3.connect(self.server.state_db) as db:
+                            if category != '.':
+                                db.execute('INSERT OR IGNORE INTO managed_categories VALUES (?,?)',(source,category))
+                            fields = dict(tags=tags,author=author)
+                            if series:
+                                fields['series'] = series
+                            db.execute('INSERT OR REPLACE INTO metadata VALUES (?,?)',(key,json.dumps(fields)))
+                    except sqlite3.Error:
+                        destination.unlink()
+                        raise
                     self.server.scan_time=float('-inf')
             finally:
                 self.connection.settimeout(old_timeout)

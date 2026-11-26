@@ -48,14 +48,35 @@ def _xml(content):
     return ElementTree.fromstring(content)
 
 
-def _cover_member_name(archive):
-    """Resolve EPUB 2 and EPUB 3 declared cover-image metadata."""
+def _package(archive):
     container = _xml(_read_member(archive, "META-INF/container.xml", MAX_XML_BYTES))
     rootfile = container.find(".//{*}rootfile")
     if rootfile is None:
-        return None
+        return None, ""
     package_path = _archive_path(rootfile.get("full-path", ""))
-    package = _xml(_read_member(archive, package_path, MAX_XML_BYTES))
+    return _xml(_read_member(archive, package_path, MAX_XML_BYTES)), package_path
+
+
+def embedded_metadata(path):
+    with ZipFile(path) as archive:
+        if len(archive.infolist()) > MAX_ARCHIVE_ITEMS:
+            return "", []
+        package, _ = _package(archive)
+        if package is None:
+            return "", []
+        metadata = package.find("{*}metadata")
+        if metadata is None:
+            return "", []
+        creators = [node.text.strip() for node in metadata.findall("{*}creator") if node.text]
+        subjects = [node.text for node in metadata.findall("{*}subject") if node.text]
+        return ", ".join(creators), subjects
+
+
+def _cover_member_name(archive):
+    """Resolve EPUB 2 and EPUB 3 declared cover-image metadata."""
+    package, package_path = _package(archive)
+    if package is None:
+        return None
     manifest = package.find(".//{*}manifest")
     if manifest is None:
         return None
