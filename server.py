@@ -169,6 +169,17 @@ class Handler(BaseHTTPRequestHandler):
                         items.append(dict(id=key, path=relative, title=path.stem.replace('_',' '), source=source,
                             category=path.parent.relative_to(root).as_posix(), size=info.st_size,
                             modified=info.st_mtime, coverKey=cover_key, format=fmt, **inferred))
+            magazines = [item for item in items if item['source'] == 'magazines']
+            names = set(PUBLICATION_NAMES)
+            for item in magazines:
+                saved_series = metadata.get(item['id'], {}).get('series')
+                if saved_series:
+                    names.add(saved_series)
+            ordered_names = sorted(names, key=lambda name: (-len(name), name))
+            for item in magazines:
+                stem = Path(item['path']).stem
+                if not metadata.get(item['id'], {}).get('series'):
+                    item['series'] = magazine_publication(stem, ordered_names)
             # Before the first scan, file timestamps are the only available history.
             pending=[]
             if '' not in additions: pending.append(('',scanned_at))
@@ -1295,6 +1306,27 @@ def move_exclusive(source,destination):
 
 
 # infer issue: handle this step of the server request or library workflow.
+# Periodicals often include regional editions, cover lines and download-site names.
+PUBLICATION_NAMES = ('New Scientist', 'T3', 'BBC Science Focus', 'American Scientist', 'Discover')
+ISSUE_MARKER = re.compile(
+    r'\b(?:no\.?\s*\d+|issue\s*#?\d+|vol(?:ume)?\.?\s*\d+|(?:19|20)\d{2}\b|'
+    r'\d{1,2}[./-]\d{1,2}[./-](?:19|20)\d{2}|'
+    r'(?:\d{1,2}\s+)?(?:January|February|March|April|May|June|July|August|September|October|November|December|Spring|Summer|Autumn|Fall|Winter)\s+\d)',
+    re.I)
+
+
+def magazine_publication(stem, names):
+    title = re.sub(r'^\s*(?:[\w-]+\.)+(?:com|net|org|top)\b[\s_-]*', '', stem, flags=re.I)
+    title = ' '.join(title.replace('_', ' ').split())
+    for name in names:
+        if title.casefold().startswith(name.casefold()) and re.match(r'(?:\W|$)', title[len(name):]):
+            return name
+    marker = ISSUE_MARKER.search(title)
+    if marker:
+        return title[:marker.start()].rstrip(' ,.-–—(')[:160]
+    return ''
+
+
 def infer_issue(stem):
     title=stem.replace('_',' ')
     match=re.search(r'\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(20\d{2}|19\d{2})\b',title,re.I)
