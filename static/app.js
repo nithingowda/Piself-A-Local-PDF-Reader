@@ -116,6 +116,8 @@ function cardFor(item,target){
  const more=el('button','more','•••');more.setAttribute('aria-label','Options for '+item.title);more.onclick=()=>showIssue(item);heading.append(more);
  card.append(cover);if(item.series){const seriesButton=el('button','series-link',item.series);seriesButton.onclick=()=>selectSeries(item.series);card.append(seriesButton);}card.append(heading);if(item.author)card.append(el('p','meta','By '+item.author));const chips=el('div','tag-chips');for(const tag of item.tags||[]){const b=el('button','tag-chip',tag);b.onclick=()=>selectTag(tag);chips.append(b);}card.append(chips);
  card.append(el('div','meta',finished(item)?'Finished':s.epubCfi&&isEpub(item)?`EPUB · ${s.page&&s.total?Math.round(s.page/s.total*100)+'%':'Reading'}`:s.page?`Page ${s.page} of ${s.total}`:`${item.category==='.'?itemKind(item):item.category} · ${item.format.toUpperCase()} · ${fileSize(item.size)}`));
+ const ocrLabel={pending:'Preparing selectable text…',ready:'Selectable text · Full PDF view',protected:'Protected PDF · OCR skipped',no_text:'No text recognized',failed:'OCR unavailable · Original PDF available'}[item.ocrStatus];
+ if(ocrLabel)card.append(el('div','meta',ocrLabel));
  if(s.page||s.epubCfi||s.completed){const bar=el('div','progress'),fill=el('span');fill.style.width=(finished(item)?100:Math.min(100,(s.page||0)/(s.total||1)*100))+'%';bar.append(fill);card.append(bar);}target.append(card);coverObserver.observe(cover);
 }
 /** draw Library: Support the PiShelf reader or library interface. */
