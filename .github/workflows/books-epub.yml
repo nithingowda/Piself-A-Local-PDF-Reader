@@ -23,3 +23,11 @@ jobs:
       - name: Run Books/EPUB API and UI regression tests
         run: |
           python -m unittest discover -s tests -p 'test_books_epub*.py' -v
+  scan-ocr:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the production OCR runtime
+        run: docker build -t pishelf-ocr-test .
+      - name: Verify searchable text in a mixed PDF
+        run: docker run --rm --entrypoint python -v "$PWD/tests:/tests:ro" pishelf-ocr-test -m unittest discover -s /tests -p test_scan_ocr.py -v
