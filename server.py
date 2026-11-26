@@ -21,6 +21,7 @@ import datetime
 import zipfile
 import zlib
 import auth
+import upload_ocr
 import secrets
 import hmac
 import subprocess
@@ -146,6 +147,7 @@ class Handler(BaseHTTPRequestHandler):
             categories = []
             with sqlite3.connect(self.server.state_db) as db:
                 additions=dict(db.execute('SELECT id,added FROM library_additions'))
+                ocr_states = {key: (identity, status) for key, identity, status in db.execute('SELECT id,fingerprint,status FROM upload_ocr')}
                 scanned_at=time.time()
                 metadata = {key: json.loads(raw) for key, raw in db.execute('SELECT id,value FROM metadata')}
             for source, root in self.server.roots.items():
@@ -164,6 +166,9 @@ class Handler(BaseHTTPRequestHandler):
                         relative = path.relative_to(root).as_posix()
                         key = item_id(source, relative)
                         inferred = infer_issue(path.stem)
+                        identity, status = ocr_states.get(key, ('', ''))
+                        if status and identity == upload_ocr.fingerprint(info):
+                            inferred['ocrStatus'] = status
                         inferred.update({k:v for k,v in metadata.get(key, {}).items() if k != 'series' or v})
                         cover_key = hashlib.sha256(f'{key}:{info.st_mtime_ns}:{info.st_size}'.encode()).hexdigest()
                         items.append(dict(id=key, path=relative, title=path.stem.replace('_',' '), source=source,
@@ -265,6 +270,8 @@ class Handler(BaseHTTPRequestHandler):
                         with sqlite3.connect(self.server.state_db) as db:
                             if category != '.':
                                 db.execute('INSERT OR IGNORE INTO managed_categories VALUES (?,?)',(source,category))
+                            if fmt == '.pdf':
+                                upload_ocr.enqueue(db, key, source, destination.relative_to(root).as_posix(), destination)
                             fields = dict(tags=tags,author=author)
                             if series:
                                 fields['series'] = series
@@ -276,6 +283,8 @@ class Handler(BaseHTTPRequestHandler):
             finally:
                 self.connection.settimeout(old_timeout)
                 temporary.unlink(missing_ok=True)
+        if fmt == '.pdf':
+            upload_ocr.start(self.server, checked_path)
         self.json_response({'ok':True,'id':item_id(source,destination.relative_to(root).as_posix())},201)
 
     # accept origin: handle this step of the server request or library workflow.
@@ -1441,6 +1450,8 @@ def make_server(host,port,library,data,newspapers=None,books=None):
         if any(book_root==existing or book_root.is_relative_to(existing) or existing.is_relative_to(book_root) for existing in server.roots.values()):
             server.server_close(); raise ValueError('Book folder must be separate from the other libraries.')
         server.roots['books']=book_root
+    server.ocr_lock = threading.Lock()
+    server.ocr_worker = None
     server.cover_dir=data/'covers'
     if server.cover_dir.is_symlink(): raise ValueError('Cover cache cannot be a symlink.')
     server.cover_dir.mkdir(exist_ok=True)
@@ -1448,6 +1459,7 @@ def make_server(host,port,library,data,newspapers=None,books=None):
     server.scan_lock=threading.Lock();server.cover_lock=threading.Lock();server.scan_time=float('-inf');server.scan_items=[];server.scan_categories=[];server.upload_lock=threading.Lock();server.auth_lock=threading.Lock();server.auth_attempts={}
     with sqlite3.connect(server.state_db) as db:
         auth.initialize(db)
+        upload_ocr.initialize(db)
         db.execute('CREATE TABLE IF NOT EXISTS library_config (id INTEGER PRIMARY KEY, paths TEXT NOT NULL)')
         row=db.execute('SELECT paths FROM library_config WHERE id=1').fetchone()
         if row:
@@ -1493,5 +1505,6 @@ if __name__=='__main__':
     parser.add_argument('--books',type=Path,default=None)
     args=parser.parse_args();server=make_server(args.host,args.port,args.library,args.data,args.newspapers,args.books)
     print(f'PiShelf is running on port {args.port}. Library: {server.library}',flush=True)
+    upload_ocr.start(server, checked_path)
     try: server.serve_forever()
     except KeyboardInterrupt: server.server_close()
